@@ -3,6 +3,7 @@
  * Swapping or adding models happens here, never in feature code.
  */
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const AI_TIMEOUT_MS = 45_000;
 
 export const MODELS = {
   /** Fast structured reasoning: request parsing, relevance scoring. */
@@ -55,6 +56,7 @@ export async function chatJson<T>(opts: {
         json_schema: { name: opts.schemaName, strict: true, schema: opts.schema },
       },
     }),
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
   });
 
   if (!response.ok) {

@@ -53,6 +53,8 @@ export class SearchProviderError extends Error {
   }
 }
 
+const SEARCH_TIMEOUT_MS = 30_000;
+
 function hostOf(url: string): string | undefined {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -84,6 +86,7 @@ const exaProvider: SearchProvider = {
           type: "auto",
           contents: { text: { maxCharacters: 1500 }, extras: { links: 25 } },
         }),
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
       });
     } catch (err) {
       throw new SearchProviderError(0, `Exa request failed: ${(err as Error).message}`);
@@ -137,6 +140,7 @@ const braveProvider: SearchProvider = {
           Accept: "application/json",
           "X-Subscription-Token": process.env["BRAVE_SEARCH_API_KEY"]!,
         },
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
       });
     } catch (err) {
       throw new SearchProviderError(0, `Brave request failed: ${(err as Error).message}`);

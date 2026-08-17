@@ -32,6 +32,8 @@ export interface DetailFetchResult {
 
 /** Rough per-URL content cost, used for admin cost estimates. */
 const EXA_CONTENT_COST = 0.001;
+const CONTENT_TIMEOUT_MS = 30_000;
+const HTTP_TIMEOUT_MS = 20_000;
 
 function isFetchableUrl(url: string): boolean {
   try {
@@ -53,6 +55,7 @@ async function fetchViaExa(urls: string[], maxChars: number): Promise<DetailFetc
       "x-api-key": process.env["EXA_API_KEY"]!,
     },
     body: JSON.stringify({ urls, text: { maxCharacters: maxChars }, livecrawl: "fallback" }),
+    signal: AbortSignal.timeout(CONTENT_TIMEOUT_MS),
   });
   if (!res.ok) {
     const detail = (await res.text().catch(() => "")).slice(0, 200);
@@ -111,6 +114,7 @@ async function fetchViaHttp(url: string, maxChars: number): Promise<FetchedPage 
         "User-Agent": "RadarBot/1.0 (+personal monitoring; respects robots and rate limits)",
         Accept: "text/html,application/xhtml+xml",
       },
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
     if (!res.ok) return { url, reason: `HTTP ${res.status}` };
     const contentType = res.headers.get("content-type") ?? "";
