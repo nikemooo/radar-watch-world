@@ -40,7 +40,7 @@ export function AlertCard({ alert, radarName, onSave, onDismiss, onFeedback }: P
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <ImportanceBadge importance={alert.importance as Importance} />
+        <ImportanceBadge value={alert.importance} />
         {radarName && <span className="mono-label">{radarName}</span>}
         <span className="mono-label ml-auto">
           {new Date(alert.created_at).toLocaleString(undefined, {
