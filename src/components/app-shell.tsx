@@ -27,14 +27,21 @@ interface NavItem {
 
 const primaryNav: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/radars", label: "Radars", icon: RadarIcon },
+  { to: "/radars", label: "My Radars", icon: RadarIcon },
   { to: "/alerts", label: "Alerts", icon: Bell },
   { to: "/intelligence", label: "Intelligence", icon: Newspaper },
+  { to: "/billing", label: "Billing", icon: CreditCard },
 ];
 
-const secondaryNav: NavItem[] = [
-  { to: "/billing", label: "Billing", icon: CreditCard },
-  { to: "/settings", label: "Settings", icon: Settings },
+const secondaryNav: NavItem[] = [{ to: "/settings", label: "Settings", icon: Settings }];
+
+// Compact bottom-bar set for phones (labels shortened to fit).
+const mobileNav: (NavItem & { short: string })[] = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, short: "Home" },
+  { to: "/radars", label: "My Radars", icon: RadarIcon, short: "Radars" },
+  { to: "/alerts", label: "Alerts", icon: Bell, short: "Alerts" },
+  { to: "/billing", label: "Billing", icon: CreditCard, short: "Billing" },
+  { to: "/settings", label: "Settings", icon: Settings, short: "Settings" },
 ];
 
 export function useIsAdmin() {
