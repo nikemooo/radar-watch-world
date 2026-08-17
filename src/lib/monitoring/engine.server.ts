@@ -300,7 +300,21 @@ async function recordFetchHealth(
   }
 }
 
-export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult> {
+export type RunOptions = {
+  /** Remaining alerts the user's plan allows this month; null = unlimited. */
+  alertBudget?: number | null | undefined;
+  /** Plan-imposed cap on detail fetches for this sweep. */
+  maxDetailFetches?: number | undefined;
+  /** Plan-level priority processing flag. */
+  priority?: boolean | undefined;
+};
+
+export async function runRadarCycle(
+  db: Db,
+  radar: RadarRow,
+  options: RunOptions = {},
+): Promise<RunResult> {
+  let alertBudget = options.alertBudget ?? null;
   const config: RadarConfig = asConfig(radar.config);
   const started = new Date().toISOString();
   const isBaseline = !radar.baseline_completed;
@@ -490,7 +504,10 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
 
       const fetchable = candidates.filter((c) => c.url && c.individual).length;
       const budgetPlan = adaptiveBudget({
-        configured: Number(radar.max_detail_fetches ?? 8),
+        configured: Math.min(
+          Number(radar.max_detail_fetches ?? 8),
+          options.maxDetailFetches ?? Number.MAX_SAFE_INTEGER,
+        ),
         frequency: radar.frequency,
         comparableGap: specs.length > 0 ? comparableGap : 0,
         fetchableCandidates: fetchable,
@@ -941,6 +958,15 @@ ${eligible
         );
         continue;
       }
+      if (alertBudget !== null && alertBudget <= 0) {
+        record(
+          c.item,
+          false,
+          "suppressed_plan_limit",
+          "monthly alert allowance for the current plan is used up",
+        );
+        continue;
+      }
       const doc = docByUrl.get(c.item.url);
       const { error } = await db.from("alerts").insert({
         radar_id: radar.id,
@@ -981,8 +1007,10 @@ ${eligible
         record(c.item, false, "error", `could not persist alert: ${error.message}`);
       } else {
         alertsCreated += 1;
+        if (alertBudget !== null) alertBudget -= 1;
         record(c.item, true, "alert_created", `${c.kind} change inside the ${recencyDays}d window`);
       }
+
     }
   }
 
