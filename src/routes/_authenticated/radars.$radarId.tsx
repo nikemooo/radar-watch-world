@@ -266,10 +266,18 @@ function RadarDetail() {
                   {entry.items_found} found · {entry.new_items} new · {entry.alerts_created} alerts
                 </span>
                 <span className="w-full text-xs text-muted-foreground">
-                  detail — {entry.candidates_discovered} candidates · {entry.candidates_selected} selected ·{" "}
-                  {entry.detail_fetches_ok} fetched · {entry.detail_fetches_failed} failed ·{" "}
+                  detail — {entry.candidates_discovered} candidates · budget {entry.detail_fetch_budget} ·{" "}
+                  {entry.detail_fetches_attempted} attempted · {entry.detail_fetches_ok} fetched ·{" "}
+                  {entry.detail_fetches_failed} blocked · {entry.detail_fetches_skipped_backoff} skipped (backoff) ·{" "}
                   {entry.attributes_extracted} attributes · {entry.attributes_missing} missing
                 </span>
+                <span className="w-full text-xs text-muted-foreground">
+                  comparables — {entry.usable_comparables} usable of {entry.comparable_observations} observations (
+                  {Number(entry.comparable_coverage ?? 0).toFixed(1)}% coverage) · {entry.baselines_computed} baselines
+                  computed · {entry.baselines_backfilled} backfilled · {entry.baselines_insufficient} insufficient ·
+                  est. cost ${Number(entry.cost_estimate ?? 0).toFixed(3)} of ${Number(entry.cost_ceiling ?? 0).toFixed(3)} ceiling
+                </span>
+
                 <span className="w-full text-xs text-muted-foreground">
                   comparables — {entry.comparable_observations} observations ·{" "}
                   {entry.baselines_computed} baselines calculated · {entry.baselines_insufficient} insufficient

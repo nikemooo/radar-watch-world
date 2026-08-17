@@ -68,11 +68,15 @@ export const getSearchOpsMetrics = createServerFn({ method: "GET" })
     const { data: runs } = await context.supabase
       .from("monitor_runs")
       .select(
-        "id, status, run_type, provider, error, cost_estimate, search_requests, search_successes, search_failures, sources_retrieved, baseline_findings, incremental_findings, suppressed_baseline, suppressed_recency, suppressed_duplicate, suppressed_relevance, alerts_created, started_at, finished_at",
+        "id, status, run_type, provider, error, cost_estimate, search_requests, search_successes, search_failures, sources_retrieved, baseline_findings, incremental_findings, suppressed_baseline, suppressed_recency, suppressed_duplicate, suppressed_relevance, alerts_created, started_at, finished_at, candidates_discovered, detail_fetches_attempted, detail_fetches_ok, detail_fetches_failed, detail_fetches_skipped_backoff, detail_cost_estimate, usable_comparables, comparable_coverage, baselines_computed, baselines_insufficient, baselines_backfilled",
       )
       .gte("started_at", since)
       .order("started_at", { ascending: false })
       .limit(500);
+
+    const { data: hosts } = await context.supabase
+      .from("source_fetch_stats")
+      .select("host, attempts, successes, last_failure_reason");
 
     const rows = runs ?? [];
     const exaRuns = rows.filter((r) => r.provider === "exa");
@@ -104,6 +108,27 @@ export const getSearchOpsMetrics = createServerFn({ method: "GET" })
       suppressedDuplicate: sum("suppressed_duplicate"),
       suppressedRelevance: sum("suppressed_relevance"),
       alertsCreated: sum("alerts_created"),
+      candidates: sum("candidates_discovered"),
+      detailAttempted: sum("detail_fetches_attempted"),
+      detailOk: sum("detail_fetches_ok"),
+      detailFailed: sum("detail_fetches_failed"),
+      detailSkippedBackoff: sum("detail_fetches_skipped_backoff"),
+      detailCost: rows.reduce((n, r) => n + Number(r.detail_cost_estimate ?? 0), 0),
+      usableComparables: rows[0]?.usable_comparables ?? 0,
+      comparableCoverage: Number(rows[0]?.comparable_coverage ?? 0),
+      baselinesComputed: sum("baselines_computed"),
+      baselinesInsufficient: sum("baselines_insufficient"),
+      baselinesBackfilled: sum("baselines_backfilled"),
+      hosts: (hosts ?? [])
+        .map((h) => ({
+          host: h.host,
+          attempts: h.attempts,
+          successes: h.successes,
+          rate: h.attempts > 0 ? Math.round((h.successes / h.attempts) * 100) : null,
+          lastFailureReason: h.last_failure_reason,
+        }))
+        .sort((a, b) => b.attempts - a.attempts)
+        .slice(0, 12),
     };
   });
 
