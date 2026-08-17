@@ -205,6 +205,42 @@ function RadarDetail() {
           </p>
         )}
       </section>
+
+      <section>
+        <h2 className="text-lg font-medium">Retrieved sources</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Every source Radar read during its sweeps. Alerts may only cite these.
+        </p>
+        {sources?.length ? (
+          <ul className="panel mt-4 divide-y divide-border">
+            {sources.map((s) => (
+              <li key={s.id} className="p-4">
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-sm font-medium underline underline-offset-4"
+                >
+                  {s.title}
+                </a>
+                <p className="mono-label mt-1">
+                  {s.publisher ?? new URL(s.url).hostname} ·{" "}
+                  {s.published_at ? new Date(s.published_at).toLocaleDateString() : "no publish date"} ·
+                  retrieved {new Date(s.retrieved_at).toLocaleString()}
+                </p>
+                {s.snippet && (
+                  <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{s.snippet}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="panel mt-4 p-5 text-sm text-muted-foreground">
+            No sources retrieved yet.
+          </p>
+        )}
+      </section>
+
     </div>
   );
 }
