@@ -16,6 +16,7 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedRadarsIndexRouteImport } from './routes/_authenticated/radars.index'
+import { Route as AuthenticatedRadarsRadarIdRouteImport } from './routes/_authenticated/radars.$radarId'
 import { Route as AuthenticatedRadarsNewRouteImport } from './routes/_authenticated/radars.new'
 
 const IndexRoute = IndexRouteImport.update({
@@ -53,6 +54,12 @@ const AuthenticatedRadarsIndexRoute =
     path: '/radars/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedRadarsRadarIdRoute =
+  AuthenticatedRadarsRadarIdRouteImport.update({
+    id: '/radars/$radarId',
+    path: '/radars/$radarId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedRadarsNewRoute = AuthenticatedRadarsNewRouteImport.update({
   id: '/radars/new',
   path: '/radars/new',
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/reset-password': typeof ResetPasswordRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
   '/radars/': typeof AuthenticatedRadarsIndexRoute
 }
@@ -74,6 +82,7 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/reset-password': typeof ResetPasswordRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
   '/radars': typeof AuthenticatedRadarsIndexRoute
 }
@@ -85,6 +94,7 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/_authenticated/radars/new': typeof AuthenticatedRadarsNewRoute
   '/_authenticated/radars/': typeof AuthenticatedRadarsIndexRoute
 }
@@ -96,6 +106,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/reset-password'
     | '/dashboard'
+    | '/radars/$radarId'
     | '/radars/new'
     | '/radars/'
   fileRoutesByTo: FileRoutesByTo
@@ -105,6 +116,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/reset-password'
     | '/dashboard'
+    | '/radars/$radarId'
     | '/radars/new'
     | '/radars'
   id:
@@ -115,6 +127,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/reset-password'
     | '/_authenticated/dashboard'
+    | '/_authenticated/radars/$radarId'
     | '/_authenticated/radars/new'
     | '/_authenticated/radars/'
   fileRoutesById: FileRoutesById
@@ -178,6 +191,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRadarsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/radars/$radarId': {
+      id: '/_authenticated/radars/$radarId'
+      path: '/radars/$radarId'
+      fullPath: '/radars/$radarId'
+      preLoaderRoute: typeof AuthenticatedRadarsRadarIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/radars/new': {
       id: '/_authenticated/radars/new'
       path: '/radars/new'
@@ -190,12 +210,14 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedRadarsRadarIdRoute: typeof AuthenticatedRadarsRadarIdRoute
   AuthenticatedRadarsNewRoute: typeof AuthenticatedRadarsNewRoute
   AuthenticatedRadarsIndexRoute: typeof AuthenticatedRadarsIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedRadarsRadarIdRoute: AuthenticatedRadarsRadarIdRoute,
   AuthenticatedRadarsNewRoute: AuthenticatedRadarsNewRoute,
   AuthenticatedRadarsIndexRoute: AuthenticatedRadarsIndexRoute,
 }
