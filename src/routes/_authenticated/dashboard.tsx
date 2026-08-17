@@ -96,15 +96,33 @@ function Dashboard() {
       </header>
 
       {empty ? (
-        <div className="panel flex flex-col items-center px-6 py-16 text-center">
-          <RadarMark className="size-14" />
-          <h2 className="mt-6 text-lg font-medium">Nothing on your radar yet</h2>
-          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-            Describe anything you want watched — a car, a stock, a job market, a price. Radar handles
-            the rest.
+        <div className="panel px-5 py-10 text-center sm:px-8 sm:py-14">
+          <RadarMark className="mx-auto size-14" />
+          <h2 className="mt-6 text-xl font-semibold tracking-tight">Let Radar do the searching.</h2>
+          <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+            Tell us what you're looking for and we'll keep watch.
           </p>
-          <Button asChild className="mt-6">
-            <Link to="/radars/new">Create your first radar</Link>
+          <ul className="mx-auto mt-7 grid max-w-lg gap-2 text-left">
+            {[
+              { emoji: "🚗", text: "Find a black BMW M340i, 2022 or newer, under 600,000 SEK." },
+              { emoji: "⌚", text: "Find a Rolex Submariner below market price." },
+              { emoji: "📈", text: "Keep me updated on major NVIDIA news and events." },
+            ].map((e) => (
+              <li
+                key={e.text}
+                className="flex items-start gap-3 rounded-lg border border-border px-4 py-3 text-sm text-muted-foreground"
+              >
+                <span className="text-base leading-none">{e.emoji}</span>
+                {e.text}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-5 text-xs text-muted-foreground">
+            Cars, watches, property, investments, travel, products, companies — if it's on the web,
+            Radar can monitor it.
+          </p>
+          <Button asChild className="mt-7 h-12 w-full max-w-xs text-base">
+            <Link to="/radars/new">Create a Radar</Link>
           </Button>
         </div>
       ) : (
