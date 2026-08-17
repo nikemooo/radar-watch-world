@@ -15,6 +15,51 @@ export const interpretRadarRequest = createServerFn({ method: "POST" })
     return interpretRequest(data.request);
   });
 
+/** Create a radar, enforcing the caller's plan limits server-side. */
+export const createRadar = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      name: string;
+      category: string;
+      frequency: string;
+      raw_request: string;
+      monitoring_window: string;
+      recency_days: number;
+      config: unknown;
+    }) => {
+      if (!input?.name || !input?.config) throw new Error("Missing radar details.");
+      return input;
+    },
+  )
+  .handler(async ({ data, context }) => {
+    const { getEntitlements } = await import("./billing/entitlements.server");
+    const e = await getEntitlements(context.supabase, context.userId);
+    if (!e.isInternal && e.radarCount >= e.plan.max_radars) {
+      throw new Error(
+        `Your ${e.plan.name} plan allows ${e.plan.max_radars} radars. Upgrade to add more.`,
+      );
+    }
+    const { data: radar, error } = await context.supabase
+      .from("radars")
+      .insert({
+        user_id: context.userId,
+        name: data.name,
+        category: data.category,
+        frequency: data.frequency,
+        raw_request: data.raw_request,
+        monitoring_window: data.monitoring_window,
+        recency_days: data.recency_days,
+        recency_source: "ai_inferred",
+        max_detail_fetches: e.plan.max_detail_fetches,
+        config: data.config as never,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return { id: radar.id };
+  });
+
 /** Run one monitoring cycle for a radar the caller owns. */
 export const runRadarNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -24,6 +69,9 @@ export const runRadarNow = createServerFn({ method: "POST" })
   })
   .handler(async ({ data, context }) => {
     const { runRadarCycle } = await import("./monitoring/engine.server");
+    const { getEntitlements, remainingAlerts, minSweepIntervalMinutes } = await import(
+      "./billing/entitlements.server"
+    );
     const { data: radar, error } = await context.supabase
       .from("radars")
       .select("*")
@@ -31,8 +79,26 @@ export const runRadarNow = createServerFn({ method: "POST" })
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!radar) throw new Error("Radar not found.");
-    return runRadarCycle(context.supabase, radar);
+
+    const e = await getEntitlements(context.supabase, context.userId);
+    const minInterval = minSweepIntervalMinutes(e);
+    if (radar.last_run_at && minInterval > 0) {
+      const elapsed = (Date.now() - new Date(radar.last_run_at).getTime()) / 60000;
+      if (elapsed < minInterval) {
+        const wait = Math.ceil(minInterval - elapsed);
+        throw new Error(
+          `Your ${e.plan.name} plan allows a sweep every ${minInterval} minutes. Next sweep available in ${wait} minutes.`,
+        );
+      }
+    }
+
+    return runRadarCycle(context.supabase, radar, {
+      alertBudget: remainingAlerts(e),
+      maxDetailFetches: e.isInternal ? undefined : e.plan.max_detail_fetches,
+      priority: e.isInternal || e.plan.priority_processing,
+    });
   });
+
 
 /** Which research providers are wired up (nothing is faked when none are). */
 export const getResearchStatus = createServerFn({ method: "GET" })
