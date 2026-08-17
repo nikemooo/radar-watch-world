@@ -2,6 +2,7 @@ import { ExternalLink, Bookmark, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { ImportanceBadge, ConfidenceMeter } from "@/components/importance-badge";
 import { Button } from "@/components/ui/button";
 import { asSources } from "@/lib/radar-types";
+import { BaselinePanel } from "@/components/baseline-panel";
 import { cn } from "@/lib/utils";
 
 export interface AlertRow {
@@ -17,6 +18,7 @@ export interface AlertRow {
   potential_impact: string | null;
   feedback: string | null;
   sources: unknown;
+  baseline?: unknown;
   created_at: string;
   radar_id: string | null;
 }
@@ -75,6 +77,8 @@ export function AlertCard({ alert, radarName, onSave, onDismiss, onFeedback }: P
           </div>
         )}
       </dl>
+
+      <BaselinePanel baseline={alert.baseline} />
 
       {sources.length > 0 && (
         <div className="mt-4 flex flex-wrap gap-2">

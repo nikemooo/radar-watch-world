@@ -18,6 +18,7 @@ import {
 import { asConfig, frequencyLabel, recencyPresets, type RadarFrequency } from "@/lib/radar-types";
 import { isFactual, type AttributeValue } from "@/lib/monitoring/normalize";
 import { track } from "@/lib/analytics";
+import { BaselinePanel } from "@/components/baseline-panel";
 
 export const Route = createFileRoute("/_authenticated/radars/$radarId")({
   head: () => ({
@@ -270,6 +271,10 @@ function RadarDetail() {
                   {entry.attributes_extracted} attributes · {entry.attributes_missing} missing
                 </span>
                 <span className="w-full text-xs text-muted-foreground">
+                  comparables — {entry.comparable_observations} observations ·{" "}
+                  {entry.baselines_computed} baselines calculated · {entry.baselines_insufficient} insufficient
+                </span>
+                <span className="w-full text-xs text-muted-foreground">
                   suppressed — baseline {entry.suppressed_baseline} · recency {entry.suppressed_recency} ·
                   duplicate {entry.suppressed_duplicate} · relevance {entry.suppressed_relevance}
                 </span>
@@ -371,6 +376,7 @@ function RadarDetail() {
                       No item-level attributes available from the source — fields remain unknown.
                     </p>
                   )}
+                  <BaselinePanel baseline={f.baseline} />
                   {f.discovery_url && f.discovery_url !== (f.primary_url ?? f.url) && (
                     <p className="mono-label mt-2">
                       discovered on{" "}

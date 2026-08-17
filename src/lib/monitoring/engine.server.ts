@@ -28,6 +28,13 @@ import {
 } from "./attributes.server";
 import type { AttributeSpec, AttributeValue } from "./normalize";
 import {
+  buildBaseline,
+  comparableSettings,
+  NO_BASELINE_PHRASE,
+  type BaselineResult,
+  type Observation,
+} from "./comparables";
+import {
   assignFingerprints,
   clampRecencyDays,
   evaluateRecency,
@@ -170,6 +177,9 @@ export interface RunResult {
   indexPages?: number;
   detailCostEstimate?: number;
   attributeChanges?: number;
+  baselinesComputed?: number;
+  baselinesInsufficient?: number;
+  comparableObservations?: number;
 }
 
 interface Decision {
@@ -524,6 +534,57 @@ ${documentBlock(allDocs)}`,
     // Same fingerprint, same value = the same source showing up again: never an alert.
   }
 
+  // ---------------------------------------------------------------------
+  // 3b. Comparable / baseline engine (deterministic, category-agnostic).
+  // The population is ONLY real persisted findings plus this sweep's items.
+  // No market claim is ever made without a calculated baseline.
+  // ---------------------------------------------------------------------
+  const settings = comparableSettings(
+    { minComparables: Math.max(2, Number(radar.min_comparables ?? 10)), allowBroadComparison: !!radar.allow_broad_comparison },
+    recencyDays,
+  );
+  const currentObservations: Observation[] = items.map((item) => ({
+    fingerprint: item.fingerprint,
+    title: item.title,
+    url: item.url,
+    attributes: attributesFor(item) ?? asAttributeMap(existing.get(item.fingerprint)?.attributes ?? null) ?? {},
+    numericValue: item.numeric_value,
+    currency: item.currency,
+    observedAt: new Date().toISOString(),
+    detailFetched: detailByUrl.has(item.url),
+  }));
+  const currentKeys = new Set(currentObservations.map((o) => o.fingerprint));
+  const persistedObservations: Observation[] = (existingRows ?? [])
+    .filter((f) => !currentKeys.has(f.fingerprint))
+    .map((f) => ({
+      fingerprint: f.fingerprint,
+      title: f.title,
+      url: f.primary_url ?? f.url,
+      attributes: asAttributeMap(f.attributes) ?? {},
+      numericValue: f.numeric_value === null ? null : Number(f.numeric_value),
+      currency: f.currency,
+      observedAt: f.last_seen_at,
+      detailFetched: f.detail_status === "fetched",
+    }));
+  const population = [...currentObservations, ...persistedObservations];
+
+  const baselines = new Map<string, BaselineResult>();
+  let baselinesComputed = 0;
+  let baselinesInsufficient = 0;
+  if (specs.length > 0) {
+    for (const subject of currentObservations) {
+      const result = buildBaseline({ subject, population, specs, settings });
+      baselines.set(subject.fingerprint, result);
+      if (result.status === "computed") baselinesComputed += 1;
+      else if (result.status === "insufficient_comparables") baselinesInsufficient += 1;
+    }
+  }
+  const baselineLine = (fingerprint: string): string => {
+    const b = baselines.get(fingerprint);
+    if (!b || b.status !== "computed") return `baseline: none — ${NO_BASELINE_PHRASE}`;
+    return `baseline: ${b.statement} (anomaly ${b.anomalyScore}, opportunity ${b.opportunityScore})`;
+  };
+
   const decisions: Decision[] = [];
   let suppressedBaseline = 0;
   let suppressedRecency = 0;
@@ -618,7 +679,11 @@ ${documentBlock(allDocs)}`,
         "You are the relevance engine of a personal intelligence platform. Judge each change for THIS user's radar. " +
         "Prioritise signal over volume: set notify=false for trivial, duplicate or insignificant changes. " +
         "Information that is not genuinely new or newly changed must get notify=false. " +
-        "confidence is 0-1 and must reflect how well the sources support the claim. Never invent facts.",
+        "confidence is 0-1 and must reflect how well the sources support the claim. Never invent facts. " +
+        "A pre-calculated market baseline may be attached to an item. You may only describe something as cheap, expensive, " +
+        "underpriced, above/below market or a bargain when a baseline is present, and then only in the direction and " +
+        "magnitude that the baseline states. When the baseline says none, you must instead say that there is insufficient " +
+        "comparable data to judge market value. Never compute or estimate a market value yourself.",
       user: `Radar: ${radar.name}
 Original request: ${radar.raw_request}
 Interpretation: ${config.interpretation}
@@ -635,7 +700,7 @@ ${eligible
       c.previous !== null ? ` (previous value ${c.previous})` : ""
     }\ntitle: ${c.item.title}\nvalue: ${c.item.numeric_value ?? "n/a"} ${c.item.currency ?? ""}\ninformation dated: ${
       informationDate(t) ?? "unknown"
-    }\nsummary: ${c.item.summary}\nsource: ${c.item.url}`;
+    }\nsummary: ${c.item.summary}\n${baselineLine(c.item.fingerprint)}\nsource: ${c.item.url}`;
   })
   .join("\n\n")}`,
     });
@@ -667,6 +732,9 @@ ${eligible
         importance: verdict.importance,
         confidence: Math.max(0, Math.min(1, verdict.confidence)),
         event_type: c.item.event_type,
+        baseline: (baselines.get(c.item.fingerprint) ?? { status: "not_computed", statement: NO_BASELINE_PHRASE }) as never,
+        anomaly_score: baselines.get(c.item.fingerprint)?.anomalyScore ?? null,
+        opportunity_score: baselines.get(c.item.fingerprint)?.opportunityScore ?? null,
         sources: [
           {
             title: doc?.title ?? c.item.title,
@@ -745,6 +813,12 @@ ${eligible
           origin: prev ? prev.origin : isBaseline ? "baseline" : "incremental",
           last_changed_at: valueChanged || attrChanged ? now : (prev?.last_changed_at ?? null),
           last_run_id: runId,
+          baseline: (baselines.get(item.fingerprint) ?? {}) as never,
+          baseline_status: baselines.get(item.fingerprint)?.status ?? "not_computed",
+          baseline_confidence: baselines.get(item.fingerprint)?.confidence ?? null,
+          anomaly_score: baselines.get(item.fingerprint)?.anomalyScore ?? null,
+          opportunity_score: baselines.get(item.fingerprint)?.opportunityScore ?? null,
+          baseline_computed_at: baselines.get(item.fingerprint)?.status === "computed" ? now : null,
           last_seen_at: now,
         },
         { onConflict: "radar_id,fingerprint" },
@@ -803,6 +877,9 @@ ${eligible
     attributes_extracted: attributesExtracted,
     attributes_missing: attributesMissing,
     items_merged: research.duplicatesRemoved,
+    baselines_computed: baselinesComputed,
+    baselines_insufficient: baselinesInsufficient,
+    comparable_observations: population.length,
     detail_cost_estimate: detailCostEstimate,
     error: research.errors.length ? research.errors.join(" | ").slice(0, 800) : null,
     finished_at: now,
@@ -852,5 +929,8 @@ ${eligible
     indexPages: indexPages.length,
     detailCostEstimate,
     attributeChanges: attributeEvents.length,
+    baselinesComputed,
+    baselinesInsufficient,
+    comparableObservations: population.length,
   };
 }

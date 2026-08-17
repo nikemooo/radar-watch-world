@@ -76,6 +76,8 @@ export type Database = {
       }
       alerts: {
         Row: {
+          anomaly_score: number | null
+          baseline: Json
           confidence: number
           created_at: string
           event_type: string | null
@@ -83,6 +85,7 @@ export type Database = {
           id: string
           importance: string
           opened_at: string | null
+          opportunity_score: number | null
           potential_impact: string | null
           radar_id: string | null
           sources: Json
@@ -94,6 +97,8 @@ export type Database = {
           why_it_matters: string | null
         }
         Insert: {
+          anomaly_score?: number | null
+          baseline?: Json
           confidence?: number
           created_at?: string
           event_type?: string | null
@@ -101,6 +106,7 @@ export type Database = {
           id?: string
           importance?: string
           opened_at?: string | null
+          opportunity_score?: number | null
           potential_impact?: string | null
           radar_id?: string | null
           sources?: Json
@@ -112,6 +118,8 @@ export type Database = {
           why_it_matters?: string | null
         }
         Update: {
+          anomaly_score?: number | null
+          baseline?: Json
           confidence?: number
           created_at?: string
           event_type?: string | null
@@ -119,6 +127,7 @@ export type Database = {
           id?: string
           importance?: string
           opened_at?: string | null
+          opportunity_score?: number | null
           potential_impact?: string | null
           radar_id?: string | null
           sources?: Json
@@ -225,8 +234,13 @@ export type Database = {
       }
       findings: {
         Row: {
+          anomaly_score: number | null
           attributes: Json
           availability: string | null
+          baseline: Json
+          baseline_computed_at: string | null
+          baseline_confidence: number | null
+          baseline_status: string
           currency: string | null
           detail_fetched_at: string | null
           detail_status: string
@@ -240,6 +254,7 @@ export type Database = {
           last_run_id: string | null
           last_seen_at: string
           numeric_value: number | null
+          opportunity_score: number | null
           origin: string
           primary_url: string | null
           published_at: string | null
@@ -253,8 +268,13 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          anomaly_score?: number | null
           attributes?: Json
           availability?: string | null
+          baseline?: Json
+          baseline_computed_at?: string | null
+          baseline_confidence?: number | null
+          baseline_status?: string
           currency?: string | null
           detail_fetched_at?: string | null
           detail_status?: string
@@ -268,6 +288,7 @@ export type Database = {
           last_run_id?: string | null
           last_seen_at?: string
           numeric_value?: number | null
+          opportunity_score?: number | null
           origin?: string
           primary_url?: string | null
           published_at?: string | null
@@ -281,8 +302,13 @@ export type Database = {
           user_id: string
         }
         Update: {
+          anomaly_score?: number | null
           attributes?: Json
           availability?: string | null
+          baseline?: Json
+          baseline_computed_at?: string | null
+          baseline_confidence?: number | null
+          baseline_status?: string
           currency?: string | null
           detail_fetched_at?: string | null
           detail_status?: string
@@ -296,6 +322,7 @@ export type Database = {
           last_run_id?: string | null
           last_seen_at?: string
           numeric_value?: number | null
+          opportunity_score?: number | null
           origin?: string
           primary_url?: string | null
           published_at?: string | null
@@ -324,8 +351,11 @@ export type Database = {
           attributes_extracted: number
           attributes_missing: number
           baseline_findings: number
+          baselines_computed: number
+          baselines_insufficient: number
           candidates_discovered: number
           candidates_selected: number
+          comparable_observations: number
           cost_estimate: number
           detail_cost_estimate: number
           detail_fetches_failed: number
@@ -359,8 +389,11 @@ export type Database = {
           attributes_extracted?: number
           attributes_missing?: number
           baseline_findings?: number
+          baselines_computed?: number
+          baselines_insufficient?: number
           candidates_discovered?: number
           candidates_selected?: number
+          comparable_observations?: number
           cost_estimate?: number
           detail_cost_estimate?: number
           detail_fetches_failed?: number
@@ -394,8 +427,11 @@ export type Database = {
           attributes_extracted?: number
           attributes_missing?: number
           baseline_findings?: number
+          baselines_computed?: number
+          baselines_insufficient?: number
           candidates_discovered?: number
           candidates_selected?: number
+          comparable_observations?: number
           cost_estimate?: number
           detail_cost_estimate?: number
           detail_fetches_failed?: number
@@ -523,6 +559,7 @@ export type Database = {
       }
       radars: {
         Row: {
+          allow_broad_comparison: boolean
           baseline_completed: boolean
           baseline_completed_at: string | null
           category: string
@@ -534,6 +571,7 @@ export type Database = {
           last_successful_sweep_at: string | null
           max_detail_fetches: number
           memory: Json
+          min_comparables: number
           monitoring_window: string
           name: string
           next_run_at: string | null
@@ -545,6 +583,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          allow_broad_comparison?: boolean
           baseline_completed?: boolean
           baseline_completed_at?: string | null
           category?: string
@@ -556,6 +595,7 @@ export type Database = {
           last_successful_sweep_at?: string | null
           max_detail_fetches?: number
           memory?: Json
+          min_comparables?: number
           monitoring_window?: string
           name: string
           next_run_at?: string | null
@@ -567,6 +607,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          allow_broad_comparison?: boolean
           baseline_completed?: boolean
           baseline_completed_at?: string | null
           category?: string
@@ -578,6 +619,7 @@ export type Database = {
           last_successful_sweep_at?: string | null
           max_detail_fetches?: number
           memory?: Json
+          min_comparables?: number
           monitoring_window?: string
           name?: string
           next_run_at?: string | null
