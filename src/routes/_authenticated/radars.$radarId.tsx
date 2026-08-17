@@ -48,6 +48,10 @@ function RadarDetail() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["radar", radarId],
+    refetchInterval: (query) => {
+      const runs = query.state.data?.runs;
+      return runs?.some((entry) => entry.status === "running") ? 4000 : false;
+    },
     queryFn: async () => {
       const [radar, alerts, runs, decisions, findings, changes] = await Promise.all([
         supabase.from("radars").select("*").eq("id", radarId).maybeSingle(),
