@@ -78,6 +78,7 @@ function RadarDetail() {
       toast.success(created > 0 ? `${created} new alert${created > 1 ? "s" : ""}.` : "Sweep complete — nothing new.");
       queryClient.invalidateQueries({ queryKey: ["radar", radarId] });
       queryClient.invalidateQueries({ queryKey: ["alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["radar-sources", radarId] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
