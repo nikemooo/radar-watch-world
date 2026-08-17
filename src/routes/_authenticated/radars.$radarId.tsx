@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, Loader2, Pause, Play, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { runRadarNow } from "@/lib/radar.functions";
+import { listRadarSources, runRadarNow } from "@/lib/radar.functions";
 import { AlertCard, type AlertRow } from "@/components/alert-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,6 +35,14 @@ function RadarDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const run = useServerFn(runRadarNow);
+  const fetchSources = useServerFn(listRadarSources);
+
+  const { data: sources } = useQuery({
+    queryKey: ["radar-sources", radarId],
+    queryFn: () => fetchSources({ data: { radarId, limit: 25 } }),
+  });
+
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["radar", radarId],
@@ -70,6 +78,7 @@ function RadarDetail() {
       toast.success(created > 0 ? `${created} new alert${created > 1 ? "s" : ""}.` : "Sweep complete — nothing new.");
       queryClient.invalidateQueries({ queryKey: ["radar", radarId] });
       queryClient.invalidateQueries({ queryKey: ["alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["radar-sources", radarId] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -205,6 +214,42 @@ function RadarDetail() {
           </p>
         )}
       </section>
+
+      <section>
+        <h2 className="text-lg font-medium">Retrieved sources</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Every source Radar read during its sweeps. Alerts may only cite these.
+        </p>
+        {sources?.length ? (
+          <ul className="panel mt-4 divide-y divide-border">
+            {sources.map((s) => (
+              <li key={s.id} className="p-4">
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-sm font-medium underline underline-offset-4"
+                >
+                  {s.title}
+                </a>
+                <p className="mono-label mt-1">
+                  {s.publisher ?? new URL(s.url).hostname} ·{" "}
+                  {s.published_at ? new Date(s.published_at).toLocaleDateString() : "no publish date"} ·
+                  retrieved {new Date(s.retrieved_at).toLocaleString()}
+                </p>
+                {s.snippet && (
+                  <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{s.snippet}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="panel mt-4 p-5 text-sm text-muted-foreground">
+            No sources retrieved yet.
+          </p>
+        )}
+      </section>
+
     </div>
   );
 }

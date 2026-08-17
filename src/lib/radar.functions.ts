@@ -52,3 +52,61 @@ export const buildIntelligenceReport = createServerFn({ method: "POST" })
     const { generateReport } = await import("./intelligence/report.server");
     return generateReport(context.supabase, context.userId, data.kind);
   });
+
+/** Admin-only search-provider observability: request volume, failures, cost, key status. */
+export const getSearchOpsMetrics = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: isAdmin } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (!isAdmin) throw new Error("Forbidden");
+
+    const { providerStatus } = await import("./search/providers.server");
+    const since = new Date(Date.now() - 7 * 864e5).toISOString();
+    const { data: runs } = await context.supabase
+      .from("monitor_runs")
+      .select(
+        "id, status, provider, error, cost_estimate, search_requests, search_successes, search_failures, sources_retrieved, started_at, finished_at",
+      )
+      .gte("started_at", since)
+      .order("started_at", { ascending: false })
+      .limit(500);
+
+    const rows = runs ?? [];
+    const exaRuns = rows.filter((r) => r.provider === "exa");
+    const lastSuccess = rows.find((r) => r.status === "ok" && (r.search_successes ?? 0) > 0);
+    const lastFailure = rows.find((r) => r.status === "error" || (r.search_failures ?? 0) > 0);
+
+    return {
+      providers: providerStatus(),
+      requests: rows.reduce((n, r) => n + (r.search_requests ?? 0), 0),
+      successes: rows.reduce((n, r) => n + (r.search_successes ?? 0), 0),
+      failures: rows.reduce((n, r) => n + (r.search_failures ?? 0), 0),
+      sources: rows.reduce((n, r) => n + (r.sources_retrieved ?? 0), 0),
+      costEstimate: rows.reduce((n, r) => n + Number(r.cost_estimate ?? 0), 0),
+      exaSweeps: exaRuns.length,
+      lastSuccessAt: lastSuccess?.finished_at ?? lastSuccess?.started_at ?? null,
+      lastFailureAt: lastFailure?.finished_at ?? lastFailure?.started_at ?? null,
+      lastFailureError: lastFailure?.error ?? null,
+    };
+  });
+
+/** Sources retrieved for one of the caller's radars, newest first. */
+export const listRadarSources = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { radarId: string; limit?: number }) => {
+    if (!input?.radarId) throw new Error("Missing radar id.");
+    return { radarId: input.radarId, limit: Math.min(Math.max(input.limit ?? 25, 1), 100) };
+  })
+  .handler(async ({ data, context }) => {
+    const { data: sources, error } = await context.supabase
+      .from("research_sources")
+      .select("id, url, title, publisher, published_at, retrieved_at, snippet, query, provider")
+      .eq("radar_id", data.radarId)
+      .order("retrieved_at", { ascending: false })
+      .limit(data.limit);
+    if (error) throw new Error(error.message);
+    return sources ?? [];
+  });

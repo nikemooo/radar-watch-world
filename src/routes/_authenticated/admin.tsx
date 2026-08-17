@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useIsAdmin } from "@/components/app-shell";
+import { getSearchOpsMetrics } from "@/lib/radar.functions";
+
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
@@ -18,6 +21,15 @@ export const Route = createFileRoute("/_authenticated/admin")({
 
 function Admin() {
   const { data: isAdmin, isLoading: checking } = useIsAdmin();
+  const searchOps = useServerFn(getSearchOpsMetrics);
+
+  const { data: ops } = useQuery({
+    queryKey: ["search-ops"],
+    enabled: isAdmin === true,
+    queryFn: () => searchOps({}),
+  });
+
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-metrics"],
@@ -79,9 +91,66 @@ function Admin() {
           </div>
 
           <section className="panel p-5">
+            <p className="mono-label">Research providers</p>
+            <ul className="mt-3 space-y-2 text-sm">
+              {(ops?.providers ?? []).map((p) => (
+                <li key={p.id} className="flex items-center justify-between border-b border-border py-1.5 last:border-0">
+                  <span>
+                    {p.label}
+                    {p.primary && <span className="ml-2 mono-label">primary</span>}
+                  </span>
+                  <span
+                    className={
+                      p.configured
+                        ? "font-mono text-xs text-interesting"
+                        : "font-mono text-xs text-muted-foreground"
+                    }
+                  >
+                    {p.configured ? "key configured" : "key missing"}
+                  </span>
+                </li>
+              ))}
+              {!ops && <li className="text-muted-foreground">Loading provider status…</li>}
+            </ul>
+            <p className="mt-3 text-xs text-muted-foreground">
+              API keys are stored server-side only and are never sent to the browser.
+            </p>
+          </section>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Metric label="Search requests · 7d" value={String(ops?.requests ?? 0)} />
+            <Metric label="Successful requests" value={String(ops?.successes ?? 0)} />
+            <Metric label="Failed requests" value={String(ops?.failures ?? 0)} />
+            <Metric label="Sources retrieved" value={String(ops?.sources ?? 0)} />
+          </div>
+
+          <section className="panel grid gap-4 p-5 sm:grid-cols-3">
+            <div>
+              <p className="mono-label">Estimated search cost · 7d</p>
+              <p className="mt-2 font-mono text-2xl">${(ops?.costEstimate ?? 0).toFixed(3)}</p>
+            </div>
+            <div>
+              <p className="mono-label">Last successful sweep</p>
+              <p className="mt-2 font-mono text-sm">
+                {ops?.lastSuccessAt ? new Date(ops.lastSuccessAt).toLocaleString() : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="mono-label">Last failed sweep</p>
+              <p className="mt-2 font-mono text-sm">
+                {ops?.lastFailureAt ? new Date(ops.lastFailureAt).toLocaleString() : "—"}
+              </p>
+              {ops?.lastFailureError && (
+                <p className="mt-1 text-xs text-muted-foreground">{ops.lastFailureError}</p>
+              )}
+            </div>
+          </section>
+
+          <section className="panel p-5">
             <p className="mono-label">Estimated research cost · 7d</p>
             <p className="mt-2 font-mono text-2xl">${(data?.cost ?? 0).toFixed(2)}</p>
           </section>
+
 
           <section className="panel p-5">
             <p className="mono-label">Product events · 7d</p>
