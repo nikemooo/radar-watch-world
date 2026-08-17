@@ -189,10 +189,12 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
     );
   }
 
-  const finishRun = async (patch: Record<string, unknown>) => {
+  type RunUpdate = Database["public"]["Tables"]["monitor_runs"]["Update"];
+  const finishRun = async (patch: RunUpdate) => {
     if (!runId) return;
     await db.from("monitor_runs").update(patch).eq("id", runId);
   };
+
 
   if (research.documents.length === 0) {
     const failedAll = research.requests > 0 && research.successes === 0;
