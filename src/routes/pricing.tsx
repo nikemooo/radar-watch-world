@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/radar-mark";
+import { formatPlanPrice } from "@/lib/billing/plans";
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
@@ -65,11 +66,16 @@ function Pricing() {
                 <p className="mt-3 font-mono text-3xl">
                   {plan.price_amount === 0
                     ? "Free"
-                    : `$${(plan.price_amount / 100).toFixed(0)}`}
+                    : formatPlanPrice(plan.price_amount, plan.currency)}
                   {plan.price_amount > 0 && (
-                    <span className="text-sm text-muted-foreground">/{plan.interval}</span>
+                    <span className="text-sm text-muted-foreground">/month</span>
                   )}
                 </p>
+                {plan.price_amount_yearly > 0 && (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    or {formatPlanPrice(plan.price_amount_yearly, plan.currency)}/year
+                  </p>
+                )}
                 <ul className="mt-6 flex-1 space-y-2.5 text-sm">
                   <li className="flex gap-2">
                     <Check className="mt-0.5 size-4 shrink-0 text-interesting" />
