@@ -19,7 +19,13 @@ import { researchQueries, type SearchDocument } from "../search/providers.server
 import { asConfig, type RadarConfig } from "../radar-types";
 import { discoverCandidates, selectForDetailFetch, type CandidateItem } from "./candidates.server";
 import { fetchDetailPages } from "../search/detail-fetch.server";
-import { asAttributeMap, diffAttributes, extractDetailAttributes, type ExtractedDetail } from "./attributes.server";
+import {
+  asAttributeMap,
+  diffAttributes,
+  extractDetailAttributes,
+  inferAttributeSchema,
+  type ExtractedDetail,
+} from "./attributes.server";
 import type { AttributeSpec, AttributeValue } from "./normalize";
 import {
   assignFingerprints,
@@ -252,7 +258,21 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
   // Index/aggregator pages rarely carry item-level facts, so individual pages
   // are fetched (bounded by the radar's budget) and become primary sources.
   // ---------------------------------------------------------------------
-  const specs: AttributeSpec[] = Array.isArray(config.attribute_schema) ? config.attribute_schema : [];
+  let specs: AttributeSpec[] = Array.isArray(config.attribute_schema) ? config.attribute_schema : [];
+  if (specs.length === 0) {
+    // Radars created before the attribute layer keep working: infer once, persist.
+    try {
+      specs = await inferAttributeSchema(`${radar.name}\n${radar.raw_request}`);
+      if (specs.length > 0) {
+        await db
+          .from("radars")
+          .update({ config: { ...config, attribute_schema: specs } as never })
+          .eq("id", radar.id);
+      }
+    } catch (err) {
+      console.warn(`[radar:detail] attribute schema inference failed — ${(err as Error).message}`);
+    }
+  }
   const criteria = [
     config.target || radar.raw_request,
     config.important_criteria.join("; "),

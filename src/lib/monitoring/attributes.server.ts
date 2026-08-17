@@ -176,3 +176,45 @@ export function asAttributeMap(value: unknown): Record<string, AttributeValue> |
   if (entries.length === 0) return null;
   return Object.fromEntries(entries) as Record<string, AttributeValue>;
 }
+
+/**
+ * Backfill: radars created before the attribute layer existed have no
+ * attribute_schema. Infer one generically from the radar's own request so no
+ * category is special-cased and older radars still get item-level facts.
+ */
+export async function inferAttributeSchema(request: string): Promise<AttributeSpec[]> {
+  const result = await chatJson<{ attributes: AttributeSpec[] }>({
+    model: MODELS.fast,
+    schemaName: "radar_attribute_schema",
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["attributes"],
+      properties: {
+        attributes: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["key", "label", "kind"],
+            properties: {
+              key: { type: "string" },
+              label: { type: "string" },
+              kind: {
+                type: "string",
+                enum: ["text", "number", "money", "distance", "area", "date", "year", "url"],
+              },
+            },
+          },
+        },
+      },
+    },
+    system:
+      "List 5-10 item-level attributes that matter for the described monitoring subject. " +
+      "snake_case keys. kind: 'money' for prices, 'distance' for mileage/range, 'area' for size, " +
+      "'year' for model/build years, 'date' for dates, 'number' for counts, 'url' for links, 'text' otherwise. " +
+      "Always include a price attribute when the subject can be bought, and a listing_url attribute for marketplace subjects.",
+    user: request,
+  });
+  return result.attributes ?? [];
+}
