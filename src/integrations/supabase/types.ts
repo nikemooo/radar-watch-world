@@ -14,16 +14,452 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      alerts: {
+        Row: {
+          confidence: number
+          created_at: string
+          event_type: string | null
+          feedback: string | null
+          id: string
+          importance: string
+          opened_at: string | null
+          potential_impact: string | null
+          radar_id: string | null
+          sources: Json
+          status: string
+          summary: string
+          title: string
+          user_id: string
+          what_changed: string | null
+          why_it_matters: string | null
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          event_type?: string | null
+          feedback?: string | null
+          id?: string
+          importance?: string
+          opened_at?: string | null
+          potential_impact?: string | null
+          radar_id?: string | null
+          sources?: Json
+          status?: string
+          summary: string
+          title: string
+          user_id: string
+          what_changed?: string | null
+          why_it_matters?: string | null
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          event_type?: string | null
+          feedback?: string | null
+          id?: string
+          importance?: string
+          opened_at?: string | null
+          potential_impact?: string | null
+          radar_id?: string | null
+          sources?: Json
+          status?: string
+          summary?: string
+          title?: string
+          user_id?: string
+          what_changed?: string | null
+          why_it_matters?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alerts_radar_id_fkey"
+            columns: ["radar_id"]
+            isOneToOne: false
+            referencedRelation: "radars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analytics_events: {
+        Row: {
+          created_at: string
+          event: string
+          id: string
+          properties: Json
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          event: string
+          id?: string
+          properties?: Json
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          event?: string
+          id?: string
+          properties?: Json
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      findings: {
+        Row: {
+          currency: string | null
+          entity: string | null
+          fingerprint: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          numeric_value: number | null
+          radar_id: string
+          snapshot: Json
+          title: string
+          url: string | null
+          user_id: string
+        }
+        Insert: {
+          currency?: string | null
+          entity?: string | null
+          fingerprint: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          numeric_value?: number | null
+          radar_id: string
+          snapshot?: Json
+          title: string
+          url?: string | null
+          user_id: string
+        }
+        Update: {
+          currency?: string | null
+          entity?: string | null
+          fingerprint?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          numeric_value?: number | null
+          radar_id?: string
+          snapshot?: Json
+          title?: string
+          url?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "findings_radar_id_fkey"
+            columns: ["radar_id"]
+            isOneToOne: false
+            referencedRelation: "radars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      monitor_runs: {
+        Row: {
+          alerts_created: number
+          cost_estimate: number
+          error: string | null
+          finished_at: string | null
+          id: string
+          items_found: number
+          new_items: number
+          provider: string | null
+          radar_id: string
+          started_at: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          alerts_created?: number
+          cost_estimate?: number
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          items_found?: number
+          new_items?: number
+          provider?: string | null
+          radar_id: string
+          started_at?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          alerts_created?: number
+          cost_estimate?: number
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          items_found?: number
+          new_items?: number
+          provider?: string | null
+          radar_id?: string
+          started_at?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monitor_runs_radar_id_fkey"
+            columns: ["radar_id"]
+            isOneToOne: false
+            referencedRelation: "radars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plans: {
+        Row: {
+          active: boolean
+          created_at: string
+          currency: string
+          features: Json
+          interval: string
+          key: string
+          max_radars: number
+          min_check_interval_minutes: number
+          name: string
+          price_amount: number
+          sort_order: number
+          stripe_price_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          currency?: string
+          features?: Json
+          interval?: string
+          key: string
+          max_radars?: number
+          min_check_interval_minutes?: number
+          name: string
+          price_amount?: number
+          sort_order?: number
+          stripe_price_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          currency?: string
+          features?: Json
+          interval?: string
+          key?: string
+          max_radars?: number
+          min_check_interval_minutes?: number
+          name?: string
+          price_amount?: number
+          sort_order?: number
+          stripe_price_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          digest_hour: number
+          display_name: string | null
+          email: string | null
+          id: string
+          notification_email: boolean
+          onboarding_done: boolean
+          plan_key: string
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          digest_hour?: number
+          display_name?: string | null
+          email?: string | null
+          id: string
+          notification_email?: boolean
+          onboarding_done?: boolean
+          plan_key?: string
+          timezone?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          digest_hour?: number
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          notification_email?: boolean
+          onboarding_done?: boolean
+          plan_key?: string
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      radars: {
+        Row: {
+          category: string
+          config: Json
+          created_at: string
+          frequency: string
+          id: string
+          last_run_at: string | null
+          memory: Json
+          name: string
+          next_run_at: string | null
+          raw_request: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string
+          config?: Json
+          created_at?: string
+          frequency?: string
+          id?: string
+          last_run_at?: string | null
+          memory?: Json
+          name: string
+          next_run_at?: string | null
+          raw_request: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string
+          config?: Json
+          created_at?: string
+          frequency?: string
+          id?: string
+          last_run_at?: string | null
+          memory?: Json
+          name?: string
+          next_run_at?: string | null
+          raw_request?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      reports: {
+        Row: {
+          content: Json
+          created_at: string
+          id: string
+          kind: string
+          period_end: string
+          period_start: string
+          user_id: string
+        }
+        Insert: {
+          content?: Json
+          created_at?: string
+          id?: string
+          kind?: string
+          period_end: string
+          period_start: string
+          user_id: string
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          id?: string
+          kind?: string
+          period_end?: string
+          period_start?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          cancel_at_period_end: boolean
+          created_at: string
+          current_period_end: string | null
+          id: string
+          plan_key: string
+          provider: string
+          status: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cancel_at_period_end?: boolean
+          created_at?: string
+          current_period_end?: string | null
+          id?: string
+          plan_key: string
+          provider?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cancel_at_period_end?: boolean
+          created_at?: string
+          current_period_end?: string | null
+          id?: string
+          plan_key?: string
+          provider?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscriptions_plan_key_fkey"
+            columns: ["plan_key"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +586,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const
