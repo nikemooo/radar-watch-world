@@ -3,6 +3,10 @@
  * Every Radar — cars, stocks, watches, flights, jobs, news — is described
  * with the same structure. No category is special-cased.
  */
+import type { AttributeSpec } from "./monitoring/normalize";
+
+export type { AttributeSpec };
+
 export type RadarFrequency = "smart" | "instant" | "daily" | "weekly";
 
 export type Importance = "critical" | "important" | "interesting" | "minor";
@@ -20,6 +24,8 @@ export interface RadarConfig {
   monitored_events: string[];
   search_queries: string[];
   exclusions: string[];
+  /** Item-level attributes that matter for THIS radar (category-agnostic). */
+  attribute_schema: AttributeSpec[];
 }
 
 export const emptyConfig: RadarConfig = {
@@ -35,6 +41,7 @@ export const emptyConfig: RadarConfig = {
   monitored_events: [],
   search_queries: [],
   exclusions: [],
+  attribute_schema: [],
 };
 
 export function asConfig(value: unknown): RadarConfig {

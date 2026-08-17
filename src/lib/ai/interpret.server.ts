@@ -39,6 +39,7 @@ const configSchema = {
         "monitored_events",
         "search_queries",
         "exclusions",
+        "attribute_schema",
       ],
       properties: {
         target: { type: "string" },
@@ -53,6 +54,22 @@ const configSchema = {
         monitored_events: { type: "array", items: { type: "string" } },
         search_queries: { type: "array", items: { type: "string" } },
         exclusions: { type: "array", items: { type: "string" } },
+        attribute_schema: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["key", "label", "kind"],
+            properties: {
+              key: { type: "string" },
+              label: { type: "string" },
+              kind: {
+                type: "string",
+                enum: ["text", "number", "money", "distance", "area", "date", "year", "url"],
+              },
+            },
+          },
+        },
       },
     },
   },
@@ -86,7 +103,13 @@ export async function interpretRequest(request: string): Promise<InterpretedRada
       "flights or breaking news, 'rolling' for marketplaces and ongoing coverage, 'evergreen' for slow " +
       "research topics. recency_days is how old information may be and still count as a genuine discovery: " +
       "news and company monitoring typically 1-7, travel 1-3, marketplaces 30-90, evergreen research 180-730. " +
-      "Infer it from the request; the user can override it later.",
+      "Infer it from the request; the user can override it later. " +
+      "attribute_schema lists 5-10 item-level attributes that matter for this subject, each with a snake_case key, " +
+      "a short human label and a kind: 'money' for prices, 'distance' for mileage/range, 'area' for size, " +
+      "'year' for model/build years, 'date' for dates, 'number' for counts, 'url' for links, 'text' otherwise. " +
+      "Derive them from the subject itself (a car needs make/model/year/mileage/colour/price/location/seller/listing_url; " +
+      "a watch needs brand/model/reference/condition/price/seller/listing_url; a property needs location/price/area/rooms/property_type/listing_url). " +
+      "Always include a price attribute when the subject can be bought, and always include a listing_url attribute for marketplace subjects.",
     user: request,
   });
 
