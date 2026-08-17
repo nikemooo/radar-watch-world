@@ -151,16 +151,24 @@ export function similarity(
 
 const STOPWORDS = new Set(["the", "and", "for", "with", "in", "of", "a", "till", "salu", "kr", "sek", "eur"]);
 
-/** Jaccard overlap of meaningful title tokens — deterministic, no model. */
+/**
+ * Deterministic title comparability: overlap of meaningful tokens, with a hard
+ * guard that model/reference codes (tokens containing digits) must agree.
+ * This prevents comparing different references, generations or addresses.
+ */
 export function titleSimilarity(a: string, b: string): number {
-  const tokens = (s: string) =>
-    new Set(norm(s).split(" ").filter((t) => t.length > 1 && !STOPWORDS.has(t)));
+  const tokens = (s: string) => norm(s).split(" ").filter((t) => t.length > 1 && !STOPWORDS.has(t));
   const x = tokens(a);
   const y = tokens(b);
-  if (x.size === 0 || y.size === 0) return 0;
-  let overlap = 0;
-  for (const t of x) if (y.has(t)) overlap += 1;
-  return overlap / new Set([...x, ...y]).size;
+  if (x.length === 0 || y.length === 0) return 0;
+  const codes = (t: string[]) => t.filter((v) => /\d/.test(v) && v.length >= 3);
+  const cx = codes(x);
+  const cy = codes(y);
+  if (cx.length > 0 && cy.length > 0 && !cx.some((v) => cy.includes(v))) return 0;
+  const ys = new Set(y);
+  const overlap = [...new Set(x)].filter((t) => ys.has(t)).length;
+  if (overlap < 2) return 0;
+  return overlap / Math.min(new Set(x).size, ys.size);
 }
 
 /** Normalized value + currency of the benchmarked attribute for an observation. */
@@ -398,7 +406,7 @@ export function buildBaseline(opts: {
     }
     const sim = similarity(subject, candidate, keys);
     // Title-only comparability must clear a stricter bar.
-    const threshold = sim.fallback ? Math.max(settings.minSimilarity, 0.5) : settings.minSimilarity;
+    const threshold = sim.fallback ? Math.max(settings.minSimilarity, 0.6) : settings.minSimilarity;
     if (sim.score < threshold || sim.matchedOn.length === 0) {
       skippedSimilarity += 1;
       continue;
