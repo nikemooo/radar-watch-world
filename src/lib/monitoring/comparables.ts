@@ -108,6 +108,8 @@ function attributeAgreement(spec: AttributeSpec, a: AttributeValue, b: Attribute
 
 export interface Similarity {
   score: number;
+  /** True when comparability rests on the item's own title text only. */
+  fallback: boolean;
   /** Attribute keys that were actually compared (both sides known). */
   matchedOn: string[];
   /** Attribute keys that could not be compared for lack of data. */
@@ -136,10 +138,29 @@ export function similarity(
     total += agreement;
     counted += 1;
   }
-  // No shared, known discriminator = not comparable. Sharing a category is
-  // explicitly NOT enough (rule 8).
-  if (counted === 0) return { score: 0, matchedOn, unknown };
-  return { score: total / counted, matchedOn, unknown };
+  // No shared, known discriminator: fall back to the items' own titles, which
+  // are real source text (never invented). This is a weaker signal, so it is
+  // flagged and drags baseline confidence down. Sharing a category alone is
+  // still NOT enough (rule 8) — the titles must genuinely overlap.
+  if (counted === 0) {
+    const lexical = titleSimilarity(subject.title, candidate.title);
+    return { score: lexical, fallback: true, matchedOn: lexical > 0 ? ["title"] : [], unknown };
+  }
+  return { score: total / counted, fallback: false, matchedOn, unknown };
+}
+
+const STOPWORDS = new Set(["the", "and", "for", "with", "in", "of", "a", "till", "salu", "kr", "sek", "eur"]);
+
+/** Jaccard overlap of meaningful title tokens — deterministic, no model. */
+export function titleSimilarity(a: string, b: string): number {
+  const tokens = (s: string) =>
+    new Set(norm(s).split(" ").filter((t) => t.length > 1 && !STOPWORDS.has(t)));
+  const x = tokens(a);
+  const y = tokens(b);
+  if (x.size === 0 || y.size === 0) return 0;
+  let overlap = 0;
+  for (const t of x) if (y.has(t)) overlap += 1;
+  return overlap / new Set([...x, ...y]).size;
 }
 
 /** Normalized value + currency of the benchmarked attribute for an observation. */
@@ -359,6 +380,7 @@ export function buildBaseline(opts: {
   let skippedCurrency = 0;
   let skippedSimilarity = 0;
   let skippedStale = 0;
+  let fallbackUsed = 0;
 
   for (const candidate of population) {
     if (candidate.fingerprint === subject.fingerprint) continue;
@@ -375,7 +397,9 @@ export function buildBaseline(opts: {
       continue;
     }
     const sim = similarity(subject, candidate, keys);
-    if (sim.score < settings.minSimilarity || sim.matchedOn.length === 0) {
+    // Title-only comparability must clear a stricter bar.
+    const threshold = sim.fallback ? Math.max(settings.minSimilarity, 0.5) : settings.minSimilarity;
+    if (sim.score < threshold || sim.matchedOn.length === 0) {
       skippedSimilarity += 1;
       continue;
     }
@@ -392,6 +416,7 @@ export function buildBaseline(opts: {
       weight: Number(weight.toFixed(3)),
       observedAt: candidate.observedAt,
     });
+    if (sim.fallback) fallbackUsed += 1;
     similaritySum += sim.score;
     completenessSum += sim.matchedOn.length / Math.max(1, keys.length);
     recencySum += decay;
@@ -456,6 +481,11 @@ export function buildBaseline(opts: {
   }
   if (skippedCurrency > 0) {
     limitations.push(`${skippedCurrency} observation(s) in another currency were excluded — no conversion is applied.`);
+  }
+  if (fallbackUsed > 0) {
+    limitations.push(
+      `${fallbackUsed} comparable(s) were matched on title text only because item-level attributes were unavailable.`,
+    );
   }
   if (stats.stddev === null) {
     limitations.push("Sample too small for a meaningful standard deviation.");
