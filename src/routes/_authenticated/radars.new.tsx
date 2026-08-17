@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { interpretRadarRequest } from "@/lib/radar.functions";
+import { createRadar, interpretRadarRequest } from "@/lib/radar.functions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,7 @@ const suggestions = [
 function NewRadar() {
   const navigate = useNavigate();
   const interpret = useServerFn(interpretRadarRequest);
+  const createRadarFn = useServerFn(createRadar);
   const [request, setRequest] = useState("");
   const [name, setName] = useState("");
   const [category, setCategory] = useState("general");
