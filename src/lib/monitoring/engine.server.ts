@@ -302,11 +302,11 @@ async function recordFetchHealth(
 
 export type RunOptions = {
   /** Remaining alerts the user's plan allows this month; null = unlimited. */
-  alertBudget?: number | null;
+  alertBudget?: number | null | undefined;
   /** Plan-imposed cap on detail fetches for this sweep. */
-  maxDetailFetches?: number;
+  maxDetailFetches?: number | undefined;
   /** Plan-level priority processing flag. */
-  priority?: boolean;
+  priority?: boolean | undefined;
 };
 
 export async function runRadarCycle(
