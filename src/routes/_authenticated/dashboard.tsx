@@ -23,6 +23,22 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function Dashboard() {
+  const navigate = useNavigate();
+  const onboardingState = useServerFn(getOnboardingState);
+
+  // First-time users go through onboarding once; everyone else stays here.
+  const { data: onboarding } = useQuery({
+    queryKey: ["onboarding-state"],
+    queryFn: () => onboardingState({}),
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    if (onboarding && !onboarding.onboardingDone && onboarding.radarCount === 0) {
+      navigate({ to: "/onboarding", replace: true });
+    }
+  }, [onboarding, navigate]);
+
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard"],
     queryFn: async () => {
