@@ -167,6 +167,10 @@ export type Database = {
           new_items: number
           provider: string | null
           radar_id: string
+          search_failures: number
+          search_requests: number
+          search_successes: number
+          sources_retrieved: number
           started_at: string
           status: string
           user_id: string
@@ -181,6 +185,10 @@ export type Database = {
           new_items?: number
           provider?: string | null
           radar_id: string
+          search_failures?: number
+          search_requests?: number
+          search_successes?: number
+          sources_retrieved?: number
           started_at?: string
           status?: string
           user_id: string
@@ -195,6 +203,10 @@ export type Database = {
           new_items?: number
           provider?: string | null
           radar_id?: string
+          search_failures?: number
+          search_requests?: number
+          search_successes?: number
+          sources_retrieved?: number
           started_at?: string
           status?: string
           user_id?: string
@@ -373,6 +385,69 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      research_sources: {
+        Row: {
+          created_at: string
+          id: string
+          provider: string
+          published_at: string | null
+          publisher: string | null
+          query: string | null
+          radar_id: string
+          retrieved_at: string
+          run_id: string | null
+          snippet: string
+          title: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          provider?: string
+          published_at?: string | null
+          publisher?: string | null
+          query?: string | null
+          radar_id: string
+          retrieved_at?: string
+          run_id?: string | null
+          snippet?: string
+          title: string
+          url: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          provider?: string
+          published_at?: string | null
+          publisher?: string | null
+          query?: string | null
+          radar_id?: string
+          retrieved_at?: string
+          run_id?: string | null
+          snippet?: string
+          title?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "research_sources_radar_id_fkey"
+            columns: ["radar_id"]
+            isOneToOne: false
+            referencedRelation: "radars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "research_sources_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "monitor_runs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       subscriptions: {
         Row: {
