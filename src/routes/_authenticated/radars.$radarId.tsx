@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, Loader2, Pause, Play, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { runRadarNow } from "@/lib/radar.functions";
+import { listRadarSources, runRadarNow } from "@/lib/radar.functions";
 import { AlertCard, type AlertRow } from "@/components/alert-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
