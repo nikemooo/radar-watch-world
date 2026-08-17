@@ -349,15 +349,12 @@ ${changed
     );
   }
 
-  await db.from("monitor_runs").insert({
-    radar_id: radar.id,
-    user_id: radar.user_id,
-    status: "ok",
-    provider: research.provider,
+  await finishRun({
+    status: research.failures > 0 && research.successes === 0 ? "error" : "ok",
     items_found: items.length,
     new_items: changed.length,
     alerts_created: alertsCreated,
-    started_at: started,
+    error: research.errors.length ? research.errors.join(" | ").slice(0, 800) : null,
     finished_at: now,
   });
 
@@ -369,5 +366,16 @@ ${changed
     newItems: changed.length,
     alertsCreated,
     provider: research.provider,
+    sourcesRetrieved: research.documents.length,
+    searchRequests: research.requests,
+    searchFailures: research.failures,
+    costEstimate: research.costEstimate,
   };
 }
+
+/** Providers return loose date strings; only keep parsable ones. */
+function safeDate(value: string): string | null {
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
+
