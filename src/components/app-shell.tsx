@@ -1,4 +1,4 @@
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState, type LinkProps } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
@@ -20,7 +20,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
-  to: string;
+  to: NonNullable<LinkProps["to"]>;
   label: string;
   icon: LucideIcon;
 }
@@ -172,7 +172,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function NavLink({ item, active, badge }: { item: NavItem; active: boolean; badge?: number }) {
+function NavLink({ item, active, badge }: { item: NavItem; active: boolean; badge?: number | undefined }) {
   return (
     <Link
       to={item.to}
