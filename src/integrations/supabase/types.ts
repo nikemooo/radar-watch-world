@@ -351,15 +351,21 @@ export type Database = {
           attributes_extracted: number
           attributes_missing: number
           baseline_findings: number
+          baselines_backfilled: number
           baselines_computed: number
           baselines_insufficient: number
           candidates_discovered: number
           candidates_selected: number
+          comparable_coverage: number
           comparable_observations: number
+          cost_ceiling: number
           cost_estimate: number
           detail_cost_estimate: number
+          detail_fetch_budget: number
+          detail_fetches_attempted: number
           detail_fetches_failed: number
           detail_fetches_ok: number
+          detail_fetches_skipped_backoff: number
           error: string | null
           extractions_failed: number
           extractions_ok: number
@@ -382,6 +388,7 @@ export type Database = {
           suppressed_duplicate: number
           suppressed_recency: number
           suppressed_relevance: number
+          usable_comparables: number
           user_id: string
         }
         Insert: {
@@ -389,15 +396,21 @@ export type Database = {
           attributes_extracted?: number
           attributes_missing?: number
           baseline_findings?: number
+          baselines_backfilled?: number
           baselines_computed?: number
           baselines_insufficient?: number
           candidates_discovered?: number
           candidates_selected?: number
+          comparable_coverage?: number
           comparable_observations?: number
+          cost_ceiling?: number
           cost_estimate?: number
           detail_cost_estimate?: number
+          detail_fetch_budget?: number
+          detail_fetches_attempted?: number
           detail_fetches_failed?: number
           detail_fetches_ok?: number
+          detail_fetches_skipped_backoff?: number
           error?: string | null
           extractions_failed?: number
           extractions_ok?: number
@@ -420,6 +433,7 @@ export type Database = {
           suppressed_duplicate?: number
           suppressed_recency?: number
           suppressed_relevance?: number
+          usable_comparables?: number
           user_id: string
         }
         Update: {
@@ -427,15 +441,21 @@ export type Database = {
           attributes_extracted?: number
           attributes_missing?: number
           baseline_findings?: number
+          baselines_backfilled?: number
           baselines_computed?: number
           baselines_insufficient?: number
           candidates_discovered?: number
           candidates_selected?: number
+          comparable_coverage?: number
           comparable_observations?: number
+          cost_ceiling?: number
           cost_estimate?: number
           detail_cost_estimate?: number
+          detail_fetch_budget?: number
+          detail_fetches_attempted?: number
           detail_fetches_failed?: number
           detail_fetches_ok?: number
+          detail_fetches_skipped_backoff?: number
           error?: string | null
           extractions_failed?: number
           extractions_ok?: number
@@ -458,6 +478,7 @@ export type Database = {
           suppressed_duplicate?: number
           suppressed_recency?: number
           suppressed_relevance?: number
+          usable_comparables?: number
           user_id?: string
         }
         Relationships: [
@@ -570,6 +591,7 @@ export type Database = {
           last_run_at: string | null
           last_successful_sweep_at: string | null
           max_detail_fetches: number
+          max_sweep_cost: number
           memory: Json
           min_comparables: number
           monitoring_window: string
@@ -594,6 +616,7 @@ export type Database = {
           last_run_at?: string | null
           last_successful_sweep_at?: string | null
           max_detail_fetches?: number
+          max_sweep_cost?: number
           memory?: Json
           min_comparables?: number
           monitoring_window?: string
@@ -618,6 +641,7 @@ export type Database = {
           last_run_at?: string | null
           last_successful_sweep_at?: string | null
           max_detail_fetches?: number
+          max_sweep_cost?: number
           memory?: Json
           min_comparables?: number
           monitoring_window?: string
@@ -734,6 +758,45 @@ export type Database = {
           },
         ]
       }
+      source_fetch_stats: {
+        Row: {
+          attempts: number
+          failures: number
+          host: string
+          id: string
+          last_attempt_at: string | null
+          last_failure_reason: string | null
+          last_success_at: string | null
+          successes: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempts?: number
+          failures?: number
+          host: string
+          id?: string
+          last_attempt_at?: string | null
+          last_failure_reason?: string | null
+          last_success_at?: string | null
+          successes?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempts?: number
+          failures?: number
+          host?: string
+          id?: string
+          last_attempt_at?: string | null
+          last_failure_reason?: string | null
+          last_success_at?: string | null
+          successes?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       subscriptions: {
         Row: {
           cancel_at_period_end: boolean
@@ -783,6 +846,45 @@ export type Database = {
             referencedColumns: ["key"]
           },
         ]
+      }
+      url_fetch_state: {
+        Row: {
+          consecutive_failures: number
+          host: string
+          id: string
+          last_attempt_at: string | null
+          last_reason: string | null
+          last_success_at: string | null
+          next_attempt_at: string | null
+          updated_at: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          consecutive_failures?: number
+          host: string
+          id?: string
+          last_attempt_at?: string | null
+          last_reason?: string | null
+          last_success_at?: string | null
+          next_attempt_at?: string | null
+          updated_at?: string
+          url: string
+          user_id: string
+        }
+        Update: {
+          consecutive_failures?: number
+          host?: string
+          id?: string
+          last_attempt_at?: string | null
+          last_reason?: string | null
+          last_success_at?: string | null
+          next_attempt_at?: string | null
+          updated_at?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {

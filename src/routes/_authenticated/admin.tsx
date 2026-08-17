@@ -136,6 +136,53 @@ function Admin() {
             <Metric label="Suppressed · relevance" value={String(ops?.suppressedRelevance ?? 0)} />
           </div>
 
+          <h2 className="mono-label">Comparable coverage · 7d</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Metric label="Candidate items" value={String(ops?.candidates ?? 0)} />
+            <Metric label="Detail fetches attempted" value={String(ops?.detailAttempted ?? 0)} />
+            <Metric label="Successful detail fetches" value={String(ops?.detailOk ?? 0)} />
+            <Metric label="Blocked / failed fetches" value={String(ops?.detailFailed ?? 0)} />
+            <Metric label="Skipped (backoff)" value={String(ops?.detailSkippedBackoff ?? 0)} />
+            <Metric
+              label="Detail fetch success rate"
+              value={
+                (ops?.detailAttempted ?? 0) > 0
+                  ? `${Math.round(((ops?.detailOk ?? 0) / (ops?.detailAttempted ?? 1)) * 100)}%`
+                  : "—"
+              }
+            />
+            <Metric label="Usable comparables (latest sweep)" value={String(ops?.usableComparables ?? 0)} />
+            <Metric label="Comparable coverage" value={`${(ops?.comparableCoverage ?? 0).toFixed(1)}%`} />
+            <Metric label="Baselines computed" value={String(ops?.baselinesComputed ?? 0)} />
+            <Metric label="Still insufficient" value={String(ops?.baselinesInsufficient ?? 0)} />
+            <Metric label="Backfilled later" value={String(ops?.baselinesBackfilled ?? 0)} />
+            <Metric label="Detail fetch cost · 7d" value={`$${(ops?.detailCost ?? 0).toFixed(3)}`} />
+          </div>
+
+          <section className="panel p-5">
+            <p className="mono-label">Source reliability (learned, never hard-coded)</p>
+            <ul className="mt-3 divide-y divide-border text-sm">
+              {(ops?.hosts ?? []).map((h) => (
+                <li key={h.host} className="flex flex-wrap items-baseline gap-x-3 py-2">
+                  <span className="font-mono">{h.host}</span>
+                  <span className="text-muted-foreground">
+                    {h.successes}/{h.attempts} readable
+                  </span>
+                  <span className="ml-auto font-mono">{h.rate === null ? "—" : `${h.rate}%`}</span>
+                  {h.lastFailureReason && (
+                    <span className="w-full text-xs text-muted-foreground">
+                      last failure: {h.lastFailureReason}
+                    </span>
+                  )}
+                </li>
+              ))}
+              {(ops?.hosts ?? []).length === 0 && (
+                <li className="py-2 text-muted-foreground">No detail fetches recorded yet.</li>
+              )}
+            </ul>
+          </section>
+
+
           <section className="panel grid gap-4 p-5 sm:grid-cols-3">
             <div>
               <p className="mono-label">Estimated search cost · 7d</p>

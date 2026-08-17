@@ -17,7 +17,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { chatJson, MODELS } from "../ai/gateway.server";
 import { researchQueries, type SearchDocument } from "../search/providers.server";
 import { asConfig, type RadarConfig } from "../radar-types";
-import { discoverCandidates, selectForDetailFetch, type CandidateItem } from "./candidates.server";
+import { discoverCandidates, type CandidateItem } from "./candidates.server";
 import { fetchDetailPages } from "../search/detail-fetch.server";
 import {
   asAttributeMap,
@@ -30,10 +30,20 @@ import type { AttributeSpec, AttributeValue } from "./normalize";
 import {
   buildBaseline,
   comparableSettings,
+  observedValue,
+  valueAttributeKey,
   NO_BASELINE_PHRASE,
   type BaselineResult,
   type Observation,
 } from "./comparables";
+import {
+  adaptiveBudget,
+  backoffUntil,
+  prioritizeCandidates,
+  type HostStat,
+  type KnownItem,
+  type UrlState,
+} from "./fetch-policy";
 import {
   assignFingerprints,
   clampRecencyDays,
@@ -180,6 +190,14 @@ export interface RunResult {
   baselinesComputed?: number;
   baselinesInsufficient?: number;
   comparableObservations?: number;
+  detailFetchesAttempted?: number;
+  detailFetchesSkippedBackoff?: number;
+  detailFetchBudget?: number;
+  budgetReason?: string;
+  usableComparables?: number;
+  comparableCoverage?: number;
+  baselinesBackfilled?: number;
+  costCeiling?: number;
 }
 
 interface Decision {
@@ -190,6 +208,96 @@ interface Decision {
   decision: string;
   reason: string;
   published_at: string | null;
+}
+
+
+/**
+ * Persist per-host success rates and per-URL backoff so the next sweep spends
+ * its budget on sources that actually answer.
+ */
+async function recordFetchHealth(
+  db: Db,
+  userId: string,
+  input: {
+    ok: string[];
+    failed: { url: string; reason: string }[];
+    previous: Map<string, UrlState>;
+    hostStats: Map<string, HostStat>;
+  },
+): Promise<void> {
+  const now = new Date().toISOString();
+  const hostOf = (url: string): string | null => {
+    try {
+      return new URL(url).host.replace(/^www\./, "");
+    } catch {
+      return null;
+    }
+  };
+
+  const perHost = new Map<string, { attempts: number; successes: number; failures: number; reason: string | null }>();
+  const bump = (url: string, success: boolean, reason: string | null) => {
+    const host = hostOf(url);
+    if (!host) return;
+    const agg = perHost.get(host) ?? { attempts: 0, successes: 0, failures: 0, reason: null };
+    agg.attempts += 1;
+    if (success) agg.successes += 1;
+    else {
+      agg.failures += 1;
+      agg.reason = reason;
+    }
+    perHost.set(host, agg);
+  };
+  for (const url of input.ok) bump(url, true, null);
+  for (const f of input.failed) bump(f.url, false, f.reason);
+
+  const hostRows = [...perHost.entries()].map(([host, agg]) => {
+    const prior = input.hostStats.get(host);
+    return {
+      user_id: userId,
+      host,
+      attempts: (prior?.attempts ?? 0) + agg.attempts,
+      successes: (prior?.successes ?? 0) + agg.successes,
+      failures: Math.max(0, (prior?.attempts ?? 0) - (prior?.successes ?? 0)) + agg.failures,
+      last_attempt_at: now,
+      last_success_at: agg.successes > 0 ? now : null,
+      last_failure_reason: agg.reason,
+      updated_at: now,
+    };
+  });
+  if (hostRows.length > 0) {
+    await db.from("source_fetch_stats").upsert(hostRows, { onConflict: "user_id,host" });
+  }
+
+  const urlRows = [
+    ...input.ok.map((url) => ({
+      user_id: userId,
+      url,
+      host: hostOf(url) ?? "",
+      consecutive_failures: 0,
+      last_reason: null as string | null,
+      last_attempt_at: now,
+      last_success_at: now,
+      next_attempt_at: null as string | null,
+      updated_at: now,
+    })),
+    ...input.failed.map((f) => {
+      const failures = (input.previous.get(f.url)?.consecutiveFailures ?? 0) + 1;
+      return {
+        user_id: userId,
+        url: f.url,
+        host: hostOf(f.url) ?? "",
+        consecutive_failures: failures,
+        last_reason: f.reason.slice(0, 300),
+        last_attempt_at: now,
+        last_success_at: input.previous.get(f.url) ? null : null,
+        next_attempt_at: backoffUntil(failures, f.reason),
+        updated_at: now,
+      };
+    }),
+  ].filter((r) => r.host);
+  if (urlRows.length > 0) {
+    await db.from("url_fetch_state").upsert(urlRows, { onConflict: "user_id,url" });
+  }
 }
 
 export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult> {
@@ -291,6 +399,39 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
     .filter(Boolean)
     .join("\n");
 
+  const valueKey = valueAttributeKey(specs);
+  const minComparables = Math.max(2, Number(radar.min_comparables ?? 10));
+  const costCeiling = Math.max(0.005, Number(radar.max_sweep_cost ?? 0.06));
+
+  // Persisted state is loaded BEFORE the detail stage so the fetch policy can
+  // aim the budget at items that actually improve comparable coverage.
+  const { data: existingRows } = await db.from("findings").select("*").eq("radar_id", radar.id);
+  const existing = new Map((existingRows ?? []).map((f) => [f.fingerprint, f]));
+
+  const asObservation = (f: NonNullable<typeof existingRows>[number]): Observation => ({
+    fingerprint: f.fingerprint,
+    title: f.title,
+    url: f.primary_url ?? f.url,
+    attributes: asAttributeMap(f.attributes) ?? {},
+    numericValue: f.numeric_value === null ? null : Number(f.numeric_value),
+    currency: f.currency,
+    observedAt: f.last_seen_at,
+    detailFetched: f.detail_status === "fetched",
+  });
+  /**
+   * A "usable comparable" is an observation whose value came from a read
+   * item-level page — the quality bar for comparables is not lowered here, so
+   * coverage is measured against stated facts only.
+   */
+  const isUsableComparable = (o: Observation): boolean => {
+    const v = observedValue(o, valueKey);
+    return v !== null && v.stated;
+  };
+  const usableComparablesBefore = (existingRows ?? []).filter((f) =>
+    isUsableComparable(asObservation(f)),
+  ).length;
+  const comparableGap = Math.max(0, minComparables - usableComparablesBefore);
+
   let candidates: CandidateItem[] = [];
   let indexPages: string[] = [];
   let selected: CandidateItem[] = [];
@@ -302,6 +443,10 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
   let attributesExtracted = 0;
   let attributesMissing = 0;
   let detailCostEstimate = 0;
+  let detailFetchesAttempted = 0;
+  let detailFetchesSkippedBackoff = 0;
+  let detailFetchBudget = 0;
+  let budgetReason = "detail stage not reached";
   const detailDocs: SearchDocument[] = [];
   const discoveryByUrl = new Map<string, string>();
 
@@ -310,8 +455,63 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
       const discovery = await discoverCandidates(research.documents, criteria);
       candidates = discovery.candidates;
       indexPages = discovery.indexPages;
-      const budget = Math.max(0, Math.min(Number(radar.max_detail_fetches ?? 8), 25));
-      selected = selectForDetailFetch(candidates, budget);
+      // Adaptive budget + priority: fetch what is most likely to yield stated,
+      // item-level facts — never simply the first N results.
+      const [{ data: hostRows }, { data: urlRows }] = await Promise.all([
+        db.from("source_fetch_stats").select("host, attempts, successes").eq("user_id", radar.user_id),
+        db
+          .from("url_fetch_state")
+          .select("url, consecutive_failures, next_attempt_at")
+          .eq("user_id", radar.user_id),
+      ]);
+      const hostStats = new Map<string, HostStat>(
+        (hostRows ?? []).map((h) => [h.host, { host: h.host, attempts: h.attempts, successes: h.successes }]),
+      );
+      const urlStates = new Map<string, UrlState>(
+        (urlRows ?? []).map((u) => [
+          u.url,
+          { url: u.url, consecutiveFailures: u.consecutive_failures, nextAttemptAt: u.next_attempt_at },
+        ]),
+      );
+      const known = new Map<string, KnownItem>();
+      for (const f of existingRows ?? []) {
+        const url = f.primary_url ?? f.url;
+        if (!url) continue;
+        const attrs = asAttributeMap(f.attributes) ?? {};
+        known.set(url, {
+          url,
+          detailStatus: f.detail_status,
+          detailFetchedAt: f.detail_fetched_at,
+          hasComparableValue: isUsableComparable(asObservation(f)),
+          // The comparable value is the attribute that matters most for coverage.
+          missingCritical: valueKey ? !attrs[valueKey]?.raw : false,
+        });
+      }
+
+      const fetchable = candidates.filter((c) => c.url && c.individual).length;
+      const budgetPlan = adaptiveBudget({
+        configured: Number(radar.max_detail_fetches ?? 8),
+        frequency: radar.frequency,
+        comparableGap: specs.length > 0 ? comparableGap : 0,
+        fetchableCandidates: fetchable,
+        spentCost: research.costEstimate,
+        costCeiling,
+        perFetchCost: 0.001,
+      });
+      detailFetchBudget = budgetPlan.budget;
+      budgetReason = budgetPlan.reason;
+
+      const priority = prioritizeCandidates({
+        candidates,
+        hostStats,
+        urlStates,
+        known,
+        needsComparables: specs.length > 0 && comparableGap > 0,
+        budget: budgetPlan.budget,
+      });
+      selected = priority.selected;
+      detailFetchesSkippedBackoff = priority.skippedBackoff;
+      detailFetchesAttempted = selected.length;
       for (const c of selected) if (c.url) discoveryByUrl.set(c.url, c.discovery_url);
 
       if (selected.length > 0) {
@@ -322,6 +522,12 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
         for (const f of fetched.failures) {
           console.warn(`[radar:detail] could not fetch ${f.url} — ${f.reason}`);
         }
+        await recordFetchHealth(db, radar.user_id, {
+          ok: fetched.pages.map((p) => p.url),
+          failed: fetched.failures,
+          previous: urlStates,
+          hostStats,
+        });
 
         for (const page of fetched.pages) {
           detailDocs.push({
@@ -497,9 +703,7 @@ ${documentBlock(allDocs)}`,
     };
   };
 
-  // 3. Diff against persisted state.
-  const { data: existingRows } = await db.from("findings").select("*").eq("radar_id", radar.id);
-  const existing = new Map((existingRows ?? []).map((f) => [f.fingerprint, f]));
+  // 3. Diff against persisted state (loaded before the detail stage).
 
   const changed: { item: ExtractedItem; kind: string; previous: number | null }[] = [];
   const attributeEvents: {
@@ -540,7 +744,7 @@ ${documentBlock(allDocs)}`,
   // No market claim is ever made without a calculated baseline.
   // ---------------------------------------------------------------------
   const settings = comparableSettings(
-    { minComparables: Math.max(2, Number(radar.min_comparables ?? 10)), allowBroadComparison: !!radar.allow_broad_comparison },
+    { minComparables, allowBroadComparison: !!radar.allow_broad_comparison },
     recencyDays,
   );
   const currentObservations: Observation[] = items.map((item) => ({
@@ -556,16 +760,7 @@ ${documentBlock(allDocs)}`,
   const currentKeys = new Set(currentObservations.map((o) => o.fingerprint));
   const persistedObservations: Observation[] = (existingRows ?? [])
     .filter((f) => !currentKeys.has(f.fingerprint))
-    .map((f) => ({
-      fingerprint: f.fingerprint,
-      title: f.title,
-      url: f.primary_url ?? f.url,
-      attributes: asAttributeMap(f.attributes) ?? {},
-      numericValue: f.numeric_value === null ? null : Number(f.numeric_value),
-      currency: f.currency,
-      observedAt: f.last_seen_at,
-      detailFetched: f.detail_status === "fetched",
-    }));
+    .map(asObservation);
   const population = [...currentObservations, ...persistedObservations];
 
   const baselines = new Map<string, BaselineResult>();
@@ -579,6 +774,32 @@ ${documentBlock(allDocs)}`,
       else if (result.status === "insufficient_comparables") baselinesInsufficient += 1;
     }
   }
+  // 3c. Progressive baselines: findings that were previously insufficient are
+  // recomputed against the grown population and upgraded as soon as the
+  // minimum sample size is genuinely reached. Thresholds are unchanged.
+  let baselinesBackfilled = 0;
+  if (specs.length > 0) {
+    const pending = (existingRows ?? []).filter(
+      (f) => !currentKeys.has(f.fingerprint) && f.baseline_status !== "computed",
+    );
+    for (const f of pending.slice(0, 200)) {
+      const result = buildBaseline({ subject: asObservation(f), population, specs, settings });
+      if (result.status !== "computed") continue;
+      const { error } = await db
+        .from("findings")
+        .update({
+          baseline: result as never,
+          baseline_status: result.status,
+          baseline_confidence: result.confidence,
+          anomaly_score: result.anomalyScore,
+          opportunity_score: result.opportunityScore,
+          baseline_computed_at: new Date().toISOString(),
+        })
+        .eq("id", f.id);
+      if (!error) baselinesBackfilled += 1;
+    }
+  }
+
   const baselineLine = (fingerprint: string): string => {
     const b = baselines.get(fingerprint);
     if (!b || b.status !== "computed") return `baseline: none — ${NO_BASELINE_PHRASE}`;
@@ -856,6 +1077,10 @@ ${eligible
   const baselineFindings = isBaseline ? items.length : 0;
   const incrementalFindings = isBaseline ? 0 : changed.length;
 
+  const usableComparablesAfter = population.filter(isUsableComparable).length;
+  const comparableCoverage =
+    population.length > 0 ? Number(((usableComparablesAfter / population.length) * 100).toFixed(1)) : 0;
+
   await finishRun({
     status: failed ? "failed" : "completed",
     run_type: runType,
@@ -880,6 +1105,13 @@ ${eligible
     baselines_computed: baselinesComputed,
     baselines_insufficient: baselinesInsufficient,
     comparable_observations: population.length,
+    detail_fetches_attempted: detailFetchesAttempted,
+    detail_fetches_skipped_backoff: detailFetchesSkippedBackoff,
+    detail_fetch_budget: detailFetchBudget,
+    usable_comparables: usableComparablesAfter,
+    comparable_coverage: comparableCoverage,
+    baselines_backfilled: baselinesBackfilled,
+    cost_ceiling: costCeiling,
     detail_cost_estimate: detailCostEstimate,
     error: research.errors.length ? research.errors.join(" | ").slice(0, 800) : null,
     finished_at: now,
@@ -932,5 +1164,13 @@ ${eligible
     baselinesComputed,
     baselinesInsufficient,
     comparableObservations: population.length,
+    detailFetchesAttempted,
+    detailFetchesSkippedBackoff,
+    detailFetchBudget,
+    budgetReason,
+    usableComparables: usableComparablesAfter,
+    comparableCoverage,
+    baselinesBackfilled,
+    costCeiling,
   };
 }
