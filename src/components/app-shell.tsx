@@ -146,7 +146,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        {nav.slice(0, 4).map((item) => {
+        {mobileNav.map((item) => {
           const active = pathname.startsWith(item.to);
           return (
             <Link
