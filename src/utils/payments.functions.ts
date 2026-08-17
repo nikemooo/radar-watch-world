@@ -134,6 +134,7 @@ export const changePlan = createServerFn({ method: "POST" })
       const stripe = createStripeClient(ENV);
       const sub = await stripe.subscriptions.retrieve(subId);
       const item = sub.items.data[0];
+      if (!item) return { error: "Subscription has no billable item." };
       const periodEnd = (item as any).current_period_end ?? (sub as any).current_period_end ?? null;
       const periodEndIso = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
 
@@ -180,6 +181,7 @@ export const changePlan = createServerFn({ method: "POST" })
       }
       const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
       const currentPhase = schedule.phases[schedule.phases.length - 1];
+      if (!currentPhase) return { error: "Subscription schedule has no active phase." };
       await stripe.subscriptionSchedules.update(scheduleId, {
         end_behavior: "release",
         phases: [
