@@ -60,7 +60,7 @@ async function syncSubscription(db: any, sub: Stripe.Subscription, environment: 
     .eq("id", resolvedUserId);
 }
 
-export const Route = createFileRoute("/api/public/stripe-webhook")({
+export const Route = createFileRoute("/api/public/payments/webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
