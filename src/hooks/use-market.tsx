@@ -72,9 +72,9 @@ export function useMarketPricing(signals: Signals = {}) {
 
   const { market, source } = resolveMarket(markets, {
     selectedCode: selectedCode ?? profileCode,
-    billingCountry: signals.billingCountry,
-    billingCurrency: signals.billingCurrency,
-    accountCountry: signals.accountCountry,
+    billingCountry: signals.billingCountry ?? null,
+    billingCurrency: signals.billingCurrency ?? null,
+    accountCountry: signals.accountCountry ?? null,
     locale: typeof navigator !== "undefined" ? navigator.language : null,
   });
 

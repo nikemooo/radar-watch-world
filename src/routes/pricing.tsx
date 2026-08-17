@@ -4,7 +4,8 @@ import { Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/radar-mark";
-import { formatPlanPrice } from "@/lib/billing/plans";
+import { MarketSelect } from "@/components/market-select";
+import { useMarketPricing } from "@/hooks/use-market";
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
@@ -22,6 +23,7 @@ export const Route = createFileRoute("/pricing")({
 });
 
 function Pricing() {
+  const { markets, market, setMarket, priceFor, format } = useMarketPricing();
   const { data: plans } = useQuery({
     queryKey: ["plans"],
     queryFn: async () => {
@@ -52,10 +54,21 @@ function Pricing() {
           Every plan runs the same intelligence engine. Higher tiers simply watch more things, more often.
         </p>
 
+        <div className="mt-6">
+          <MarketSelect
+            markets={markets}
+            value={market.code}
+            onChange={(code) => void setMarket(code)}
+            hint={`Prices shown in ${market.currency}`}
+          />
+        </div>
+
         <div className="mt-10 grid gap-5 md:grid-cols-3">
           {(plans ?? []).map((plan, index) => {
             const features = Array.isArray(plan.features) ? (plan.features as string[]) : [];
             const highlighted = index === 1;
+            const monthly = priceFor(plan.key, "month");
+            const yearly = priceFor(plan.key, "year");
             return (
               <div
                 key={plan.key}
@@ -64,18 +77,15 @@ function Pricing() {
                 {highlighted && <span className="mono-label text-primary">Most popular</span>}
                 <h2 className="mt-1 text-lg font-medium">{plan.name}</h2>
                 <p className="mt-3 font-mono text-3xl">
-                  {plan.price_amount === 0
-                    ? "Free"
-                    : formatPlanPrice(plan.price_amount, plan.currency)}
-                  {plan.price_amount > 0 && (
-                    <span className="text-sm text-muted-foreground">/month</span>
-                  )}
+                  {monthly ? format(monthly.amount_minor, monthly.currency) : "Free"}
+                  {monthly && <span className="text-sm text-muted-foreground">/month</span>}
                 </p>
-                {plan.price_amount_yearly > 0 && (
+                {yearly && (
                   <p className="mt-1 text-sm text-muted-foreground">
-                    or {formatPlanPrice(plan.price_amount_yearly, plan.currency)}/year
+                    or {format(yearly.amount_minor, yearly.currency)}/year
                   </p>
                 )}
+
                 <ul className="mt-6 flex-1 space-y-2.5 text-sm">
                   <li className="flex gap-2">
                     <Check className="mt-0.5 size-4 shrink-0 text-interesting" />

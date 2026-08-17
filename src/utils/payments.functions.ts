@@ -13,9 +13,15 @@ export const getBillingState = createServerFn({ method: "GET" })
     const { getEntitlements, remainingAlerts } = await import("@/lib/billing/entitlements.server");
     const e = await getEntitlements(context.supabase, context.userId, ENV);
     const { data: plans } = await context.supabase.from("plans").select("*").eq("active", true).order("sort_order");
+    const { resolveBillingMarket } = await import("@/lib/billing/market.server");
+    const m = await resolveBillingMarket(context.supabase, context.userId, { environment: ENV });
     return {
       environment: ENV,
       plans: plans ?? [],
+      markets: m.markets,
+      planPrices: m.prices,
+      marketCode: m.market.code,
+      marketLocked: m.locked,
       planKey: e.planKey,
       isInternal: e.isInternal,
       radarCount: e.radarCount,
@@ -28,16 +34,33 @@ export const getBillingState = createServerFn({ method: "GET" })
 /** Start a Stripe Checkout session for a paid plan (test mode). */
 export const createCheckoutSession = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { planKey: string; interval: "month" | "year"; returnUrl: string }) => {
+  .inputValidator((input: { planKey: string; interval: "month" | "year"; returnUrl: string; marketCode?: string; localeHint?: string }) => {
     if (!input?.planKey || !input?.returnUrl) throw new Error("Missing plan or return URL.");
-    return { planKey: input.planKey, interval: input.interval === "year" ? "year" : "month", returnUrl: input.returnUrl } as const;
+    return {
+      planKey: input.planKey,
+      interval: input.interval === "year" ? "year" : "month",
+      returnUrl: input.returnUrl,
+      marketCode: typeof input.marketCode === "string" ? input.marketCode.toLowerCase() : null,
+      localeHint: typeof input.localeHint === "string" ? input.localeHint : null,
+    } as const;
   })
   .handler(async ({ data, context }): Promise<Result<{ url: string }>> => {
     const { supabase, userId, claims } = context as { supabase: any; userId: string; claims?: { email?: string } };
-    const { data: plan } = await supabase.from("plans").select("*").eq("key", data.planKey).maybeSingle();
+    const { data: plan } = await supabase.from("plans").select("key").eq("key", data.planKey).maybeSingle();
     if (!plan) return { error: "Unknown plan." };
-    const priceId = data.interval === "year" ? plan.stripe_price_id_yearly : plan.stripe_price_id;
-    if (!priceId) return { error: "This plan is not purchasable." };
+    if (data.planKey === "free") return { error: "The Free plan does not require a subscription." };
+
+    const { resolveBillingMarket, resolvePlanPrice, assertStripePriceMatches } = await import(
+      "@/lib/billing/market.server"
+    );
+    const resolved = await resolveBillingMarket(supabase, userId, {
+      requestedCode: data.marketCode,
+      localeHint: data.localeHint,
+      environment: ENV,
+    });
+    const planPrice = await resolvePlanPrice(supabase, data.planKey, resolved.market.code, data.interval);
+    if (!planPrice) return { error: `This plan is not available in ${resolved.market.name} yet.` };
+    const priceId = planPrice.stripe_price_id;
 
     const { data: existing } = await supabase
       .from("subscriptions")
@@ -54,6 +77,8 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
 
     try {
       const stripe = createStripeClient(ENV);
+      const mismatch = await assertStripePriceMatches(stripe, planPrice);
+      if (mismatch) return { error: mismatch };
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
@@ -65,8 +90,21 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
           : claims?.email
             ? { customer_email: claims.email }
             : {}),
-        subscription_data: { metadata: { user_id: userId, plan_key: data.planKey } },
-        metadata: { user_id: userId, plan_key: data.planKey, environment: ENV },
+        subscription_data: {
+          metadata: {
+            user_id: userId,
+            plan_key: data.planKey,
+            market_code: resolved.market.code,
+            currency: planPrice.currency,
+          },
+        },
+        metadata: {
+          user_id: userId,
+          plan_key: data.planKey,
+          environment: ENV,
+          market_code: resolved.market.code,
+          currency: planPrice.currency,
+        },
         managed_payments: { enabled: true },
       } as any);
       if (!session.url) return { error: "Stripe did not return a checkout URL." };
@@ -126,9 +164,17 @@ export const changePlan = createServerFn({ method: "POST" })
       return { error: "You are already on this plan." };
     }
 
-    const { data: plan } = await supabase.from("plans").select("*").eq("key", data.planKey).maybeSingle();
+    const { data: plan } = await supabase.from("plans").select("key").eq("key", data.planKey).maybeSingle();
     if (!plan) return { error: "Unknown plan." };
-    const newPriceId = data.interval === "year" ? plan.stripe_price_id_yearly : plan.stripe_price_id;
+
+    const { resolveBillingMarket, resolvePlanPrice } = await import("@/lib/billing/market.server");
+    const resolved = await resolveBillingMarket(supabase, userId, { environment: ENV });
+    const planPrice =
+      data.planKey === "free" ? null : await resolvePlanPrice(supabase, data.planKey, resolved.market.code, data.interval);
+    if (data.planKey !== "free" && !planPrice) {
+      return { error: `This plan is not available in ${resolved.market.name} yet.` };
+    }
+    const newPriceId = planPrice?.stripe_price_id ?? null;
 
     try {
       const stripe = createStripeClient(ENV);

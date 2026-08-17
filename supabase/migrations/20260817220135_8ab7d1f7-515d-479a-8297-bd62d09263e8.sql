@@ -1,0 +1,1 @@
+update public.markets set locale = 'en-US' where code in ('ca','au');

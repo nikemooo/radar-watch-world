@@ -14,7 +14,9 @@ import {
   getBillingState,
   resumeSubscription,
 } from "@/utils/payments.functions";
-import { formatPlanPrice, PLAN_RANK, type PlanRow } from "@/lib/billing/plans";
+import { PLAN_RANK, type PlanRow } from "@/lib/billing/plans";
+import { MarketSelect } from "@/components/market-select";
+import { useMarketPricing } from "@/hooks/use-market";
 
 export const Route = createFileRoute("/_authenticated/billing")({
   head: () => ({
@@ -43,6 +45,9 @@ function Billing() {
   const resume = useServerFn(resumeSubscription);
 
   const { data, isLoading } = useQuery({ queryKey: ["billing"], queryFn: () => fetchState({}) });
+  const { markets, market, setMarket, priceFor, format } = useMarketPricing({
+    billingCurrency: (data as { subscription?: { currency?: string | null } } | undefined)?.subscription?.currency ?? null,
+  });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["billing"] });
 
@@ -57,7 +62,15 @@ function Billing() {
     setBusy(planKey);
     try {
       const result = unwrap(
-        await checkout({ data: { planKey, interval, returnUrl: `${window.location.origin}/billing` } }),
+        await checkout({
+          data: {
+            planKey,
+            interval,
+            returnUrl: `${window.location.origin}/billing`,
+            marketCode: market.code,
+            localeHint: navigator.language,
+          },
+        }),
       );
       window.location.href = result.url;
     } catch (error) {
@@ -132,6 +145,8 @@ function Billing() {
   const plans = (data.plans ?? []) as unknown as PlanRow[];
   const current = plans.find((p) => p.key === data.planKey);
   const sub = data.subscription;
+  const marketLocked = Boolean((data as { marketLocked?: boolean }).marketLocked);
+  const lockedCode = (data as { marketCode?: string }).marketCode ?? market.code;
 
   return (
     <div className="space-y-6">
@@ -187,6 +202,20 @@ function Billing() {
         </section>
       )}
 
+      <div className="space-y-3">
+        <MarketSelect
+          markets={markets}
+          value={marketLocked ? lockedCode : market.code}
+          onChange={(code) => void setMarket(code)}
+          disabled={marketLocked}
+          hint={
+            marketLocked
+              ? "Billing currency is locked to your active subscription."
+              : `Prices shown in ${market.currency}`
+          }
+        />
+      </div>
+
       <div className="flex items-center gap-2">
         <Button variant={interval === "month" ? "default" : "outline"} size="sm" onClick={() => setInterval("month")}>
           Monthly
@@ -200,7 +229,7 @@ function Billing() {
         {plans.map((plan) => {
           const features = Array.isArray(plan.features) ? (plan.features as string[]) : [];
           const isCurrent = plan.key === data.planKey;
-          const amount = interval === "year" ? plan.price_amount_yearly : plan.price_amount;
+          const price = priceFor(plan.key, interval);
           const upgrade = (PLAN_RANK[plan.key] ?? 0) > (PLAN_RANK[data.planKey] ?? 0);
           const label = isCurrent
             ? "Current plan"
@@ -219,8 +248,8 @@ function Billing() {
             >
               <h2 className="font-medium">{plan.name}</h2>
               <p className="mt-2 font-mono text-2xl">
-                {amount === 0 ? "Free" : formatPlanPrice(amount, plan.currency)}
-                {amount > 0 && (
+                {price ? format(price.amount_minor, price.currency) : "Free"}
+                {price && (
                   <span className="text-sm text-muted-foreground">/{interval === "year" ? "yr" : "mo"}</span>
                 )}
               </p>
