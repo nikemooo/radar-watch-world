@@ -68,7 +68,7 @@ export const getSearchOpsMetrics = createServerFn({ method: "GET" })
     const { data: runs } = await context.supabase
       .from("monitor_runs")
       .select(
-        "id, status, provider, error, cost_estimate, search_requests, search_successes, search_failures, sources_retrieved, started_at, finished_at",
+        "id, status, run_type, provider, error, cost_estimate, search_requests, search_successes, search_failures, sources_retrieved, baseline_findings, incremental_findings, suppressed_baseline, suppressed_recency, suppressed_duplicate, suppressed_relevance, alerts_created, started_at, finished_at",
       )
       .gte("started_at", since)
       .order("started_at", { ascending: false })
@@ -76,8 +76,14 @@ export const getSearchOpsMetrics = createServerFn({ method: "GET" })
 
     const rows = runs ?? [];
     const exaRuns = rows.filter((r) => r.provider === "exa");
-    const lastSuccess = rows.find((r) => r.status === "ok" && (r.search_successes ?? 0) > 0);
-    const lastFailure = rows.find((r) => r.status === "error" || (r.search_failures ?? 0) > 0);
+    const lastSuccess = rows.find(
+      (r) => (r.status === "ok" || r.status === "completed") && (r.search_successes ?? 0) > 0,
+    );
+    const lastFailure = rows.find(
+      (r) => r.status === "error" || r.status === "failed" || (r.search_failures ?? 0) > 0,
+    );
+    const sum = (key: keyof (typeof rows)[number]) =>
+      rows.reduce((n, r) => n + Number(r[key] ?? 0), 0);
 
     return {
       providers: providerStatus(),
@@ -90,6 +96,14 @@ export const getSearchOpsMetrics = createServerFn({ method: "GET" })
       lastSuccessAt: lastSuccess?.finished_at ?? lastSuccess?.started_at ?? null,
       lastFailureAt: lastFailure?.finished_at ?? lastFailure?.started_at ?? null,
       lastFailureError: lastFailure?.error ?? null,
+      baselineRuns: rows.filter((r) => r.run_type === "baseline").length,
+      baselineFindings: sum("baseline_findings"),
+      incrementalFindings: sum("incremental_findings"),
+      suppressedBaseline: sum("suppressed_baseline"),
+      suppressedRecency: sum("suppressed_recency"),
+      suppressedDuplicate: sum("suppressed_duplicate"),
+      suppressedRelevance: sum("suppressed_relevance"),
+      alertsCreated: sum("alerts_created"),
     };
   });
 
