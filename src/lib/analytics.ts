@@ -15,7 +15,15 @@ export type AnalyticsEvent =
   | "report_generated"
   | "subscription_started"
   | "subscription_cancelled"
-  | "checkout_started";
+  | "checkout_started"
+  | "onboarding_started"
+  | "onboarding_skipped"
+  | "first_radar_prompt_submitted"
+  | "radar_interpretation_completed"
+  | "first_sweep_completed"
+  | "first_alert_seen"
+  | "onboarding_completed"
+  | "upgrade_clicked";
 
 export async function track(event: AnalyticsEvent, properties: Record<string, unknown> = {}) {
   try {

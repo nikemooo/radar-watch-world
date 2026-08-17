@@ -81,6 +81,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { data: isAdmin } = useIsAdmin();
   const { data: unread } = useUnreadAlerts();
 
+  // Onboarding is a focused, distraction-free flow: no sidebar, no tab bar.
+  if (pathname.startsWith("/onboarding")) {
+    return <div className="min-h-screen bg-background">{children}</div>;
+  }
+
   const nav = isAdmin
     ? [...primaryNav, { to: "/admin", label: "Admin", icon: Shield } satisfies NavItem]
     : primaryNav;
