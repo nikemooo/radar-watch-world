@@ -16,7 +16,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { asConfig, frequencyLabel, type RadarConfig, type RadarFrequency } from "@/lib/radar-types";
+import {
+  asConfig,
+  frequencyLabel,
+  recencyPresets,
+  type RadarConfig,
+  type RadarFrequency,
+} from "@/lib/radar-types";
+import { monitoringWindowLabel, type MonitoringWindow } from "@/lib/monitoring/temporal";
 import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/_authenticated/radars/new")({
@@ -45,6 +52,8 @@ function NewRadar() {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("general");
   const [frequency, setFrequency] = useState<RadarFrequency>("smart");
+  const [monitoringWindow, setMonitoringWindow] = useState<MonitoringWindow>("rolling");
+  const [recencyDays, setRecencyDays] = useState(30);
   const [config, setConfig] = useState<RadarConfig | null>(null);
   const [step, setStep] = useState<"describe" | "confirm">("describe");
   const [busy, setBusy] = useState(false);
@@ -58,6 +67,8 @@ function NewRadar() {
       setName(result.name || parsed.target || request.slice(0, 60));
       setCategory(result.category || "general");
       if (result.suggested_frequency) setFrequency(result.suggested_frequency);
+      if (result.monitoring_window) setMonitoringWindow(result.monitoring_window);
+      if (result.recency_days) setRecencyDays(result.recency_days);
       setStep("confirm");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not interpret that request.");
@@ -80,13 +91,16 @@ function NewRadar() {
           category,
           frequency,
           raw_request: request,
+          monitoring_window: monitoringWindow,
+          recency_days: recencyDays,
+          recency_source: "ai_inferred",
           config: config as unknown as never,
         })
         .select("id")
         .single();
       if (error) throw error;
       await track("radar_created", { category, frequency });
-      toast.success("Radar created. First sweep starting.");
+      toast.success("Radar created. The first sweep records a baseline — no alerts yet.");
       navigate({ to: "/radars/$radarId", params: { radarId: data.id } });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create radar.");
@@ -162,6 +176,45 @@ function NewRadar() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Monitoring window</Label>
+                  <Select
+                    value={monitoringWindow}
+                    onValueChange={(v) => setMonitoringWindow(v as MonitoringWindow)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(monitoringWindowLabel) as MonitoringWindow[]).map((key) => (
+                        <SelectItem key={key} value={key}>
+                          {monitoringWindowLabel[key]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>How recent must information be?</Label>
+                  <Select value={String(recencyDays)} onValueChange={(v) => setRecencyDays(Number(v))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {recencyPresets.map((p) => (
+                        <SelectItem key={p.days} value={String(p.days)}>
+                          {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Radar suggested {recencyDays} days for this subject. Older information is kept as
+                    history but never alerted as new.
+                  </p>
                 </div>
               </div>
             </div>

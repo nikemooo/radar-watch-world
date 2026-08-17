@@ -14,6 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      alert_decisions: {
+        Row: {
+          created_at: string
+          decision: string
+          eligible: boolean
+          fingerprint: string
+          id: string
+          published_at: string | null
+          radar_id: string
+          reason: string
+          run_id: string | null
+          title: string | null
+          url: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          decision: string
+          eligible: boolean
+          fingerprint: string
+          id?: string
+          published_at?: string | null
+          radar_id: string
+          reason: string
+          run_id?: string | null
+          title?: string | null
+          url?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          decision?: string
+          eligible?: boolean
+          fingerprint?: string
+          id?: string
+          published_at?: string | null
+          radar_id?: string
+          reason?: string
+          run_id?: string | null
+          title?: string | null
+          url?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_decisions_radar_id_fkey"
+            columns: ["radar_id"]
+            isOneToOne: false
+            referencedRelation: "radars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_decisions_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "monitor_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alerts: {
         Row: {
           confidence: number
@@ -107,13 +167,20 @@ export type Database = {
         Row: {
           currency: string | null
           entity: string | null
+          event_date: string | null
           fingerprint: string
           first_seen_at: string
           id: string
+          last_changed_at: string | null
+          last_run_id: string | null
           last_seen_at: string
           numeric_value: number | null
+          origin: string
+          published_at: string | null
           radar_id: string
+          retrieved_at: string | null
           snapshot: Json
+          source_updated_at: string | null
           title: string
           url: string | null
           user_id: string
@@ -121,13 +188,20 @@ export type Database = {
         Insert: {
           currency?: string | null
           entity?: string | null
+          event_date?: string | null
           fingerprint: string
           first_seen_at?: string
           id?: string
+          last_changed_at?: string | null
+          last_run_id?: string | null
           last_seen_at?: string
           numeric_value?: number | null
+          origin?: string
+          published_at?: string | null
           radar_id: string
+          retrieved_at?: string | null
           snapshot?: Json
+          source_updated_at?: string | null
           title: string
           url?: string | null
           user_id: string
@@ -135,13 +209,20 @@ export type Database = {
         Update: {
           currency?: string | null
           entity?: string | null
+          event_date?: string | null
           fingerprint?: string
           first_seen_at?: string
           id?: string
+          last_changed_at?: string | null
+          last_run_id?: string | null
           last_seen_at?: string
           numeric_value?: number | null
+          origin?: string
+          published_at?: string | null
           radar_id?: string
+          retrieved_at?: string | null
           snapshot?: Json
+          source_updated_at?: string | null
           title?: string
           url?: string | null
           user_id?: string
@@ -159,56 +240,77 @@ export type Database = {
       monitor_runs: {
         Row: {
           alerts_created: number
+          baseline_findings: number
           cost_estimate: number
           error: string | null
           finished_at: string | null
           id: string
+          incremental_findings: number
           items_found: number
           new_items: number
           provider: string | null
           radar_id: string
+          run_type: string
           search_failures: number
           search_requests: number
           search_successes: number
           sources_retrieved: number
           started_at: string
           status: string
+          suppressed_baseline: number
+          suppressed_duplicate: number
+          suppressed_recency: number
+          suppressed_relevance: number
           user_id: string
         }
         Insert: {
           alerts_created?: number
+          baseline_findings?: number
           cost_estimate?: number
           error?: string | null
           finished_at?: string | null
           id?: string
+          incremental_findings?: number
           items_found?: number
           new_items?: number
           provider?: string | null
           radar_id: string
+          run_type?: string
           search_failures?: number
           search_requests?: number
           search_successes?: number
           sources_retrieved?: number
           started_at?: string
           status?: string
+          suppressed_baseline?: number
+          suppressed_duplicate?: number
+          suppressed_recency?: number
+          suppressed_relevance?: number
           user_id: string
         }
         Update: {
           alerts_created?: number
+          baseline_findings?: number
           cost_estimate?: number
           error?: string | null
           finished_at?: string | null
           id?: string
+          incremental_findings?: number
           items_found?: number
           new_items?: number
           provider?: string | null
           radar_id?: string
+          run_type?: string
           search_failures?: number
           search_requests?: number
           search_successes?: number
           sources_retrieved?: number
           started_at?: string
           status?: string
+          suppressed_baseline?: number
+          suppressed_duplicate?: number
+          suppressed_recency?: number
+          suppressed_relevance?: number
           user_id?: string
         }
         Relationships: [
@@ -310,46 +412,64 @@ export type Database = {
       }
       radars: {
         Row: {
+          baseline_completed: boolean
+          baseline_completed_at: string | null
           category: string
           config: Json
           created_at: string
           frequency: string
           id: string
           last_run_at: string | null
+          last_successful_sweep_at: string | null
           memory: Json
+          monitoring_window: string
           name: string
           next_run_at: string | null
           raw_request: string
+          recency_days: number
+          recency_source: string
           status: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          baseline_completed?: boolean
+          baseline_completed_at?: string | null
           category?: string
           config?: Json
           created_at?: string
           frequency?: string
           id?: string
           last_run_at?: string | null
+          last_successful_sweep_at?: string | null
           memory?: Json
+          monitoring_window?: string
           name: string
           next_run_at?: string | null
           raw_request: string
+          recency_days?: number
+          recency_source?: string
           status?: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          baseline_completed?: boolean
+          baseline_completed_at?: string | null
           category?: string
           config?: Json
           created_at?: string
           frequency?: string
           id?: string
           last_run_at?: string | null
+          last_successful_sweep_at?: string | null
           memory?: Json
+          monitoring_window?: string
           name?: string
           next_run_at?: string | null
           raw_request?: string
+          recency_days?: number
+          recency_source?: string
           status?: string
           updated_at?: string
           user_id?: string
@@ -389,7 +509,9 @@ export type Database = {
       research_sources: {
         Row: {
           created_at: string
+          first_seen_at: string
           id: string
+          last_seen_at: string
           provider: string
           published_at: string | null
           publisher: string | null
@@ -398,13 +520,16 @@ export type Database = {
           retrieved_at: string
           run_id: string | null
           snippet: string
+          source_updated_at: string | null
           title: string
           url: string
           user_id: string
         }
         Insert: {
           created_at?: string
+          first_seen_at?: string
           id?: string
+          last_seen_at?: string
           provider?: string
           published_at?: string | null
           publisher?: string | null
@@ -413,13 +538,16 @@ export type Database = {
           retrieved_at?: string
           run_id?: string | null
           snippet?: string
+          source_updated_at?: string | null
           title: string
           url: string
           user_id: string
         }
         Update: {
           created_at?: string
+          first_seen_at?: string
           id?: string
+          last_seen_at?: string
           provider?: string
           published_at?: string | null
           publisher?: string | null
@@ -428,6 +556,7 @@ export type Database = {
           retrieved_at?: string
           run_id?: string | null
           snippet?: string
+          source_updated_at?: string | null
           title?: string
           url?: string
           user_id?: string

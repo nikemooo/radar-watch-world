@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { asConfig, frequencyLabel, type RadarFrequency } from "@/lib/radar-types";
+import { asConfig, frequencyLabel, recencyPresets, type RadarFrequency } from "@/lib/radar-types";
 import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/_authenticated/radars/$radarId")({
@@ -47,7 +47,7 @@ function RadarDetail() {
   const { data, isLoading } = useQuery({
     queryKey: ["radar", radarId],
     queryFn: async () => {
-      const [radar, alerts, runs] = await Promise.all([
+      const [radar, alerts, runs, decisions] = await Promise.all([
         supabase.from("radars").select("*").eq("id", radarId).maybeSingle(),
         supabase
           .from("alerts")
@@ -61,12 +61,19 @@ function RadarDetail() {
           .eq("radar_id", radarId)
           .order("started_at", { ascending: false })
           .limit(5),
+        supabase
+          .from("alert_decisions")
+          .select("*")
+          .eq("radar_id", radarId)
+          .order("created_at", { ascending: false })
+          .limit(25),
       ]);
       if (radar.error) throw radar.error;
       return {
         radar: radar.data,
         alerts: (alerts.data ?? []) as AlertRow[],
         runs: runs.data ?? [],
+        decisions: decisions.data ?? [],
       };
     },
   });
@@ -74,8 +81,15 @@ function RadarDetail() {
   const sweep = useMutation({
     mutationFn: async () => run({ data: { radarId } }),
     onSuccess: (result) => {
-      const created = (result as { alertsCreated?: number })?.alertsCreated ?? 0;
-      toast.success(created > 0 ? `${created} new alert${created > 1 ? "s" : ""}.` : "Sweep complete — nothing new.");
+      const r = result as { alertsCreated?: number; runType?: string; itemsFound?: number };
+      const created = r?.alertsCreated ?? 0;
+      toast.success(
+        r?.runType === "baseline"
+          ? `Baseline recorded — ${r.itemsFound ?? 0} findings saved as history, no alerts.`
+          : created > 0
+            ? `${created} new alert${created > 1 ? "s" : ""}.`
+            : "Sweep complete — nothing new.",
+      );
       queryClient.invalidateQueries({ queryKey: ["radar", radarId] });
       queryClient.invalidateQueries({ queryKey: ["alerts"] });
       queryClient.invalidateQueries({ queryKey: ["radar-sources", radarId] });
@@ -84,7 +98,12 @@ function RadarDetail() {
   });
 
   const update = useMutation({
-    mutationFn: async (patch: { status?: string; frequency?: string }) => {
+    mutationFn: async (patch: {
+      status?: string;
+      frequency?: string;
+      recency_days?: number;
+      recency_source?: string;
+    }) => {
       const { error } = await supabase.from("radars").update(patch).eq("id", radarId);
       if (error) throw error;
     },
@@ -146,6 +165,23 @@ function RadarDetail() {
               ))}
             </SelectContent>
           </Select>
+          <Select
+            value={String(radar.recency_days)}
+            onValueChange={(v) =>
+              update.mutate({ recency_days: Number(v), recency_source: "user_override" })
+            }
+          >
+            <SelectTrigger className="w-44" aria-label="Recency window">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {recencyPresets.map((p) => (
+                <SelectItem key={p.days} value={String(p.days)}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             variant="outline"
             size="icon"
@@ -173,6 +209,23 @@ function RadarDetail() {
         </div>
       </header>
 
+      <section className="panel flex flex-wrap items-center gap-x-6 gap-y-2 p-4 text-sm">
+        <span className="mono-label">
+          {radar.baseline_completed ? "Baseline complete" : "Baseline pending"}
+        </span>
+        <span className="text-muted-foreground">
+          {radar.baseline_completed
+            ? "Only genuinely new or changed information is alerted."
+            : "The first sweep records a snapshot without alerting."}
+        </span>
+        <span className="ml-auto text-muted-foreground">
+          Window: last {radar.recency_days} days ·{" "}
+          {radar.last_successful_sweep_at
+            ? `last successful sweep ${new Date(radar.last_successful_sweep_at).toLocaleString()}`
+            : "no successful sweep yet"}
+        </span>
+      </section>
+
       <section className="panel grid gap-5 p-5 sm:grid-cols-2">
         <Facts title="Watching for" items={config.monitored_events} />
         <Facts title="Matters most" items={config.important_criteria} />
@@ -190,8 +243,15 @@ function RadarDetail() {
                 <span className={entry.status === "error" ? "text-critical" : "text-muted-foreground"}>
                   {entry.status}
                 </span>
+                <span className="rounded-full border border-border px-2 py-0.5 text-xs uppercase tracking-wide text-muted-foreground">
+                  {entry.run_type}
+                </span>
                 <span className="ml-auto text-muted-foreground">
                   {entry.items_found} found · {entry.new_items} new · {entry.alerts_created} alerts
+                </span>
+                <span className="w-full text-xs text-muted-foreground">
+                  suppressed — baseline {entry.suppressed_baseline} · recency {entry.suppressed_recency} ·
+                  duplicate {entry.suppressed_duplicate} · relevance {entry.suppressed_relevance}
                 </span>
                 {entry.error && <p className="w-full text-xs text-critical">{entry.error}</p>}
               </div>
@@ -214,6 +274,29 @@ function RadarDetail() {
           </p>
         )}
       </section>
+
+      {data.decisions.length > 0 && (
+        <section>
+          <h2 className="text-lg font-medium">Alert decisions</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Why each finding did or did not become an alert. Baseline history is kept, never deleted.
+          </p>
+          <ul className="panel mt-4 divide-y divide-border">
+            {data.decisions.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 text-sm">
+                <span className={d.eligible ? "text-primary" : "text-muted-foreground"}>
+                  {d.decision.replace(/_/g, " ")}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                <span className="mono-label">
+                  {d.published_at ? new Date(d.published_at).toLocaleDateString() : "undated"}
+                </span>
+                <p className="w-full text-xs text-muted-foreground">{d.reason}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section>
         <h2 className="text-lg font-medium">Retrieved sources</h2>

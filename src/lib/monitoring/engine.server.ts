@@ -2,17 +2,29 @@
  * Monitoring engine.
  *
  * Responsibilities (all category-agnostic):
- *  1. Research  — pull documents through the pluggable search layer.
- *  2. Extract   — turn documents into structured findings via the AI layer.
- *  3. Diff      — compare against persisted findings to detect real changes.
- *  4. Evaluate  — score relevance/importance/confidence, drop noise.
- *  5. Persist   — update findings state and create alerts with real sources.
+ *  1. Research   — pull documents through the pluggable search layer.
+ *  2. Extract    — turn documents into structured findings via the AI layer.
+ *  3. Diff       — compare against persisted findings to detect real changes.
+ *  4. Eligibility— baseline / recency / duplication / relevance gates, each with
+ *                  a persisted reason.
+ *  5. Persist    — update findings state and create alerts with real sources.
+ *
+ * Cold-start rule: the FIRST successful sweep of a radar is a BASELINE. It
+ * persists findings and sources but never creates alerts or notifications.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { chatJson, MODELS } from "../ai/gateway.server";
 import { researchQueries, type SearchDocument } from "../search/providers.server";
 import { asConfig, type RadarConfig } from "../radar-types";
+import {
+  canonicalFingerprint,
+  clampRecencyDays,
+  evaluateRecency,
+  informationDate,
+  safeDate,
+  type TemporalFacts,
+} from "./temporal";
 
 type Db = SupabaseClient<Database>;
 type RadarRow = Database["public"]["Tables"]["radars"]["Row"];
@@ -25,6 +37,7 @@ interface ExtractedItem {
   numeric_value: number | null;
   currency: string | null;
   event_type: string;
+  event_date: string | null;
   summary: string;
 }
 
@@ -56,6 +69,7 @@ const extractionSchema = {
           "numeric_value",
           "currency",
           "event_type",
+          "event_date",
           "summary",
         ],
         properties: {
@@ -66,6 +80,7 @@ const extractionSchema = {
           numeric_value: { type: ["number", "null"] },
           currency: { type: ["string", "null"] },
           event_type: { type: "string" },
+          event_date: { type: ["string", "null"] },
           summary: { type: "string" },
         },
       },
@@ -108,13 +123,17 @@ const evaluationSchema = {
 
 function documentBlock(docs: SearchDocument[]) {
   return docs
-    .map((d, i) => `[${i + 1}] ${d.title}\nURL: ${d.url}\n${d.snippet.slice(0, 2500)}`)
+    .map(
+      (d, i) =>
+        `[${i + 1}] ${d.title}\nURL: ${d.url}\nPublished: ${d.published_at ?? "unknown"}\n${d.snippet.slice(0, 2500)}`,
+    )
     .join("\n\n");
 }
 
 export interface RunResult {
   status: "ok" | "no_provider" | "error";
-  message?: string;
+  runType: "baseline" | "incremental";
+  message?: string | undefined;
   itemsFound: number;
   newItems: number;
   alertsCreated: number;
@@ -124,11 +143,30 @@ export interface RunResult {
   searchFailures?: number;
   costEstimate?: number;
   duplicatesRemoved?: number;
+  baselineFindings?: number;
+  incrementalFindings?: number;
+  suppressedBaseline?: number;
+  suppressedRecency?: number;
+  suppressedDuplicate?: number;
+  suppressedRelevance?: number;
+}
+
+interface Decision {
+  fingerprint: string;
+  title: string;
+  url: string;
+  eligible: boolean;
+  decision: string;
+  reason: string;
+  published_at: string | null;
 }
 
 export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult> {
   const config: RadarConfig = asConfig(radar.config);
   const started = new Date().toISOString();
+  const isBaseline = !radar.baseline_completed;
+  const runType: "baseline" | "incremental" = isBaseline ? "baseline" : "incremental";
+  const recencyDays = clampRecencyDays(radar.recency_days);
 
   const queries = config.search_queries.length ? config.search_queries : [radar.raw_request];
   const research = await researchQueries(queries);
@@ -138,12 +176,14 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
       radar_id: radar.id,
       user_id: radar.user_id,
       status: "no_provider",
+      run_type: runType,
       error: "No search provider configured",
       started_at: started,
       finished_at: new Date().toISOString(),
     });
     return {
       status: "no_provider",
+      runType,
       message:
         "No research provider is connected yet. Add an EXA_API_KEY so Radar can read live public sources.",
       itemsFound: 0,
@@ -160,6 +200,7 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
       radar_id: radar.id,
       user_id: radar.user_id,
       status: "running",
+      run_type: runType,
       provider: research.provider,
       started_at: started,
       search_requests: research.requests,
@@ -183,8 +224,9 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
         url: d.url,
         title: d.title,
         publisher: d.publisher ?? null,
-        published_at: d.published_at ? safeDate(d.published_at) : null,
+        published_at: safeDate(d.published_at),
         retrieved_at: d.retrieved_at,
+        last_seen_at: d.retrieved_at,
         snippet: d.snippet.slice(0, 4000),
       })),
     );
@@ -196,17 +238,18 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
     await db.from("monitor_runs").update(patch).eq("id", runId);
   };
 
-
   if (research.documents.length === 0) {
     const failedAll = research.requests > 0 && research.successes === 0;
     await finishRun({
-      status: failedAll ? "error" : "ok",
+      status: failedAll ? "failed" : "completed",
       error: failedAll ? research.errors.join(" | ").slice(0, 800) : null,
       finished_at: new Date().toISOString(),
     });
+    // A failed baseline is never marked complete — it must be retried.
     await db.from("radars").update({ last_run_at: new Date().toISOString() }).eq("id", radar.id);
     return {
       status: failedAll ? "error" : "ok",
+      runType,
       message: failedAll
         ? `Search provider error: ${research.errors[0] ?? "unknown error"}`
         : "No sources could be retrieved for this radar — nothing could be verified, so no alert was created.",
@@ -232,6 +275,8 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
       "Extract EVERY concrete listing, offer, product, price or event visible in the document text — including items on aggregator and listing-index pages — even when an item does not fully match the user's criteria. Relevance filtering happens in a later step. " +
       "Only use facts present in the provided documents. Never invent URLs, prices, products, companies, dates or facts. " +
       "The url field must be the URL of the document the item came from, copied verbatim. " +
+      "event_date is the ISO date (YYYY-MM-DD) when the underlying event actually happened, ONLY if the document states it explicitly. " +
+      "NEVER guess a date, never use today's date, and never copy a date from another item: if the document does not state it, event_date must be null. " +
       "If a fact is not clearly supported by the document, leave it null and note in the summary that it could not be verified from the source. " +
       "fingerprint must be a short stable slug identifying the underlying item or event (not the article wording). " +
       "event_type is one of: new_listing, price_decrease, price_increase, new_article, announcement, new_product, regulation, market_move, opportunity, other.",
@@ -245,9 +290,7 @@ Documents:
 ${documentBlock(research.documents)}`,
   });
 
-
   // Grounding guard: an item may only cite a retrieved document, or a page on
-
   // the same site as one (listing pages link to their own detail pages).
   const docHosts = new Map<string, string>();
   for (const d of research.documents) {
@@ -257,7 +300,7 @@ ${documentBlock(research.documents)}`,
       /* ignore malformed */
     }
   }
-  const items = extraction.items.filter((i) => {
+  const items: ExtractedItem[] = extraction.items.filter((i) => {
     if (research.documents.some((d) => d.url === i.url)) return true;
     try {
       return docHosts.has(new URL(i.url).host);
@@ -266,13 +309,35 @@ ${documentBlock(research.documents)}`,
     }
   });
 
+  // Deterministic identity: the model's slug wording drifts between runs.
+  for (const item of items) {
+    item.fingerprint = canonicalFingerprint({
+      url: item.url,
+      entity: item.entity,
+      title: item.title,
+      modelFingerprint: item.fingerprint,
+    });
+  }
 
+  // Collapse items that resolve to the same identity within one sweep.
+  const byIdentity = new Map<string, ExtractedItem>();
+  for (const item of items) if (!byIdentity.has(item.fingerprint)) byIdentity.set(item.fingerprint, item);
+  items.length = 0;
+  items.push(...byIdentity.values());
+
+  const docByUrl = new Map(research.documents.map((d) => [d.url, d]));
+  const temporalOf = (item: ExtractedItem): TemporalFacts => {
+    const doc = docByUrl.get(item.url);
+    return {
+      eventDate: safeDate(item.event_date),
+      publishedAt: safeDate(doc?.published_at),
+      updatedAt: safeDate(doc?.updated_at),
+      retrievedAt: doc?.retrieved_at ?? new Date().toISOString(),
+    };
+  };
 
   // 3. Diff against persisted state.
-  const { data: existingRows } = await db
-    .from("findings")
-    .select("*")
-    .eq("radar_id", radar.id);
+  const { data: existingRows } = await db.from("findings").select("*").eq("radar_id", radar.id);
   const existing = new Map((existingRows ?? []).map((f) => [f.fingerprint, f]));
 
   const changed: { item: ExtractedItem; kind: string; previous: number | null }[] = [];
@@ -291,12 +356,95 @@ ${documentBlock(research.documents)}`,
         previous: Number(prev.numeric_value),
       });
     }
+    // Same fingerprint, same value = the same source showing up again: never an alert.
   }
 
+  const decisions: Decision[] = [];
+  let suppressedBaseline = 0;
+  let suppressedRecency = 0;
+  let suppressedDuplicate = 0;
+  let suppressedRelevance = 0;
   let alertsCreated = 0;
 
-  // 4. Relevance engine — only genuinely new, relevant signal gets through.
-  if (changed.length > 0) {
+  const record = (
+    item: ExtractedItem,
+    eligible: boolean,
+    decision: string,
+    reason: string,
+  ) => {
+    decisions.push({
+      fingerprint: item.fingerprint,
+      title: item.title.slice(0, 300),
+      url: item.url,
+      eligible,
+      decision,
+      reason: reason.slice(0, 500),
+      published_at: informationDate(temporalOf(item)),
+    });
+  };
+
+  // 4a. Baseline gate — the first sweep is a snapshot, never an alert storm.
+  let eligible = changed;
+  if (isBaseline) {
+    for (const c of changed) {
+      record(
+        c.item,
+        false,
+        "suppressed_baseline",
+        "baseline snapshot — first sweep records existing state without alerting",
+      );
+    }
+    suppressedBaseline = changed.length;
+    eligible = [];
+  }
+
+  // 4b. Recency gate — old information is never presented as newly occurring.
+  if (eligible.length > 0) {
+    const passed: typeof eligible = [];
+    for (const c of eligible) {
+      // A value change is itself the event, observed now — the page's original
+      // publication date must not make a fresh price move look stale.
+      if (c.kind !== "new") {
+        passed.push(c);
+        continue;
+      }
+      const verdict = evaluateRecency(temporalOf(c.item), recencyDays);
+      if (!verdict.withinWindow) {
+        suppressedRecency += 1;
+        record(c.item, false, "suppressed_recency", verdict.reason);
+      } else {
+        passed.push(c);
+      }
+    }
+    eligible = passed;
+  }
+
+  // 4c. Duplication gate — never alert twice on the same underlying item/state.
+  if (eligible.length > 0) {
+    const { data: priorAlerts } = await db
+      .from("alerts")
+      .select("id, title, summary, event_type, sources")
+      .eq("radar_id", radar.id)
+      .limit(500);
+    const seenKeys = new Set(
+      (priorAlerts ?? []).map((a) => `${a.title}::${(a.sources as { url?: string }[] | null)?.[0]?.url ?? ""}`),
+    );
+    const passed: typeof eligible = [];
+    for (const c of eligible) {
+      const key = `${c.item.title}::${c.item.url}`;
+      if (c.kind === "new" && seenKeys.has(key)) {
+        suppressedDuplicate += 1;
+        record(c.item, false, "suppressed_duplicate", "an alert for this exact item and source already exists");
+        continue;
+      }
+      seenKeys.add(key);
+      passed.push(c);
+    }
+    eligible = passed;
+  }
+
+  // 4d. Relevance / importance engine.
+  if (eligible.length > 0) {
     const evaluation = await chatJson<{ items: EvaluatedItem[] }>({
       model: MODELS.fast,
       schemaName: "radar_evaluation",
@@ -304,6 +452,7 @@ ${documentBlock(research.documents)}`,
       system:
         "You are the relevance engine of a personal intelligence platform. Judge each change for THIS user's radar. " +
         "Prioritise signal over volume: set notify=false for trivial, duplicate or insignificant changes. " +
+        "Information that is not genuinely new or newly changed must get notify=false. " +
         "confidence is 0-1 and must reflect how well the sources support the claim. Never invent facts.",
       user: `Radar: ${radar.name}
 Original request: ${radar.raw_request}
@@ -311,23 +460,37 @@ Interpretation: ${config.interpretation}
 Important criteria: ${config.important_criteria.join("; ") || "none"}
 Preferences: ${config.preferences.join("; ") || "none"}
 Price range: ${config.price_min ?? "any"} - ${config.price_max ?? "any"} ${config.currency ?? ""}
+Relevant time window: last ${recencyDays} days (today is ${new Date().toISOString().slice(0, 10)})
 
 Changes detected:
-${changed
-  .map(
-    (c) =>
-      `fingerprint: ${c.item.fingerprint}\nchange: ${c.kind}${
-        c.previous !== null ? ` (previous value ${c.previous})` : ""
-      }\ntitle: ${c.item.title}\nvalue: ${c.item.numeric_value ?? "n/a"} ${c.item.currency ?? ""}\nsummary: ${c.item.summary}\nsource: ${c.item.url}`,
-  )
+${eligible
+  .map((c) => {
+    const t = temporalOf(c.item);
+    return `fingerprint: ${c.item.fingerprint}\nchange: ${c.kind}${
+      c.previous !== null ? ` (previous value ${c.previous})` : ""
+    }\ntitle: ${c.item.title}\nvalue: ${c.item.numeric_value ?? "n/a"} ${c.item.currency ?? ""}\ninformation dated: ${
+      informationDate(t) ?? "unknown"
+    }\nsummary: ${c.item.summary}\nsource: ${c.item.url}`;
+  })
   .join("\n\n")}`,
     });
 
     const byFingerprint = new Map(evaluation.items.map((e) => [e.fingerprint, e]));
-    for (const c of changed) {
+    for (const c of eligible) {
       const verdict = byFingerprint.get(c.item.fingerprint);
-      if (!verdict || !verdict.notify) continue;
-      const doc = research.documents.find((d) => d.url === c.item.url);
+      if (!verdict || !verdict.notify) {
+        suppressedRelevance += 1;
+        record(
+          c.item,
+          false,
+          "suppressed_relevance",
+          verdict
+            ? `relevance engine judged this below the alerting threshold (${verdict.importance})`
+            : "relevance engine returned no verdict for this item",
+        );
+        continue;
+      }
+      const doc = docByUrl.get(c.item.url);
       const { error } = await db.from("alerts").insert({
         radar_id: radar.id,
         user_id: radar.user_id,
@@ -344,16 +507,29 @@ ${changed
             title: doc?.title ?? c.item.title,
             url: c.item.url,
             publisher: doc?.publisher ?? null,
+            published_at: safeDate(doc?.published_at),
           },
         ] as never,
       });
-      if (!error) alertsCreated += 1;
+      if (error) {
+        record(c.item, false, "error", `could not persist alert: ${error.message}`);
+      } else {
+        alertsCreated += 1;
+        record(c.item, true, "alert_created", `${c.kind} change inside the ${recencyDays}d window`);
+      }
     }
   }
 
-  // 5. Persist monitoring state.
+  // 5. Persist monitoring state — findings are never deleted, only updated.
   const now = new Date().toISOString();
   for (const item of items) {
+    const t = temporalOf(item);
+    const prev = existing.get(item.fingerprint);
+    const valueChanged =
+      !!prev &&
+      item.numeric_value !== null &&
+      prev.numeric_value !== null &&
+      Number(prev.numeric_value) !== item.numeric_value;
     await db.from("findings").upsert(
       {
         radar_id: radar.id,
@@ -365,25 +541,63 @@ ${changed
         numeric_value: item.numeric_value,
         currency: item.currency,
         snapshot: { summary: item.summary, event_type: item.event_type } as never,
+        published_at: t.publishedAt,
+        source_updated_at: t.updatedAt,
+        event_date: t.eventDate,
+        retrieved_at: t.retrievedAt,
+        origin: prev ? prev.origin : isBaseline ? "baseline" : "incremental",
+        last_changed_at: valueChanged ? now : (prev?.last_changed_at ?? null),
+        last_run_id: runId,
         last_seen_at: now,
       },
       { onConflict: "radar_id,fingerprint" },
     );
   }
 
+  if (decisions.length > 0) {
+    await db.from("alert_decisions").insert(
+      decisions.map((d) => ({ ...d, radar_id: radar.id, user_id: radar.user_id, run_id: runId })),
+    );
+  }
+
+  const failed = research.failures > 0 && research.successes === 0;
+  const baselineFindings = isBaseline ? items.length : 0;
+  const incrementalFindings = isBaseline ? 0 : changed.length;
+
   await finishRun({
-    status: research.failures > 0 && research.successes === 0 ? "error" : "ok",
+    status: failed ? "failed" : "completed",
+    run_type: runType,
     items_found: items.length,
     new_items: changed.length,
     alerts_created: alertsCreated,
+    baseline_findings: baselineFindings,
+    incremental_findings: incrementalFindings,
+    suppressed_baseline: suppressedBaseline,
+    suppressed_recency: suppressedRecency,
+    suppressed_duplicate: suppressedDuplicate,
+    suppressed_relevance: suppressedRelevance,
     error: research.errors.length ? research.errors.join(" | ").slice(0, 800) : null,
     finished_at: now,
   });
 
-  await db.from("radars").update({ last_run_at: now }).eq("id", radar.id);
+  type RadarUpdate = Database["public"]["Tables"]["radars"]["Update"];
+  const radarPatch: RadarUpdate = { last_run_at: now };
+  if (!failed) {
+    radarPatch.last_successful_sweep_at = now;
+    // Baseline only counts as complete after a successful sweep.
+    if (isBaseline) {
+      radarPatch.baseline_completed = true;
+      radarPatch.baseline_completed_at = now;
+    }
+  }
+  await db.from("radars").update(radarPatch).eq("id", radar.id);
 
   return {
-    status: "ok",
+    status: failed ? "error" : "ok",
+    runType,
+    message: isBaseline
+      ? `Baseline snapshot complete — ${items.length} findings recorded. Future sweeps will alert only on genuinely new or changed information.`
+      : undefined,
     itemsFound: items.length,
     newItems: changed.length,
     alertsCreated,
@@ -393,12 +607,11 @@ ${changed
     searchFailures: research.failures,
     costEstimate: research.costEstimate,
     duplicatesRemoved: research.duplicatesRemoved,
+    baselineFindings,
+    incrementalFindings,
+    suppressedBaseline,
+    suppressedRecency,
+    suppressedDuplicate,
+    suppressedRelevance,
   };
 }
-
-/** Providers return loose date strings; only keep parsable ones. */
-function safeDate(value: string): string | null {
-  const t = Date.parse(value);
-  return Number.isNaN(t) ? null : new Date(t).toISOString();
-}
-
