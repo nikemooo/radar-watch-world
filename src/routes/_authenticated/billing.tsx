@@ -163,6 +163,13 @@ function Billing() {
             {data.isInternal && <span className="ml-2 text-xs text-muted-foreground">internal test account</span>}
           </p>
           <p className="text-sm text-muted-foreground">
+            {sub
+              ? `Status: ${sub.status.replace("_", " ")} · billed ${sub.billing_interval === "year" ? "yearly" : "monthly"}${
+                  sub.cancel_at_period_end ? " · cancels at period end" : ""
+                }`
+              : `Status: free plan · ${format(0, market.currency)}/mo · no payment method needed`}
+          </p>
+          <p className="text-sm text-muted-foreground">
             {data.radarCount} of {current.max_radars} radars used · sweeps as often as every{" "}
             {current.min_check_interval_minutes} minutes ·{" "}
             {current.max_alerts_per_month === null
