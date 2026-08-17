@@ -108,7 +108,7 @@ const evaluationSchema = {
 
 function documentBlock(docs: SearchDocument[]) {
   return docs
-    .map((d, i) => `[${i + 1}] ${d.title}\nURL: ${d.url}\n${d.snippet.slice(0, 800)}`)
+    .map((d, i) => `[${i + 1}] ${d.title}\nURL: ${d.url}\n${d.snippet.slice(0, 2500)}`)
     .join("\n\n");
 }
 
@@ -226,14 +226,14 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
     schemaName: "radar_extraction",
     schema: extractionSchema,
     system:
-      "You extract structured monitoring items from search results for a personal intelligence platform. " +
+      "You extract structured monitoring items from retrieved web documents for a personal intelligence platform. " +
+      "Extract EVERY concrete listing, offer, product, price or event visible in the document text — including items on aggregator and listing-index pages — even when an item does not fully match the user's criteria. Relevance filtering happens in a later step. " +
       "Only use facts present in the provided documents. Never invent URLs, prices, products, companies, dates or facts. " +
-      "The url field must be copied verbatim from a provided document. " +
-      "If a document is ambiguous or does not clearly support a fact, omit that fact and say in the summary that it could not be verified from the source. " +
-      "Return an empty items array rather than guessing. " +
+      "The url field must be the URL of the document the item came from, copied verbatim. " +
+      "If a fact is not clearly supported by the document, leave it null and note in the summary that it could not be verified from the source. " +
       "fingerprint must be a short stable slug identifying the underlying item or event (not the article wording). " +
       "event_type is one of: new_listing, price_decrease, price_increase, new_article, announcement, new_product, regulation, market_move, opportunity, other.",
-    user: `Monitoring target: ${config.target || radar.raw_request}
+    user: `Monitoring target (context only — do NOT filter on it): ${config.target || radar.raw_request}
 Interpretation: ${config.interpretation}
 Important criteria: ${config.important_criteria.join("; ") || "none"}
 Exclusions: ${config.exclusions.join("; ") || "none"}
@@ -243,9 +243,27 @@ Documents:
 ${documentBlock(research.documents)}`,
   });
 
-  const items = extraction.items.filter((i) =>
-    research.documents.some((d) => d.url === i.url),
-  );
+
+  // Grounding guard: an item may only cite a retrieved document, or a page on
+
+  // the same site as one (listing pages link to their own detail pages).
+  const docHosts = new Map<string, string>();
+  for (const d of research.documents) {
+    try {
+      docHosts.set(new URL(d.url).host, d.url);
+    } catch {
+      /* ignore malformed */
+    }
+  }
+  const items = extraction.items.filter((i) => {
+    if (research.documents.some((d) => d.url === i.url)) return true;
+    try {
+      return docHosts.has(new URL(i.url).host);
+    } catch {
+      return false;
+    }
+  });
+
 
 
   // 3. Diff against persisted state.
