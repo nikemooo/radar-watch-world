@@ -27,14 +27,21 @@ interface NavItem {
 
 const primaryNav: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/radars", label: "Radars", icon: RadarIcon },
+  { to: "/radars", label: "My Radars", icon: RadarIcon },
   { to: "/alerts", label: "Alerts", icon: Bell },
   { to: "/intelligence", label: "Intelligence", icon: Newspaper },
+  { to: "/billing", label: "Billing", icon: CreditCard },
 ];
 
-const secondaryNav: NavItem[] = [
-  { to: "/billing", label: "Billing", icon: CreditCard },
-  { to: "/settings", label: "Settings", icon: Settings },
+const secondaryNav: NavItem[] = [{ to: "/settings", label: "Settings", icon: Settings }];
+
+// Compact bottom-bar set for phones (labels shortened to fit).
+const mobileNav: (NavItem & { short: string })[] = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, short: "Home" },
+  { to: "/radars", label: "My Radars", icon: RadarIcon, short: "Radars" },
+  { to: "/alerts", label: "Alerts", icon: Bell, short: "Alerts" },
+  { to: "/intelligence", label: "Intelligence", icon: Newspaper, short: "Intel" },
+  { to: "/billing", label: "Billing", icon: CreditCard, short: "Billing" },
 ];
 
 export function useIsAdmin() {
@@ -123,6 +130,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Wordmark />
         </Link>
         <div className="flex items-center gap-1">
+          <Button asChild variant="ghost" size="icon" aria-label="Create radar">
+            <Link to="/radars/new">
+              <Plus className="size-4" />
+            </Link>
+          </Button>
+          <Button asChild variant="ghost" size="icon" aria-label="Settings">
+            <Link to="/settings">
+              <Settings className="size-4" />
+            </Link>
+          </Button>
           <ThemeToggle />
           <Button variant="ghost" size="icon" onClick={signOut} aria-label="Sign out">
             <LogOut className="size-4" />
@@ -139,7 +156,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        {nav.slice(0, 4).map((item) => {
+        {mobileNav.map((item) => {
           const active = pathname.startsWith(item.to);
           return (
             <Link
@@ -151,22 +168,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               )}
             >
               <item.icon className="size-5" />
-              {item.label}
+              {item.short}
               {item.to === "/alerts" && !!unread && (
                 <span className="absolute right-[22%] top-1.5 size-1.5 rounded-full bg-critical" />
               )}
             </Link>
           );
         })}
-        <Link
-          to="/radars/new"
-          className="flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-medium text-muted-foreground"
-        >
-          <span className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Plus className="size-3.5" />
-          </span>
-          New
-        </Link>
       </nav>
     </div>
   );
