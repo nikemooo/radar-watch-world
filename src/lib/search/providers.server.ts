@@ -210,6 +210,9 @@ export interface ResearchResult {
   successes: number;
   failures: number;
   costEstimate: number;
+  /** Raw results returned by the provider before URL de-duplication. */
+  rawResults: number;
+  duplicatesRemoved: number;
   errors: string[];
 }
 
@@ -225,6 +228,8 @@ export async function researchQueries(queries: string[], perQuery = 8): Promise<
       successes: 0,
       failures: 0,
       costEstimate: 0,
+      rawResults: 0,
+      duplicatesRemoved: 0,
       errors: [],
     };
   }
@@ -235,15 +240,21 @@ export async function researchQueries(queries: string[], perQuery = 8): Promise<
   let requests = 0;
   let successes = 0;
   let failures = 0;
+  let rawResults = 0;
+  let duplicates = 0;
 
   for (const query of queries.slice(0, 5)) {
     requests += 1;
     try {
       const results = await searchWithRetry(provider, query, perQuery);
       successes += 1;
+      rawResults += results.length;
       for (const doc of results) {
         const key = doc.url.split("#")[0]!;
-        if (seen.has(key)) continue;
+        if (seen.has(key)) {
+          duplicates += 1;
+          continue;
+        }
         seen.add(key);
         documents.push({ ...doc, url: key });
       }
@@ -263,6 +274,8 @@ export async function researchQueries(queries: string[], perQuery = 8): Promise<
     successes,
     failures,
     costEstimate: Number((requests * provider.costPerRequest).toFixed(4)),
+    rawResults,
+    duplicatesRemoved: duplicates,
     errors,
   };
 }
