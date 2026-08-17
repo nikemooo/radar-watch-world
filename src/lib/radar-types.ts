@@ -71,6 +71,16 @@ export const frequencyLabel: Record<RadarFrequency, string> = {
   weekly: "Weekly",
 };
 
+export const recencyPresets = [
+  { days: 1, label: "Last 24 hours" },
+  { days: 3, label: "Last 3 days" },
+  { days: 7, label: "Last week" },
+  { days: 30, label: "Last 30 days" },
+  { days: 90, label: "Last 90 days" },
+  { days: 365, label: "Last year" },
+  { days: 1825, label: "Evergreen (5 years)" },
+];
+
 export function frequencyToMinutes(freq: string): number {
   switch (freq) {
     case "instant":

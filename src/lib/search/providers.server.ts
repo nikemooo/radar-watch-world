@@ -21,6 +21,8 @@ export interface SearchDocument {
   snippet: string;
   publisher?: string | undefined;
   published_at?: string | undefined;
+  /** Last-updated timestamp, when the provider reports one. */
+  updated_at?: string | undefined;
   /** ISO timestamp of when this document was retrieved from the provider. */
   retrieved_at: string;
   /** The query that produced this document. */
