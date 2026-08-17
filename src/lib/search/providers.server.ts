@@ -15,8 +15,8 @@ export interface SearchDocument {
   title: string;
   url: string;
   snippet: string;
-  publisher?: string;
-  published_at?: string;
+  publisher?: string | undefined;
+  published_at?: string | undefined;
 }
 
 export interface SearchProvider {
