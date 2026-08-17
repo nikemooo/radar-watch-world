@@ -14,8 +14,8 @@ export function runWithRuntimeContext<T>(
 }
 
 export function keepRuntimeAlive(promise: Promise<unknown>): boolean {
-  const waitUntil = runtimeContext.getStore()?.waitUntil;
-  if (!waitUntil) return false;
-  waitUntil(promise);
+  const context = runtimeContext.getStore();
+  if (!context?.waitUntil) return false;
+  context.waitUntil(promise);
   return true;
 }
