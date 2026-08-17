@@ -496,45 +496,69 @@ export type Database = {
           active: boolean
           created_at: string
           currency: string
+          detail_fetch_level: string
           features: Json
+          history_days: number
           interval: string
           key: string
+          max_alerts_per_month: number | null
+          max_detail_fetches: number
           max_radars: number
           min_check_interval_minutes: number
           name: string
           price_amount: number
+          price_amount_yearly: number
+          priority_processing: boolean
           sort_order: number
           stripe_price_id: string | null
+          stripe_price_id_yearly: string | null
+          stripe_product_id: string | null
           updated_at: string
         }
         Insert: {
           active?: boolean
           created_at?: string
           currency?: string
+          detail_fetch_level?: string
           features?: Json
+          history_days?: number
           interval?: string
           key: string
+          max_alerts_per_month?: number | null
+          max_detail_fetches?: number
           max_radars?: number
           min_check_interval_minutes?: number
           name: string
           price_amount?: number
+          price_amount_yearly?: number
+          priority_processing?: boolean
           sort_order?: number
           stripe_price_id?: string | null
+          stripe_price_id_yearly?: string | null
+          stripe_product_id?: string | null
           updated_at?: string
         }
         Update: {
           active?: boolean
           created_at?: string
           currency?: string
+          detail_fetch_level?: string
           features?: Json
+          history_days?: number
           interval?: string
           key?: string
+          max_alerts_per_month?: number | null
+          max_detail_fetches?: number
           max_radars?: number
           min_check_interval_minutes?: number
           name?: string
           price_amount?: number
+          price_amount_yearly?: number
+          priority_processing?: boolean
           sort_order?: number
           stripe_price_id?: string | null
+          stripe_price_id_yearly?: string | null
+          stripe_product_id?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -546,6 +570,7 @@ export type Database = {
           display_name: string | null
           email: string | null
           id: string
+          is_internal: boolean
           notification_email: boolean
           onboarding_done: boolean
           plan_key: string
@@ -558,6 +583,7 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           id: string
+          is_internal?: boolean
           notification_email?: boolean
           onboarding_done?: boolean
           plan_key?: string
@@ -570,6 +596,7 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           id?: string
+          is_internal?: boolean
           notification_email?: boolean
           onboarding_done?: boolean
           plan_key?: string
@@ -588,6 +615,7 @@ export type Database = {
           created_at: string
           frequency: string
           id: string
+          is_test: boolean
           last_run_at: string | null
           last_successful_sweep_at: string | null
           max_detail_fetches: number
@@ -613,6 +641,7 @@ export type Database = {
           created_at?: string
           frequency?: string
           id?: string
+          is_test?: boolean
           last_run_at?: string | null
           last_successful_sweep_at?: string | null
           max_detail_fetches?: number
@@ -638,6 +667,7 @@ export type Database = {
           created_at?: string
           frequency?: string
           id?: string
+          is_test?: boolean
           last_run_at?: string | null
           last_successful_sweep_at?: string | null
           max_detail_fetches?: number
@@ -799,11 +829,17 @@ export type Database = {
       }
       subscriptions: {
         Row: {
+          billing_interval: string
+          cancel_at: string | null
           cancel_at_period_end: boolean
           created_at: string
           current_period_end: string | null
+          environment: string
           id: string
+          pending_effective_at: string | null
+          pending_plan_key: string | null
           plan_key: string
+          price_id: string | null
           provider: string
           status: string
           stripe_customer_id: string | null
@@ -812,11 +848,17 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          billing_interval?: string
+          cancel_at?: string | null
           cancel_at_period_end?: boolean
           created_at?: string
           current_period_end?: string | null
+          environment?: string
           id?: string
+          pending_effective_at?: string | null
+          pending_plan_key?: string | null
           plan_key: string
+          price_id?: string | null
           provider?: string
           status?: string
           stripe_customer_id?: string | null
@@ -825,11 +867,17 @@ export type Database = {
           user_id: string
         }
         Update: {
+          billing_interval?: string
+          cancel_at?: string | null
           cancel_at_period_end?: boolean
           created_at?: string
           current_period_end?: string | null
+          environment?: string
           id?: string
+          pending_effective_at?: string | null
+          pending_plan_key?: string | null
           plan_key?: string
+          price_id?: string | null
           provider?: string
           status?: string
           stripe_customer_id?: string | null
@@ -912,6 +960,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      alerts_this_month: { Args: { _user_id: string }; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
