@@ -6,9 +6,9 @@ const db = createClient(process.env["SUPABASE_URL"]!, process.env["SUPABASE_SERV
 }) as never;
 
 const { data: radars } = await (db as any).from("radars").select("*").order("created_at");
-const want = ["M340i", "Submariner", "Stockholm"];
+const want = ["[TEST CAR]", "[TEST WATCH]", "[TEST REALESTATE]"];
 for (const key of want) {
-  const radar = (radars ?? []).find((r: any) => (r.name + r.raw_request).includes(key));
+  const radar = (radars ?? []).find((r: any) => r.name.startsWith(key));
   if (!radar) { console.log("no radar for", key); continue; }
   console.log("\n=== ", key, radar.name);
   const res = await runRadarCycle(db, radar);
