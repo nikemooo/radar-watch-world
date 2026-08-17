@@ -1,0 +1,85 @@
+/**
+ * Category-agnostic monitoring configuration.
+ * Every Radar — cars, stocks, watches, flights, jobs, news — is described
+ * with the same structure. No category is special-cased.
+ */
+export type RadarFrequency = "smart" | "instant" | "daily" | "weekly";
+
+export type Importance = "critical" | "important" | "interesting" | "minor";
+
+export interface RadarConfig {
+  target: string;
+  interpretation: string;
+  locations: string[];
+  price_min: number | null;
+  price_max: number | null;
+  currency: string | null;
+  time_period: string | null;
+  preferences: string[];
+  important_criteria: string[];
+  monitored_events: string[];
+  search_queries: string[];
+  exclusions: string[];
+}
+
+export const emptyConfig: RadarConfig = {
+  target: "",
+  interpretation: "",
+  locations: [],
+  price_min: null,
+  price_max: null,
+  currency: null,
+  time_period: null,
+  preferences: [],
+  important_criteria: [],
+  monitored_events: [],
+  search_queries: [],
+  exclusions: [],
+};
+
+export function asConfig(value: unknown): RadarConfig {
+  if (!value || typeof value !== "object") return emptyConfig;
+  return { ...emptyConfig, ...(value as Partial<RadarConfig>) };
+}
+
+export interface AlertSource {
+  title: string;
+  url: string;
+  publisher?: string;
+}
+
+export function asSources(value: unknown): AlertSource[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (s): s is AlertSource => !!s && typeof s === "object" && typeof (s as AlertSource).url === "string",
+  );
+}
+
+export const importanceOrder: Importance[] = ["critical", "important", "interesting", "minor"];
+
+export const importanceLabel: Record<Importance, string> = {
+  critical: "Critical",
+  important: "Important",
+  interesting: "Interesting",
+  minor: "No action needed",
+};
+
+export const frequencyLabel: Record<RadarFrequency, string> = {
+  smart: "Smart (recommended)",
+  instant: "Instant",
+  daily: "Daily",
+  weekly: "Weekly",
+};
+
+export function frequencyToMinutes(freq: string): number {
+  switch (freq) {
+    case "instant":
+      return 30;
+    case "daily":
+      return 60 * 24;
+    case "weekly":
+      return 60 * 24 * 7;
+    default:
+      return 60 * 4; // smart
+  }
+}
