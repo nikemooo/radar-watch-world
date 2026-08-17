@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedRadarsIndexRouteImport } from './routes/_authenticated/radars.index'
 import { Route as AuthenticatedRadarsNewRouteImport } from './routes/_authenticated/radars.new'
 
 const IndexRoute = IndexRouteImport.update({
@@ -46,6 +47,12 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedRadarsIndexRoute =
+  AuthenticatedRadarsIndexRouteImport.update({
+    id: '/radars/',
+    path: '/radars/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedRadarsNewRoute = AuthenticatedRadarsNewRouteImport.update({
   id: '/radars/new',
   path: '/radars/new',
@@ -59,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
+  '/radars/': typeof AuthenticatedRadarsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -67,6 +75,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
+  '/radars': typeof AuthenticatedRadarsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,6 +86,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/radars/new': typeof AuthenticatedRadarsNewRoute
+  '/_authenticated/radars/': typeof AuthenticatedRadarsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -87,6 +97,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/dashboard'
     | '/radars/new'
+    | '/radars/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -95,6 +106,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/dashboard'
     | '/radars/new'
+    | '/radars'
   id:
     | '__root__'
     | '/'
@@ -104,6 +116,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/_authenticated/dashboard'
     | '/_authenticated/radars/new'
+    | '/_authenticated/radars/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/radars/': {
+      id: '/_authenticated/radars/'
+      path: '/radars'
+      fullPath: '/radars/'
+      preLoaderRoute: typeof AuthenticatedRadarsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/radars/new': {
       id: '/_authenticated/radars/new'
       path: '/radars/new'
@@ -171,11 +191,13 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedRadarsNewRoute: typeof AuthenticatedRadarsNewRoute
+  AuthenticatedRadarsIndexRoute: typeof AuthenticatedRadarsIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedRadarsNewRoute: AuthenticatedRadarsNewRoute,
+  AuthenticatedRadarsIndexRoute: AuthenticatedRadarsIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
