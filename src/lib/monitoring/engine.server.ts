@@ -418,8 +418,17 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
     observedAt: f.last_seen_at,
     detailFetched: f.detail_status === "fetched",
   });
-  const usableComparablesBefore = (existingRows ?? []).filter(
-    (f) => observedValue(asObservation(f), valueKey) !== null,
+  /**
+   * A "usable comparable" is an observation whose value came from a read
+   * item-level page — the quality bar for comparables is not lowered here, so
+   * coverage is measured against stated facts only.
+   */
+  const isUsableComparable = (o: Observation): boolean => {
+    const v = observedValue(o, valueKey);
+    return v !== null && v.stated;
+  };
+  const usableComparablesBefore = (existingRows ?? []).filter((f) =>
+    isUsableComparable(asObservation(f)),
   ).length;
   const comparableGap = Math.max(0, minComparables - usableComparablesBefore);
 
@@ -473,7 +482,7 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
           url,
           detailStatus: f.detail_status,
           detailFetchedAt: f.detail_fetched_at,
-          hasComparableValue: observedValue(asObservation(f), valueKey) !== null,
+          hasComparableValue: isUsableComparable(asObservation(f)),
           // The comparable value is the attribute that matters most for coverage.
           missingCritical: valueKey ? !attrs[valueKey]?.raw : false,
         });
@@ -1068,7 +1077,7 @@ ${eligible
   const baselineFindings = isBaseline ? items.length : 0;
   const incrementalFindings = isBaseline ? 0 : changed.length;
 
-  const usableComparablesAfter = population.filter((o) => observedValue(o, valueKey) !== null).length;
+  const usableComparablesAfter = population.filter(isUsableComparable).length;
   const comparableCoverage =
     population.length > 0 ? Number(((usableComparablesAfter / population.length) * 100).toFixed(1)) : 0;
 
