@@ -18,7 +18,7 @@ import { chatJson, MODELS } from "../ai/gateway.server";
 import { researchQueries, type SearchDocument } from "../search/providers.server";
 import { asConfig, type RadarConfig } from "../radar-types";
 import {
-  canonicalFingerprint,
+  assignFingerprints,
   clampRecencyDays,
   evaluateRecency,
   informationDate,
@@ -310,14 +310,9 @@ ${documentBlock(research.documents)}`,
   });
 
   // Deterministic identity: the model's slug wording drifts between runs.
-  for (const item of items) {
-    item.fingerprint = canonicalFingerprint({
-      url: item.url,
-      entity: item.entity,
-      title: item.title,
-      modelFingerprint: item.fingerprint,
-    });
-  }
+  const identified = assignFingerprints(items);
+  items.length = 0;
+  items.push(...identified);
 
   // Collapse items that resolve to the same identity within one sweep.
   const byIdentity = new Map<string, ExtractedItem>();

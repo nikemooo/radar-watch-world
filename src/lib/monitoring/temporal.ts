@@ -105,41 +105,49 @@ export function evaluateRecency(
   };
 }
 
-/**
- * Stable identity for an extracted item.
- *
- * The language model's own slug wording drifts between runs, which would make
- * an unchanged item look brand new on every sweep. Identity is therefore
- * derived deterministically from the source location plus the entity/title,
- * and deliberately excludes the value so a price change is a *change* to a
- * known item, not a new item.
- */
-export function canonicalFingerprint(input: {
-  url: string;
-  entity?: string | null;
-  title?: string | null;
-  modelFingerprint?: string | null;
-}): string {
-  const normalize = (v: string) =>
-    v
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 80);
+export function normalizeSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
+}
 
-  let location: string;
+/** Host + path of a source URL — the stable part of an item's location. */
+export function sourceLocation(url: string): string {
   try {
-    const u = new URL(input.url);
-    location = `${u.hostname.replace(/^www\./, "")}${u.pathname.replace(/\/$/, "")}`;
+    const u = new URL(url);
+    return `${u.hostname.replace(/^www\./, "")}${u.pathname.replace(/\/$/, "")}`;
   } catch {
-    location = normalize(input.url);
+    return normalizeSlug(url);
   }
+}
 
-  const subject =
-    normalize(input.entity ?? "") ||
-    normalize(input.title ?? "") ||
-    normalize(input.modelFingerprint ?? "");
-
-  return `${location}|${subject}`.slice(0, 240);
+/**
+ * Stable identity for extracted items.
+ *
+ * The language model's own slug and entity wording drift between runs
+ * ("NVIDIA" vs "NVIDIA Corporation"), which would make unchanged items look
+ * brand new on every sweep. Identity is therefore derived from the source
+ * location, and only pages that carry several items (listing/aggregator pages)
+ * get a title-based discriminator. Values are deliberately excluded so a price
+ * change is a *change* to a known item, not a new item.
+ */
+export function assignFingerprints<T extends { url: string; title?: string | null }>(
+  items: T[],
+): (T & { fingerprint: string })[] {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const loc = sourceLocation(item.url);
+    counts.set(loc, (counts.get(loc) ?? 0) + 1);
+  }
+  return items.map((item) => {
+    const loc = sourceLocation(item.url);
+    const multiple = (counts.get(loc) ?? 0) > 1;
+    const discriminator = multiple
+      ? normalizeSlug(item.title ?? "").split("-").slice(0, 6).join("-")
+      : "";
+    return { ...item, fingerprint: `${loc}${discriminator ? `|${discriminator}` : ""}`.slice(0, 240) };
+  });
 }
