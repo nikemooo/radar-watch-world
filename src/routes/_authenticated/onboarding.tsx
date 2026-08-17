@@ -5,7 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Loader2, Lock, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { createRadar, interpretRadarRequest, runRadarNow } from "@/lib/radar.functions";
+import {
+  createRadar,
+  getSweepStatus,
+  interpretRadarRequest,
+  runRadarNow,
+} from "@/lib/radar.functions";
 import { completeOnboarding, getOnboardingState } from "@/lib/onboarding.functions";
 import { AlertCard, type AlertRow } from "@/components/alert-card";
 import { Button } from "@/components/ui/button";
@@ -88,6 +93,7 @@ function Onboarding() {
   const interpret = useServerFn(interpretRadarRequest);
   const createRadarFn = useServerFn(createRadar);
   const runSweep = useServerFn(runRadarNow);
+  const sweepStatus = useServerFn(getSweepStatus);
   const finish = useServerFn(completeOnboarding);
 
   const [state, setState] = useState<Awaited<ReturnType<typeof getOnboardingState>> | null>(null);
@@ -135,6 +141,29 @@ function Onboarding() {
     );
     return () => window.clearInterval(t);
   }, []);
+
+  /**
+   * Polls the persisted monitor_run row until the sweep really finishes.
+   * Only the run row decides success or failure — never a dropped request.
+   */
+  const waitForSweep = async (
+    id: string,
+    since: string,
+  ): Promise<"completed" | "failed"> => {
+    const deadline = Date.now() + 8 * 60_000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 4000));
+      try {
+        const status = await sweepStatus({ data: { radarId: id, since } });
+        if (status.state === "completed") return "completed";
+        if (status.state === "failed") return "failed";
+      } catch {
+        // transient network error while polling — keep waiting
+      }
+    }
+    return "failed";
+  };
+
 
   const skip = async () => {
     await track("onboarding_skipped");
@@ -193,18 +222,34 @@ function Onboarding() {
         () => setSweepPhase((p) => Math.min(p + 1, sweepProgress.length - 1)),
         4000,
       );
+      const startedAt = new Date(Date.now() - 60_000).toISOString();
       try {
-        await runSweep({ data: { radarId: created.id } });
-        await track("first_sweep_completed");
-        const { data: alerts } = await supabase
-          .from("alerts")
-          .select("*")
-          .eq("radar_id", created.id)
-          .order("created_at", { ascending: false })
-          .limit(1);
-        const strongest = (alerts?.[0] ?? null) as AlertRow | null;
-        setAlert(strongest);
-        if (strongest) await track("first_alert_seen", { alert_id: strongest.id });
+        // A full first sweep can run for minutes, so the server hands back
+        // "running" and the persisted monitor_run row is the source of truth.
+        // A dropped request is NOT a failed sweep — only the run row decides.
+        let outcome = await runSweep({ data: { radarId: created.id } }).catch(
+          () => ({ state: "running" as const, startedAt }),
+        );
+        let succeeded = outcome.state === "completed";
+        if (!succeeded) {
+          const since = "startedAt" in outcome ? outcome.startedAt : startedAt;
+          const final = await waitForSweep(created.id, since);
+          succeeded = final === "completed";
+        }
+        if (!succeeded) {
+          setSweepFailed(true);
+        } else {
+          await track("first_sweep_completed");
+          const { data: alerts } = await supabase
+            .from("alerts")
+            .select("*")
+            .eq("radar_id", created.id)
+            .order("created_at", { ascending: false })
+            .limit(1);
+          const strongest = (alerts?.[0] ?? null) as AlertRow | null;
+          setAlert(strongest);
+          if (strongest) await track("first_alert_seen", { alert_id: strongest.id });
+        }
       } catch {
         setSweepFailed(true);
       } finally {
