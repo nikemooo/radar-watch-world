@@ -42,7 +42,7 @@ function Alerts() {
   });
 
   const patch = useMutation({
-    mutationFn: async ({ id, values }: { id: string; values: Record<string, string> }) => {
+    mutationFn: async ({ id, values }: { id: string; values: { status?: string; feedback?: string } }) => {
       const { error } = await supabase.from("alerts").update(values).eq("id", id);
       if (error) throw error;
     },
