@@ -53,11 +53,11 @@ function NewRadar() {
     setBusy(true);
     try {
       const result = await interpret({ data: { request } });
-      const parsed = asConfig(result.config ?? result);
+      const parsed = asConfig(result.config);
       setConfig(parsed);
-      setName(result.name ?? parsed.target ?? request.slice(0, 60));
-      setCategory(result.category ?? "general");
-      if (result.frequency) setFrequency(result.frequency as RadarFrequency);
+      setName(result.name || parsed.target || request.slice(0, 60));
+      setCategory(result.category || "general");
+      if (result.suggested_frequency) setFrequency(result.suggested_frequency);
       setStep("confirm");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not interpret that request.");
