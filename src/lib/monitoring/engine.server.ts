@@ -440,6 +440,22 @@ ${documentBlock(allDocs)}`,
   items.length = 0;
   items.push(...byIdentity.values());
 
+  // Attribute enrichment: a detail page is the primary source for its item.
+  const attributesFor = (item: ExtractedItem): Record<string, AttributeValue> | null =>
+    detailByUrl.get(item.url)?.attributes ?? null;
+  for (const item of items) {
+    const attrs = attributesFor(item);
+    if (!attrs) continue;
+    const money = Object.values(attrs).find(
+      (a) => a.currency !== null && a.value !== null && (a.confidence === "stated" || a.confidence === "structured"),
+    );
+    // Normalized price from the detail page beats a value read off an index page.
+    if (money) {
+      item.numeric_value = money.value;
+      item.currency = money.currency;
+    }
+  }
+
   const docByUrl = new Map(allDocs.map((d) => [d.url, d]));
   const temporalOf = (item: ExtractedItem): TemporalFacts => {
     const doc = docByUrl.get(item.url);
@@ -456,8 +472,19 @@ ${documentBlock(allDocs)}`,
   const existing = new Map((existingRows ?? []).map((f) => [f.fingerprint, f]));
 
   const changed: { item: ExtractedItem; kind: string; previous: number | null }[] = [];
+  const attributeEvents: {
+    fingerprint: string;
+    attribute: string;
+    previous: AttributeValue | null;
+    next: AttributeValue;
+  }[] = [];
   for (const item of items) {
     const prev = existing.get(item.fingerprint);
+    const attrs = attributesFor(item);
+    const attrDiffs = prev && attrs ? diffAttributes(asAttributeMap(prev.attributes), attrs) : [];
+    for (const d of attrDiffs) {
+      attributeEvents.push({ fingerprint: item.fingerprint, attribute: d.attribute, previous: d.previous, next: d.next });
+    }
     if (!prev) {
       changed.push({ item, kind: "new", previous: null });
     } else if (
@@ -470,6 +497,9 @@ ${documentBlock(allDocs)}`,
         kind: item.numeric_value < Number(prev.numeric_value) ? "decrease" : "increase",
         previous: Number(prev.numeric_value),
       });
+    } else if (attrDiffs.length > 0) {
+      // A changed attribute is an event on a KNOWN item, never a new item.
+      changed.push({ item, kind: `attribute_change:${attrDiffs.map((d) => d.attribute).join(",")}`, previous: null });
     }
     // Same fingerprint, same value = the same source showing up again: never an alert.
   }
