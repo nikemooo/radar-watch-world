@@ -40,8 +40,8 @@ const mobileNav: (NavItem & { short: string })[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, short: "Home" },
   { to: "/radars", label: "My Radars", icon: RadarIcon, short: "Radars" },
   { to: "/alerts", label: "Alerts", icon: Bell, short: "Alerts" },
+  { to: "/intelligence", label: "Intelligence", icon: Newspaper, short: "Intel" },
   { to: "/billing", label: "Billing", icon: CreditCard, short: "Billing" },
-  { to: "/settings", label: "Settings", icon: Settings, short: "Settings" },
 ];
 
 export function useIsAdmin() {
@@ -133,6 +133,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button asChild variant="ghost" size="icon" aria-label="Create radar">
             <Link to="/radars/new">
               <Plus className="size-4" />
+            </Link>
+          </Button>
+          <Button asChild variant="ghost" size="icon" aria-label="Settings">
+            <Link to="/settings">
+              <Settings className="size-4" />
             </Link>
           </Button>
           <ThemeToggle />
