@@ -18,7 +18,7 @@ async function syncSubscription(db: any, sub: Stripe.Subscription, environment: 
   const planKey = (await planKeyForPrice(db, priceId)) ?? "pro";
   const periodEndUnix = (item as any)?.current_period_end ?? (sub as any).current_period_end ?? null;
   const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000).toISOString() : null;
-  const userId = (sub.metadata?.user_id as string | undefined) ?? null;
+  const userId = (sub.metadata?.['user_id'] as string | undefined) ?? null;
 
   const { data: existing } = await db
     .from("subscriptions")
@@ -90,16 +90,16 @@ export const Route = createFileRoute("/api/public/stripe-webhook")({
           switch (event.type) {
             case "checkout.session.completed": {
               const session = event.data.object as Stripe.Checkout.Session;
-              const userId = session.client_reference_id ?? (session.metadata?.user_id as string | undefined);
+              const userId = session.client_reference_id ?? (session.metadata?.['user_id'] as string | undefined);
               const subscriptionId =
                 typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
               if (userId && subscriptionId) {
                 const sub = await stripe.subscriptions.retrieve(subscriptionId);
-                if (!sub.metadata?.user_id) {
+                if (!sub.metadata?.['user_id']) {
                   await stripe.subscriptions.update(subscriptionId, {
-                    metadata: { ...sub.metadata, user_id: userId, plan_key: session.metadata?.plan_key ?? "" },
+                    metadata: { ...sub.metadata, user_id: userId, plan_key: session.metadata?.['plan_key'] ?? "" },
                   });
-                  (sub.metadata as Record<string, string>).user_id = userId;
+                  (sub.metadata as Record<string, string>)['user_id'] = userId;
                 }
                 await syncSubscription(supabaseAdmin, sub, environment);
               }
