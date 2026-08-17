@@ -1,7 +1,7 @@
 import { ExternalLink, Bookmark, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { ImportanceBadge, ConfidenceMeter } from "@/components/importance-badge";
 import { Button } from "@/components/ui/button";
-import { asSources, type Importance } from "@/lib/radar-types";
+import { asSources } from "@/lib/radar-types";
 import { cn } from "@/lib/utils";
 
 export interface AlertRow {
