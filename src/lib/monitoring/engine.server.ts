@@ -1007,8 +1007,10 @@ ${eligible
         record(c.item, false, "error", `could not persist alert: ${error.message}`);
       } else {
         alertsCreated += 1;
+        if (alertBudget !== null) alertBudget -= 1;
         record(c.item, true, "alert_created", `${c.kind} change inside the ${recencyDays}d window`);
       }
+
     }
   }
 
