@@ -27,6 +27,8 @@ export interface SearchDocument {
   retrieved_at: string;
   /** The query that produced this document. */
   query: string;
+  /** URLs the provider found on the page — real candidate detail links. */
+  links?: string[] | undefined;
 }
 
 export interface SearchProvider {
@@ -80,7 +82,7 @@ const exaProvider: SearchProvider = {
           query,
           numResults: limit,
           type: "auto",
-          contents: { text: { maxCharacters: 1500 } },
+          contents: { text: { maxCharacters: 1500 }, extras: { links: 25 } },
         }),
       });
     } catch (err) {
@@ -98,6 +100,7 @@ const exaProvider: SearchProvider = {
         summary?: string;
         publishedDate?: string;
         author?: string;
+        extras?: { links?: string[] };
       }[];
     };
     return (data.results ?? [])
@@ -110,6 +113,7 @@ const exaProvider: SearchProvider = {
         published_at: r.publishedDate,
         retrieved_at,
         query,
+        links: (r.extras?.links ?? []).filter((l) => typeof l === "string" && l.startsWith("http")),
       }));
   },
 };
