@@ -36,10 +36,13 @@ export const completeOnboarding = createServerFn({ method: "POST" })
     notificationEmail: input?.notificationEmail,
   }))
   .handler(async ({ data, context }) => {
-    const patch: Record<string, unknown> = { onboarding_done: true };
+    const patch: { onboarding_done: boolean; notification_email?: boolean } = {
+      onboarding_done: true,
+    };
     if (typeof data.notificationEmail === "boolean") {
-      patch['notification_email'] = data.notificationEmail;
+      patch.notification_email = data.notificationEmail;
     }
+
     const { error } = await context.supabase
       .from("profiles")
       .update(patch)
