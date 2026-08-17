@@ -119,6 +119,10 @@ export interface RunResult {
   newItems: number;
   alertsCreated: number;
   provider: string | null;
+  sourcesRetrieved?: number;
+  searchRequests?: number;
+  searchFailures?: number;
+  costEstimate?: number;
 }
 
 export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult> {
@@ -140,7 +144,7 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
     return {
       status: "no_provider",
       message:
-        "No research provider is connected yet. Add an EXA_API_KEY or BRAVE_SEARCH_API_KEY so Radar can read live public sources.",
+        "No research provider is connected yet. Add an EXA_API_KEY so Radar can read live public sources.",
       itemsFound: 0,
       newItems: 0,
       alertsCreated: 0,
@@ -148,20 +152,70 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
     };
   }
 
-  if (research.documents.length === 0) {
-    await db.from("monitor_runs").insert({
+  // Every retrieved source is persisted verbatim so alerts stay verifiable.
+  const { data: runRow } = await db
+    .from("monitor_runs")
+    .insert({
       radar_id: radar.id,
       user_id: radar.user_id,
-      status: "ok",
+      status: "running",
       provider: research.provider,
       started_at: started,
+      search_requests: research.requests,
+      search_successes: research.successes,
+      search_failures: research.failures,
+      sources_retrieved: research.documents.length,
+      cost_estimate: research.costEstimate,
+    })
+    .select("id")
+    .maybeSingle();
+  const runId = runRow?.id ?? null;
+
+  if (research.documents.length > 0) {
+    await db.from("research_sources").insert(
+      research.documents.map((d) => ({
+        radar_id: radar.id,
+        user_id: radar.user_id,
+        run_id: runId,
+        provider: research.provider!,
+        query: d.query,
+        url: d.url,
+        title: d.title,
+        publisher: d.publisher ?? null,
+        published_at: d.published_at ? safeDate(d.published_at) : null,
+        retrieved_at: d.retrieved_at,
+        snippet: d.snippet.slice(0, 4000),
+      })),
+    );
+  }
+
+  const finishRun = async (patch: Record<string, unknown>) => {
+    if (!runId) return;
+    await db.from("monitor_runs").update(patch).eq("id", runId);
+  };
+
+  if (research.documents.length === 0) {
+    const failedAll = research.requests > 0 && research.successes === 0;
+    await finishRun({
+      status: failedAll ? "error" : "ok",
+      error: failedAll ? research.errors.join(" | ").slice(0, 800) : null,
       finished_at: new Date().toISOString(),
     });
-    await db
-      .from("radars")
-      .update({ last_run_at: new Date().toISOString() })
-      .eq("id", radar.id);
-    return { status: "ok", itemsFound: 0, newItems: 0, alertsCreated: 0, provider: research.provider };
+    await db.from("radars").update({ last_run_at: new Date().toISOString() }).eq("id", radar.id);
+    return {
+      status: failedAll ? "error" : "ok",
+      message: failedAll
+        ? `Search provider error: ${research.errors[0] ?? "unknown error"}`
+        : "No sources could be retrieved for this radar — nothing could be verified, so no alert was created.",
+      itemsFound: 0,
+      newItems: 0,
+      alertsCreated: 0,
+      provider: research.provider,
+      sourcesRetrieved: 0,
+      searchRequests: research.requests,
+      searchFailures: research.failures,
+      costEstimate: research.costEstimate,
+    };
   }
 
   // 2. Extract structured items — grounded strictly in the retrieved documents.
@@ -171,8 +225,10 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
     schema: extractionSchema,
     system:
       "You extract structured monitoring items from search results for a personal intelligence platform. " +
-      "Only use facts present in the provided documents. Never invent URLs, prices or facts. " +
+      "Only use facts present in the provided documents. Never invent URLs, prices, products, companies, dates or facts. " +
       "The url field must be copied verbatim from a provided document. " +
+      "If a document is ambiguous or does not clearly support a fact, omit that fact and say in the summary that it could not be verified from the source. " +
+      "Return an empty items array rather than guessing. " +
       "fingerprint must be a short stable slug identifying the underlying item or event (not the article wording). " +
       "event_type is one of: new_listing, price_decrease, price_increase, new_article, announcement, new_product, regulation, market_move, opportunity, other.",
     user: `Monitoring target: ${config.target || radar.raw_request}
@@ -188,6 +244,7 @@ ${documentBlock(research.documents)}`,
   const items = extraction.items.filter((i) =>
     research.documents.some((d) => d.url === i.url),
   );
+
 
   // 3. Diff against persisted state.
   const { data: existingRows } = await db
