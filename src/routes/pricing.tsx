@@ -4,7 +4,8 @@ import { Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/radar-mark";
-import { formatPlanPrice } from "@/lib/billing/plans";
+import { MarketSelect } from "@/components/market-select";
+import { useMarketPricing } from "@/hooks/use-market";
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
@@ -22,6 +23,7 @@ export const Route = createFileRoute("/pricing")({
 });
 
 function Pricing() {
+  const { markets, market, setMarket, priceFor, format } = useMarketPricing();
   const { data: plans } = useQuery({
     queryKey: ["plans"],
     queryFn: async () => {
