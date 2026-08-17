@@ -27,7 +27,7 @@ export const Route = createFileRoute("/_authenticated/billing")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
-  component: Billing;
+  component: Billing,
 });
 
 function Billing() {
