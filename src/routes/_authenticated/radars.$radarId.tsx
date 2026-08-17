@@ -96,16 +96,20 @@ function RadarDetail() {
 
   const sweep = useMutation({
     mutationFn: async () => run({ data: { radarId } }),
-    onSuccess: (result) => {
-      const r = result as { alertsCreated?: number; runType?: string; itemsFound?: number };
-      const created = r?.alertsCreated ?? 0;
-      toast.success(
-        r?.runType === "baseline"
-          ? `Baseline recorded — ${r.itemsFound ?? 0} findings saved as history, no alerts.`
-          : created > 0
-            ? `${created} new alert${created > 1 ? "s" : ""}.`
-            : "Sweep complete — nothing new.",
-      );
+    onSuccess: (outcome) => {
+      if (outcome.state === "running") {
+        toast.success("Sweep started — it keeps running in the background.");
+      } else {
+        const r = outcome.result as { alertsCreated?: number; runType?: string; itemsFound?: number };
+        const created = r?.alertsCreated ?? 0;
+        toast.success(
+          r?.runType === "baseline"
+            ? `Baseline recorded — ${r.itemsFound ?? 0} findings saved as history, no alerts.`
+            : created > 0
+              ? `${created} new alert${created > 1 ? "s" : ""}.`
+              : "Sweep complete — nothing new.",
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["radar", radarId] });
       queryClient.invalidateQueries({ queryKey: ["alerts"] });
       queryClient.invalidateQueries({ queryKey: ["radar-sources", radarId] });

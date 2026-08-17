@@ -68,7 +68,7 @@ export const runRadarNow = createServerFn({ method: "POST" })
     return input;
   })
   .handler(async ({ data, context }) => {
-    const { runRadarCycle } = await import("./monitoring/engine.server");
+    const { startRadarSweep } = await import("./monitoring/sweep.server");
     const { getEntitlements, remainingAlerts, minSweepIntervalMinutes } = await import(
       "./billing/entitlements.server"
     );
@@ -92,12 +92,26 @@ export const runRadarNow = createServerFn({ method: "POST" })
       }
     }
 
-    return runRadarCycle(context.supabase, radar, {
+    return startRadarSweep(context.supabase, radar, {
       alertBudget: remainingAlerts(e),
       maxDetailFetches: e.isInternal ? undefined : e.plan.max_detail_fetches,
       priority: e.isInternal || e.plan.priority_processing,
     });
   });
+
+/** Persisted outcome of the latest sweep — the single source of truth for the UI. */
+export const getSweepStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { radarId: string; since?: string }) => {
+    if (!input?.radarId) throw new Error("Missing radar id.");
+    return { radarId: input.radarId, since: input.since };
+  })
+  .handler(async ({ data, context }) => {
+    const { readSweepStatus } = await import("./monitoring/sweep.server");
+    return readSweepStatus(context.supabase, data.radarId, data.since);
+  });
+
+
 
 
 /** Which research providers are wired up (nothing is faked when none are). */
