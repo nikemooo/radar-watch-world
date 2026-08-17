@@ -653,7 +653,19 @@ ${eligible
             url: c.item.url,
             publisher: doc?.publisher ?? null,
             published_at: safeDate(doc?.published_at),
+            role: detailByUrl.has(c.item.url) ? "primary" : "discovery",
           },
+          ...(discoveryByUrl.get(c.item.url) && discoveryByUrl.get(c.item.url) !== c.item.url
+            ? [
+                {
+                  title: docByUrl.get(discoveryByUrl.get(c.item.url)!)?.title ?? "Discovery page",
+                  url: discoveryByUrl.get(c.item.url)!,
+                  publisher: docByUrl.get(discoveryByUrl.get(c.item.url)!)?.publisher ?? null,
+                  published_at: null,
+                  role: "secondary",
+                },
+              ]
+            : []),
         ] as never,
       });
       if (error) {
@@ -675,28 +687,69 @@ ${eligible
       item.numeric_value !== null &&
       prev.numeric_value !== null &&
       Number(prev.numeric_value) !== item.numeric_value;
-    await db.from("findings").upsert(
-      {
-        radar_id: radar.id,
-        user_id: radar.user_id,
-        fingerprint: item.fingerprint,
-        title: item.title,
-        url: item.url,
-        entity: item.entity,
-        numeric_value: item.numeric_value,
-        currency: item.currency,
-        snapshot: { summary: item.summary, event_type: item.event_type } as never,
-        published_at: t.publishedAt,
-        source_updated_at: t.updatedAt,
-        event_date: t.eventDate,
-        retrieved_at: t.retrievedAt,
-        origin: prev ? prev.origin : isBaseline ? "baseline" : "incremental",
-        last_changed_at: valueChanged ? now : (prev?.last_changed_at ?? null),
-        last_run_id: runId,
-        last_seen_at: now,
-      },
-      { onConflict: "radar_id,fingerprint" },
-    );
+    const detail = detailByUrl.get(item.url);
+    const attrs = detail?.attributes ?? asAttributeMap(prev?.attributes ?? null);
+    const discoveryUrl = discoveryByUrl.get(item.url) ?? prev?.discovery_url ?? null;
+    const attrChanged = attributeEvents.some((e) => e.fingerprint === item.fingerprint);
+    const secondary = discoveryUrl && discoveryUrl !== item.url
+      ? [{ url: discoveryUrl, role: "secondary", title: docByUrl.get(discoveryUrl)?.title ?? null }]
+      : [];
+    const { data: saved } = await db
+      .from("findings")
+      .upsert(
+        {
+          radar_id: radar.id,
+          user_id: radar.user_id,
+          fingerprint: item.fingerprint,
+          title: item.title,
+          url: item.url,
+          entity: item.entity,
+          numeric_value: item.numeric_value,
+          currency: item.currency,
+          snapshot: { summary: item.summary, event_type: item.event_type } as never,
+          attributes: (attrs ?? {}) as never,
+          primary_url: detail ? item.url : (prev?.primary_url ?? null),
+          discovery_url: discoveryUrl,
+          secondary_sources: secondary as never,
+          detail_status: detail
+            ? "fetched"
+            : selected.some((c) => c.url === item.url)
+              ? "failed"
+              : (prev?.detail_status ?? "not_attempted"),
+          detail_fetched_at: detail ? now : (prev?.detail_fetched_at ?? null),
+          availability: detail?.availability ?? prev?.availability ?? null,
+          published_at: t.publishedAt,
+          source_updated_at: t.updatedAt,
+          event_date: t.eventDate,
+          retrieved_at: t.retrievedAt,
+          origin: prev ? prev.origin : isBaseline ? "baseline" : "incremental",
+          last_changed_at: valueChanged || attrChanged ? now : (prev?.last_changed_at ?? null),
+          last_run_id: runId,
+          last_seen_at: now,
+        },
+        { onConflict: "radar_id,fingerprint" },
+      )
+      .select("id")
+      .maybeSingle();
+
+    // Attribute-level change events: recorded against the EXISTING item.
+    const events = attributeEvents.filter((e) => e.fingerprint === item.fingerprint);
+    if (events.length > 0) {
+      await db.from("finding_changes").insert(
+        events.map((e) => ({
+          radar_id: radar.id,
+          user_id: radar.user_id,
+          finding_id: saved?.id ?? null,
+          run_id: runId,
+          fingerprint: e.fingerprint,
+          attribute: e.attribute,
+          previous_value: e.previous?.value !== null && e.previous?.value !== undefined ? String(e.previous.value) : null,
+          new_value: e.next.value !== null ? String(e.next.value) : null,
+          previous_raw: e.previous?.raw ?? null,
+          new_raw: e.next.raw,
+        })),
+      );
+    }
   }
 
   if (decisions.length > 0) {
@@ -721,6 +774,16 @@ ${eligible
     suppressed_recency: suppressedRecency,
     suppressed_duplicate: suppressedDuplicate,
     suppressed_relevance: suppressedRelevance,
+    candidates_discovered: candidates.length,
+    candidates_selected: selected.length,
+    detail_fetches_ok: detailFetchesOk,
+    detail_fetches_failed: detailFetchesFailed,
+    extractions_ok: extractionsOk,
+    extractions_failed: extractionsFailed,
+    attributes_extracted: attributesExtracted,
+    attributes_missing: attributesMissing,
+    items_merged: research.duplicatesRemoved,
+    detail_cost_estimate: detailCostEstimate,
     error: research.errors.length ? research.errors.join(" | ").slice(0, 800) : null,
     finished_at: now,
   });
@@ -747,10 +810,10 @@ ${eligible
     newItems: changed.length,
     alertsCreated,
     provider: research.provider,
-    sourcesRetrieved: research.documents.length,
+    sourcesRetrieved: allDocs.length,
     searchRequests: research.requests,
     searchFailures: research.failures,
-    costEstimate: research.costEstimate,
+    costEstimate: Number((research.costEstimate + detailCostEstimate).toFixed(4)),
     duplicatesRemoved: research.duplicatesRemoved,
     baselineFindings,
     incrementalFindings,
@@ -758,5 +821,16 @@ ${eligible
     suppressedRecency,
     suppressedDuplicate,
     suppressedRelevance,
+    candidatesDiscovered: candidates.length,
+    candidatesSelected: selected.length,
+    detailFetchesOk,
+    detailFetchesFailed,
+    extractionsOk,
+    extractionsFailed,
+    attributesExtracted,
+    attributesMissing,
+    indexPages: indexPages.length,
+    detailCostEstimate,
+    attributeChanges: attributeEvents.length,
   };
 }
