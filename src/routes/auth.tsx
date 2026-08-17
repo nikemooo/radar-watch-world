@@ -59,7 +59,7 @@ function AuthPage() {
         const { data: session } = await supabase.auth.getSession();
         if (session.session) {
           await track("signup");
-          navigate({ to: "/dashboard", replace: true });
+          navigate({ to: "/onboarding", replace: true });
         } else {
           setSent("Check your inbox and confirm your email address to activate your account.");
         }
