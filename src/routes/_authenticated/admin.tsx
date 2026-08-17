@@ -102,7 +102,7 @@ function Admin() {
                   <span
                     className={
                       p.configured
-                        ? "font-mono text-xs text-[hsl(var(--interesting,190_90%_45%))]"
+                        ? "font-mono text-xs text-interesting"
                         : "font-mono text-xs text-muted-foreground"
                     }
                   >
