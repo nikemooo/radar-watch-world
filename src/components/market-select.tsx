@@ -18,7 +18,7 @@ export function MarketSelect({ markets, value, onChange, disabled, hint }: Props
       <label className="sr-only" htmlFor="market-select">
         Billing country
       </label>
-      <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <Select value={value} onValueChange={onChange} disabled={disabled ?? false}>
         <SelectTrigger id="market-select" className="h-9 w-[240px]">
           <SelectValue placeholder="Select country" />
         </SelectTrigger>
