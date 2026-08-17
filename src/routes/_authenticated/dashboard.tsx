@@ -1,7 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useEffect } from "react";
 import { Activity, Bell, Plus, Radar as RadarIcon, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { getOnboardingState } from "@/lib/onboarding.functions";
 import { AlertCard, type AlertRow } from "@/components/alert-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
