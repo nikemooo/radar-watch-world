@@ -244,6 +244,7 @@ ${documentBlock(research.documents)}`,
   });
 
 
+  await db.from("monitor_runs").update({ error: `DEBUG raw=${extraction.items.length}` }).eq("id", runId!);
   // Grounding guard: an item may only cite a retrieved document, or a page on
 
   // the same site as one (listing pages link to their own detail pages).
