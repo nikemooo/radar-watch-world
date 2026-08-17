@@ -128,10 +128,10 @@ function Settings() {
         <div className="space-y-2">
           {(research?.providers ?? []).map((provider) => (
             <div
-              key={provider.name}
+              key={provider.id}
               className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
             >
-              <span>{provider.name}</span>
+              <span>{provider.label}</span>
               <span className={provider.configured ? "text-interesting" : "text-muted-foreground"}>
                 {provider.configured ? "Connected" : "Not configured"}
               </span>
