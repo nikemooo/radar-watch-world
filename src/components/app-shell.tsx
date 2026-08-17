@@ -158,22 +158,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               )}
             >
               <item.icon className="size-5" />
-              {item.label}
+              {item.short}
               {item.to === "/alerts" && !!unread && (
                 <span className="absolute right-[22%] top-1.5 size-1.5 rounded-full bg-critical" />
               )}
             </Link>
           );
         })}
-        <Link
-          to="/radars/new"
-          className="flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-medium text-muted-foreground"
-        >
-          <span className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Plus className="size-3.5" />
-          </span>
-          New
-        </Link>
       </nav>
     </div>
   );
