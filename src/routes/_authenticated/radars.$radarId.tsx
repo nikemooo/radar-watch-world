@@ -327,7 +327,7 @@ function RadarDetail() {
           <ul className="panel mt-4 divide-y divide-border">
             {data.findings.map((f) => {
               const attributes = Object.values(
-                (f.attributes ?? {}) as Record<string, AttributeValue>,
+                (f.attributes ?? {}) as unknown as Record<string, AttributeValue>,
               ).filter((a) => a && typeof a === "object" && a.raw);
               return (
                 <li key={f.id} className="p-4">
