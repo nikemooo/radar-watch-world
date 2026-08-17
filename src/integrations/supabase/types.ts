@@ -345,6 +345,39 @@ export type Database = {
           },
         ]
       }
+      markets: {
+        Row: {
+          active: boolean
+          code: string
+          country_codes: string[]
+          created_at: string
+          currency: string
+          locale: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          country_codes?: string[]
+          created_at?: string
+          currency: string
+          locale?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          country_codes?: string[]
+          created_at?: string
+          currency?: string
+          locale?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       monitor_runs: {
         Row: {
           alerts_created: number
@@ -491,6 +524,57 @@ export type Database = {
           },
         ]
       }
+      plan_prices: {
+        Row: {
+          active: boolean
+          amount_minor: number
+          billing_interval: string
+          created_at: string
+          currency: string
+          id: string
+          market_code: string
+          plan_key: string
+          stripe_price_id: string
+        }
+        Insert: {
+          active?: boolean
+          amount_minor: number
+          billing_interval: string
+          created_at?: string
+          currency: string
+          id?: string
+          market_code: string
+          plan_key: string
+          stripe_price_id: string
+        }
+        Update: {
+          active?: boolean
+          amount_minor?: number
+          billing_interval?: string
+          created_at?: string
+          currency?: string
+          id?: string
+          market_code?: string
+          plan_key?: string
+          stripe_price_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_prices_market_code_fkey"
+            columns: ["market_code"]
+            isOneToOne: false
+            referencedRelation: "markets"
+            referencedColumns: ["code"]
+          },
+          {
+            foreignKeyName: "plan_prices_plan_key_fkey"
+            columns: ["plan_key"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
       plans: {
         Row: {
           active: boolean
@@ -571,6 +655,7 @@ export type Database = {
           email: string | null
           id: string
           is_internal: boolean
+          market_code: string | null
           notification_email: boolean
           onboarding_done: boolean
           plan_key: string
@@ -584,6 +669,7 @@ export type Database = {
           email?: string | null
           id: string
           is_internal?: boolean
+          market_code?: string | null
           notification_email?: boolean
           onboarding_done?: boolean
           plan_key?: string
@@ -597,13 +683,22 @@ export type Database = {
           email?: string | null
           id?: string
           is_internal?: boolean
+          market_code?: string | null
           notification_email?: boolean
           onboarding_done?: boolean
           plan_key?: string
           timezone?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_market_code_fkey"
+            columns: ["market_code"]
+            isOneToOne: false
+            referencedRelation: "markets"
+            referencedColumns: ["code"]
+          },
+        ]
       }
       radars: {
         Row: {
@@ -833,9 +928,11 @@ export type Database = {
           cancel_at: string | null
           cancel_at_period_end: boolean
           created_at: string
+          currency: string | null
           current_period_end: string | null
           environment: string
           id: string
+          market_code: string | null
           pending_effective_at: string | null
           pending_plan_key: string | null
           plan_key: string
@@ -852,9 +949,11 @@ export type Database = {
           cancel_at?: string | null
           cancel_at_period_end?: boolean
           created_at?: string
+          currency?: string | null
           current_period_end?: string | null
           environment?: string
           id?: string
+          market_code?: string | null
           pending_effective_at?: string | null
           pending_plan_key?: string | null
           plan_key: string
@@ -871,9 +970,11 @@ export type Database = {
           cancel_at?: string | null
           cancel_at_period_end?: boolean
           created_at?: string
+          currency?: string | null
           current_period_end?: string | null
           environment?: string
           id?: string
+          market_code?: string | null
           pending_effective_at?: string | null
           pending_plan_key?: string | null
           plan_key?: string
