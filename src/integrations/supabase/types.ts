@@ -163,9 +163,74 @@ export type Database = {
         }
         Relationships: []
       }
+      finding_changes: {
+        Row: {
+          attribute: string
+          changed_at: string
+          finding_id: string | null
+          fingerprint: string
+          id: string
+          new_raw: string | null
+          new_value: string | null
+          previous_raw: string | null
+          previous_value: string | null
+          radar_id: string
+          run_id: string | null
+          user_id: string
+        }
+        Insert: {
+          attribute: string
+          changed_at?: string
+          finding_id?: string | null
+          fingerprint: string
+          id?: string
+          new_raw?: string | null
+          new_value?: string | null
+          previous_raw?: string | null
+          previous_value?: string | null
+          radar_id: string
+          run_id?: string | null
+          user_id: string
+        }
+        Update: {
+          attribute?: string
+          changed_at?: string
+          finding_id?: string | null
+          fingerprint?: string
+          id?: string
+          new_raw?: string | null
+          new_value?: string | null
+          previous_raw?: string | null
+          previous_value?: string | null
+          radar_id?: string
+          run_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finding_changes_finding_id_fkey"
+            columns: ["finding_id"]
+            isOneToOne: false
+            referencedRelation: "findings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finding_changes_radar_id_fkey"
+            columns: ["radar_id"]
+            isOneToOne: false
+            referencedRelation: "radars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       findings: {
         Row: {
+          attributes: Json
+          availability: string | null
           currency: string | null
+          detail_fetched_at: string | null
+          detail_status: string
+          discovery_url: string | null
           entity: string | null
           event_date: string | null
           fingerprint: string
@@ -176,9 +241,11 @@ export type Database = {
           last_seen_at: string
           numeric_value: number | null
           origin: string
+          primary_url: string | null
           published_at: string | null
           radar_id: string
           retrieved_at: string | null
+          secondary_sources: Json
           snapshot: Json
           source_updated_at: string | null
           title: string
@@ -186,7 +253,12 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          attributes?: Json
+          availability?: string | null
           currency?: string | null
+          detail_fetched_at?: string | null
+          detail_status?: string
+          discovery_url?: string | null
           entity?: string | null
           event_date?: string | null
           fingerprint: string
@@ -197,9 +269,11 @@ export type Database = {
           last_seen_at?: string
           numeric_value?: number | null
           origin?: string
+          primary_url?: string | null
           published_at?: string | null
           radar_id: string
           retrieved_at?: string | null
+          secondary_sources?: Json
           snapshot?: Json
           source_updated_at?: string | null
           title: string
@@ -207,7 +281,12 @@ export type Database = {
           user_id: string
         }
         Update: {
+          attributes?: Json
+          availability?: string | null
           currency?: string | null
+          detail_fetched_at?: string | null
+          detail_status?: string
+          discovery_url?: string | null
           entity?: string | null
           event_date?: string | null
           fingerprint?: string
@@ -218,9 +297,11 @@ export type Database = {
           last_seen_at?: string
           numeric_value?: number | null
           origin?: string
+          primary_url?: string | null
           published_at?: string | null
           radar_id?: string
           retrieved_at?: string | null
+          secondary_sources?: Json
           snapshot?: Json
           source_updated_at?: string | null
           title?: string
@@ -240,13 +321,23 @@ export type Database = {
       monitor_runs: {
         Row: {
           alerts_created: number
+          attributes_extracted: number
+          attributes_missing: number
           baseline_findings: number
+          candidates_discovered: number
+          candidates_selected: number
           cost_estimate: number
+          detail_cost_estimate: number
+          detail_fetches_failed: number
+          detail_fetches_ok: number
           error: string | null
+          extractions_failed: number
+          extractions_ok: number
           finished_at: string | null
           id: string
           incremental_findings: number
           items_found: number
+          items_merged: number
           new_items: number
           provider: string | null
           radar_id: string
@@ -265,13 +356,23 @@ export type Database = {
         }
         Insert: {
           alerts_created?: number
+          attributes_extracted?: number
+          attributes_missing?: number
           baseline_findings?: number
+          candidates_discovered?: number
+          candidates_selected?: number
           cost_estimate?: number
+          detail_cost_estimate?: number
+          detail_fetches_failed?: number
+          detail_fetches_ok?: number
           error?: string | null
+          extractions_failed?: number
+          extractions_ok?: number
           finished_at?: string | null
           id?: string
           incremental_findings?: number
           items_found?: number
+          items_merged?: number
           new_items?: number
           provider?: string | null
           radar_id: string
@@ -290,13 +391,23 @@ export type Database = {
         }
         Update: {
           alerts_created?: number
+          attributes_extracted?: number
+          attributes_missing?: number
           baseline_findings?: number
+          candidates_discovered?: number
+          candidates_selected?: number
           cost_estimate?: number
+          detail_cost_estimate?: number
+          detail_fetches_failed?: number
+          detail_fetches_ok?: number
           error?: string | null
+          extractions_failed?: number
+          extractions_ok?: number
           finished_at?: string | null
           id?: string
           incremental_findings?: number
           items_found?: number
+          items_merged?: number
           new_items?: number
           provider?: string | null
           radar_id?: string
@@ -421,6 +532,7 @@ export type Database = {
           id: string
           last_run_at: string | null
           last_successful_sweep_at: string | null
+          max_detail_fetches: number
           memory: Json
           monitoring_window: string
           name: string
@@ -442,6 +554,7 @@ export type Database = {
           id?: string
           last_run_at?: string | null
           last_successful_sweep_at?: string | null
+          max_detail_fetches?: number
           memory?: Json
           monitoring_window?: string
           name: string
@@ -463,6 +576,7 @@ export type Database = {
           id?: string
           last_run_at?: string | null
           last_successful_sweep_at?: string | null
+          max_detail_fetches?: number
           memory?: Json
           monitoring_window?: string
           name?: string

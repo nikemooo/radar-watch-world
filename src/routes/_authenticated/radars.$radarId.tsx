@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { asConfig, frequencyLabel, recencyPresets, type RadarFrequency } from "@/lib/radar-types";
+import { isFactual, type AttributeValue } from "@/lib/monitoring/normalize";
 import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/_authenticated/radars/$radarId")({
@@ -47,7 +48,7 @@ function RadarDetail() {
   const { data, isLoading } = useQuery({
     queryKey: ["radar", radarId],
     queryFn: async () => {
-      const [radar, alerts, runs, decisions] = await Promise.all([
+      const [radar, alerts, runs, decisions, findings, changes] = await Promise.all([
         supabase.from("radars").select("*").eq("id", radarId).maybeSingle(),
         supabase
           .from("alerts")
@@ -67,6 +68,18 @@ function RadarDetail() {
           .eq("radar_id", radarId)
           .order("created_at", { ascending: false })
           .limit(25),
+        supabase
+          .from("findings")
+          .select("*")
+          .eq("radar_id", radarId)
+          .order("last_seen_at", { ascending: false })
+          .limit(40),
+        supabase
+          .from("finding_changes")
+          .select("*")
+          .eq("radar_id", radarId)
+          .order("changed_at", { ascending: false })
+          .limit(25),
       ]);
       if (radar.error) throw radar.error;
       return {
@@ -74,6 +87,8 @@ function RadarDetail() {
         alerts: (alerts.data ?? []) as AlertRow[],
         runs: runs.data ?? [],
         decisions: decisions.data ?? [],
+        findings: findings.data ?? [],
+        changes: changes.data ?? [],
       };
     },
   });
@@ -250,6 +265,11 @@ function RadarDetail() {
                   {entry.items_found} found · {entry.new_items} new · {entry.alerts_created} alerts
                 </span>
                 <span className="w-full text-xs text-muted-foreground">
+                  detail — {entry.candidates_discovered} candidates · {entry.candidates_selected} selected ·{" "}
+                  {entry.detail_fetches_ok} fetched · {entry.detail_fetches_failed} failed ·{" "}
+                  {entry.attributes_extracted} attributes · {entry.attributes_missing} missing
+                </span>
+                <span className="w-full text-xs text-muted-foreground">
                   suppressed — baseline {entry.suppressed_baseline} · recency {entry.suppressed_recency} ·
                   duplicate {entry.suppressed_duplicate} · relevance {entry.suppressed_relevance}
                 </span>
@@ -292,6 +312,90 @@ function RadarDetail() {
                   {d.published_at ? new Date(d.published_at).toLocaleDateString() : "undated"}
                 </span>
                 <p className="w-full text-xs text-muted-foreground">{d.reason}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {data.findings.length > 0 && (
+        <section>
+          <h2 className="text-lg font-medium">Tracked items</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Item-level data read from individual pages. Only values the source states are shown as facts.
+          </p>
+          <ul className="panel mt-4 divide-y divide-border">
+            {data.findings.map((f) => {
+              const attributes = Object.values(
+                (f.attributes ?? {}) as unknown as Record<string, AttributeValue>,
+              ).filter((a) => a && typeof a === "object" && a.raw);
+              return (
+                <li key={f.id} className="p-4">
+                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <a
+                      href={f.primary_url ?? f.url ?? "#"}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-sm font-medium underline underline-offset-4"
+                    >
+                      {f.title}
+                    </a>
+                    <span className="mono-label">
+                      {f.detail_status === "fetched"
+                        ? "detail page read"
+                        : f.detail_status === "failed"
+                          ? "detail page unavailable"
+                          : "index source only"}
+                    </span>
+                    {f.availability && <span className="mono-label">{f.availability}</span>}
+                  </div>
+                  {attributes.length > 0 ? (
+                    <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                      {attributes.map((a) => (
+                        <div key={a.key} className="flex gap-2">
+                          <dt className="mono-label">{a.key.replace(/_/g, " ")}</dt>
+                          <dd className={isFactual(a) ? "" : "text-muted-foreground italic"}>
+                            {a.raw}
+                            {!isFactual(a) && " (inferred)"}
+                            {a.value !== null && (a.currency || a.unit) && (
+                              <span className="ml-1 text-xs text-muted-foreground">
+                                = {a.value} {a.currency ?? a.unit}
+                              </span>
+                            )}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      No item-level attributes available from the source — fields remain unknown.
+                    </p>
+                  )}
+                  {f.discovery_url && f.discovery_url !== (f.primary_url ?? f.url) && (
+                    <p className="mono-label mt-2">
+                      discovered on{" "}
+                      <a href={f.discovery_url} target="_blank" rel="noreferrer noopener" className="underline">
+                        {new URL(f.discovery_url).hostname}
+                      </a>
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {data.changes.length > 0 && (
+        <section>
+          <h2 className="text-lg font-medium">Attribute changes</h2>
+          <ul className="panel mt-4 divide-y divide-border">
+            {data.changes.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-baseline gap-x-3 px-4 py-3 text-sm">
+                <span className="mono-label">{c.attribute.replace(/_/g, " ")}</span>
+                <span className="text-muted-foreground line-through">{c.previous_raw ?? c.previous_value}</span>
+                <span>→ {c.new_raw ?? c.new_value}</span>
+                <span className="mono-label ml-auto">{new Date(c.changed_at).toLocaleString()}</span>
               </li>
             ))}
           </ul>

@@ -17,6 +17,10 @@ import type { Database } from "@/integrations/supabase/types";
 import { chatJson, MODELS } from "../ai/gateway.server";
 import { researchQueries, type SearchDocument } from "../search/providers.server";
 import { asConfig, type RadarConfig } from "../radar-types";
+import { discoverCandidates, selectForDetailFetch, type CandidateItem } from "./candidates.server";
+import { fetchDetailPages } from "../search/detail-fetch.server";
+import { asAttributeMap, diffAttributes, extractDetailAttributes, type ExtractedDetail } from "./attributes.server";
+import type { AttributeSpec, AttributeValue } from "./normalize";
 import {
   assignFingerprints,
   clampRecencyDays,
@@ -149,6 +153,17 @@ export interface RunResult {
   suppressedRecency?: number;
   suppressedDuplicate?: number;
   suppressedRelevance?: number;
+  candidatesDiscovered?: number;
+  candidatesSelected?: number;
+  detailFetchesOk?: number;
+  detailFetchesFailed?: number;
+  extractionsOk?: number;
+  extractionsFailed?: number;
+  attributesExtracted?: number;
+  attributesMissing?: number;
+  indexPages?: number;
+  detailCostEstimate?: number;
+  attributeChanges?: number;
 }
 
 interface Decision {
@@ -232,6 +247,111 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
     );
   }
 
+  // ---------------------------------------------------------------------
+  // 1b. Candidate discovery -> detail fetch -> generic attribute extraction.
+  // Index/aggregator pages rarely carry item-level facts, so individual pages
+  // are fetched (bounded by the radar's budget) and become primary sources.
+  // ---------------------------------------------------------------------
+  const specs: AttributeSpec[] = Array.isArray(config.attribute_schema) ? config.attribute_schema : [];
+  const criteria = [
+    config.target || radar.raw_request,
+    config.important_criteria.join("; "),
+    config.preferences.join("; "),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  let candidates: CandidateItem[] = [];
+  let indexPages: string[] = [];
+  let selected: CandidateItem[] = [];
+  let details: ExtractedDetail[] = [];
+  let detailFetchesOk = 0;
+  let detailFetchesFailed = 0;
+  let extractionsOk = 0;
+  let extractionsFailed = 0;
+  let attributesExtracted = 0;
+  let attributesMissing = 0;
+  let detailCostEstimate = 0;
+  const detailDocs: SearchDocument[] = [];
+  const discoveryByUrl = new Map<string, string>();
+
+  if (research.documents.length > 0) {
+    try {
+      const discovery = await discoverCandidates(research.documents, criteria);
+      candidates = discovery.candidates;
+      indexPages = discovery.indexPages;
+      const budget = Math.max(0, Math.min(Number(radar.max_detail_fetches ?? 8), 25));
+      selected = selectForDetailFetch(candidates, budget);
+      for (const c of selected) if (c.url) discoveryByUrl.set(c.url, c.discovery_url);
+
+      if (selected.length > 0) {
+        const fetched = await fetchDetailPages(selected.map((c) => c.url!));
+        detailFetchesOk = fetched.pages.length;
+        detailFetchesFailed = fetched.failures.length;
+        detailCostEstimate = fetched.costEstimate;
+        for (const f of fetched.failures) {
+          console.warn(`[radar:detail] could not fetch ${f.url} — ${f.reason}`);
+        }
+
+        for (const page of fetched.pages) {
+          detailDocs.push({
+            title: page.title ?? page.url,
+            url: page.url,
+            snippet: page.text.slice(0, 6000),
+            publisher: (() => {
+              try {
+                return new URL(page.url).hostname.replace(/^www\./, "");
+              } catch {
+                return undefined;
+              }
+            })(),
+            published_at: page.published_at,
+            updated_at: page.updated_at,
+            retrieved_at: page.fetched_at,
+            query: `detail:${discoveryByUrl.get(page.url) ?? "candidate"}`,
+          });
+        }
+
+        if (specs.length > 0 && fetched.pages.length > 0) {
+          const extracted = await extractDetailAttributes(fetched.pages, specs, criteria);
+          details = extracted.details;
+          extractionsOk = extracted.details.length;
+          extractionsFailed = extracted.failures.length;
+          for (const d of details) {
+            attributesExtracted += d.extracted;
+            attributesMissing += d.missing;
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`[radar:detail] detail pipeline failed — ${(err as Error).message}`);
+      extractionsFailed += 1;
+    }
+  }
+
+  if (detailDocs.length > 0) {
+    await db.from("research_sources").insert(
+      detailDocs.map((d) => ({
+        radar_id: radar.id,
+        user_id: radar.user_id,
+        run_id: runId,
+        provider: research.provider!,
+        query: d.query,
+        url: d.url,
+        title: d.title,
+        publisher: d.publisher ?? null,
+        published_at: safeDate(d.published_at),
+        retrieved_at: d.retrieved_at,
+        last_seen_at: d.retrieved_at,
+        snippet: d.snippet.slice(0, 4000),
+      })),
+    );
+  }
+
+  // Detail pages join the corpus as first-class documents.
+  const allDocs: SearchDocument[] = [...research.documents, ...detailDocs];
+  const detailByUrl = new Map(details.map((d) => [d.url, d]));
+
   type RunUpdate = Database["public"]["Tables"]["monitor_runs"]["Update"];
   const finishRun = async (patch: RunUpdate) => {
     if (!runId) return;
@@ -287,13 +407,13 @@ Exclusions: ${config.exclusions.join("; ") || "none"}
 Events to monitor: ${config.monitored_events.join("; ") || "any meaningful change"}
 
 Documents:
-${documentBlock(research.documents)}`,
+${documentBlock(allDocs)}`,
   });
 
   // Grounding guard: an item may only cite a retrieved document, or a page on
   // the same site as one (listing pages link to their own detail pages).
   const docHosts = new Map<string, string>();
-  for (const d of research.documents) {
+  for (const d of allDocs) {
     try {
       docHosts.set(new URL(d.url).host, d.url);
     } catch {
@@ -301,7 +421,7 @@ ${documentBlock(research.documents)}`,
     }
   }
   const items: ExtractedItem[] = extraction.items.filter((i) => {
-    if (research.documents.some((d) => d.url === i.url)) return true;
+    if (allDocs.some((d) => d.url === i.url)) return true;
     try {
       return docHosts.has(new URL(i.url).host);
     } catch {
@@ -320,7 +440,23 @@ ${documentBlock(research.documents)}`,
   items.length = 0;
   items.push(...byIdentity.values());
 
-  const docByUrl = new Map(research.documents.map((d) => [d.url, d]));
+  // Attribute enrichment: a detail page is the primary source for its item.
+  const attributesFor = (item: ExtractedItem): Record<string, AttributeValue> | null =>
+    detailByUrl.get(item.url)?.attributes ?? null;
+  for (const item of items) {
+    const attrs = attributesFor(item);
+    if (!attrs) continue;
+    const money = Object.values(attrs).find(
+      (a) => a.currency !== null && a.value !== null && (a.confidence === "stated" || a.confidence === "structured"),
+    );
+    // Normalized price from the detail page beats a value read off an index page.
+    if (money) {
+      item.numeric_value = money.value;
+      item.currency = money.currency;
+    }
+  }
+
+  const docByUrl = new Map(allDocs.map((d) => [d.url, d]));
   const temporalOf = (item: ExtractedItem): TemporalFacts => {
     const doc = docByUrl.get(item.url);
     return {
@@ -336,8 +472,19 @@ ${documentBlock(research.documents)}`,
   const existing = new Map((existingRows ?? []).map((f) => [f.fingerprint, f]));
 
   const changed: { item: ExtractedItem; kind: string; previous: number | null }[] = [];
+  const attributeEvents: {
+    fingerprint: string;
+    attribute: string;
+    previous: AttributeValue | null;
+    next: AttributeValue;
+  }[] = [];
   for (const item of items) {
     const prev = existing.get(item.fingerprint);
+    const attrs = attributesFor(item);
+    const attrDiffs = prev && attrs ? diffAttributes(asAttributeMap(prev.attributes), attrs) : [];
+    for (const d of attrDiffs) {
+      attributeEvents.push({ fingerprint: item.fingerprint, attribute: d.attribute, previous: d.previous, next: d.next });
+    }
     if (!prev) {
       changed.push({ item, kind: "new", previous: null });
     } else if (
@@ -350,6 +497,9 @@ ${documentBlock(research.documents)}`,
         kind: item.numeric_value < Number(prev.numeric_value) ? "decrease" : "increase",
         previous: Number(prev.numeric_value),
       });
+    } else if (attrDiffs.length > 0) {
+      // A changed attribute is an event on a KNOWN item, never a new item.
+      changed.push({ item, kind: `attribute_change:${attrDiffs.map((d) => d.attribute).join(",")}`, previous: null });
     }
     // Same fingerprint, same value = the same source showing up again: never an alert.
   }
@@ -503,7 +653,19 @@ ${eligible
             url: c.item.url,
             publisher: doc?.publisher ?? null,
             published_at: safeDate(doc?.published_at),
+            role: detailByUrl.has(c.item.url) ? "primary" : "discovery",
           },
+          ...(discoveryByUrl.get(c.item.url) && discoveryByUrl.get(c.item.url) !== c.item.url
+            ? [
+                {
+                  title: docByUrl.get(discoveryByUrl.get(c.item.url)!)?.title ?? "Discovery page",
+                  url: discoveryByUrl.get(c.item.url)!,
+                  publisher: docByUrl.get(discoveryByUrl.get(c.item.url)!)?.publisher ?? null,
+                  published_at: null,
+                  role: "secondary",
+                },
+              ]
+            : []),
         ] as never,
       });
       if (error) {
@@ -525,28 +687,69 @@ ${eligible
       item.numeric_value !== null &&
       prev.numeric_value !== null &&
       Number(prev.numeric_value) !== item.numeric_value;
-    await db.from("findings").upsert(
-      {
-        radar_id: radar.id,
-        user_id: radar.user_id,
-        fingerprint: item.fingerprint,
-        title: item.title,
-        url: item.url,
-        entity: item.entity,
-        numeric_value: item.numeric_value,
-        currency: item.currency,
-        snapshot: { summary: item.summary, event_type: item.event_type } as never,
-        published_at: t.publishedAt,
-        source_updated_at: t.updatedAt,
-        event_date: t.eventDate,
-        retrieved_at: t.retrievedAt,
-        origin: prev ? prev.origin : isBaseline ? "baseline" : "incremental",
-        last_changed_at: valueChanged ? now : (prev?.last_changed_at ?? null),
-        last_run_id: runId,
-        last_seen_at: now,
-      },
-      { onConflict: "radar_id,fingerprint" },
-    );
+    const detail = detailByUrl.get(item.url);
+    const attrs = detail?.attributes ?? asAttributeMap(prev?.attributes ?? null);
+    const discoveryUrl = discoveryByUrl.get(item.url) ?? prev?.discovery_url ?? null;
+    const attrChanged = attributeEvents.some((e) => e.fingerprint === item.fingerprint);
+    const secondary = discoveryUrl && discoveryUrl !== item.url
+      ? [{ url: discoveryUrl, role: "secondary", title: docByUrl.get(discoveryUrl)?.title ?? null }]
+      : [];
+    const { data: saved } = await db
+      .from("findings")
+      .upsert(
+        {
+          radar_id: radar.id,
+          user_id: radar.user_id,
+          fingerprint: item.fingerprint,
+          title: item.title,
+          url: item.url,
+          entity: item.entity,
+          numeric_value: item.numeric_value,
+          currency: item.currency,
+          snapshot: { summary: item.summary, event_type: item.event_type } as never,
+          attributes: (attrs ?? {}) as never,
+          primary_url: detail ? item.url : (prev?.primary_url ?? null),
+          discovery_url: discoveryUrl,
+          secondary_sources: secondary as never,
+          detail_status: detail
+            ? "fetched"
+            : selected.some((c) => c.url === item.url)
+              ? "failed"
+              : (prev?.detail_status ?? "not_attempted"),
+          detail_fetched_at: detail ? now : (prev?.detail_fetched_at ?? null),
+          availability: detail?.availability ?? prev?.availability ?? null,
+          published_at: t.publishedAt,
+          source_updated_at: t.updatedAt,
+          event_date: t.eventDate,
+          retrieved_at: t.retrievedAt,
+          origin: prev ? prev.origin : isBaseline ? "baseline" : "incremental",
+          last_changed_at: valueChanged || attrChanged ? now : (prev?.last_changed_at ?? null),
+          last_run_id: runId,
+          last_seen_at: now,
+        },
+        { onConflict: "radar_id,fingerprint" },
+      )
+      .select("id")
+      .maybeSingle();
+
+    // Attribute-level change events: recorded against the EXISTING item.
+    const events = attributeEvents.filter((e) => e.fingerprint === item.fingerprint);
+    if (events.length > 0) {
+      await db.from("finding_changes").insert(
+        events.map((e) => ({
+          radar_id: radar.id,
+          user_id: radar.user_id,
+          finding_id: saved?.id ?? null,
+          run_id: runId,
+          fingerprint: e.fingerprint,
+          attribute: e.attribute,
+          previous_value: e.previous?.value !== null && e.previous?.value !== undefined ? String(e.previous.value) : null,
+          new_value: e.next.value !== null ? String(e.next.value) : null,
+          previous_raw: e.previous?.raw ?? null,
+          new_raw: e.next.raw,
+        })),
+      );
+    }
   }
 
   if (decisions.length > 0) {
@@ -571,6 +774,16 @@ ${eligible
     suppressed_recency: suppressedRecency,
     suppressed_duplicate: suppressedDuplicate,
     suppressed_relevance: suppressedRelevance,
+    candidates_discovered: candidates.length,
+    candidates_selected: selected.length,
+    detail_fetches_ok: detailFetchesOk,
+    detail_fetches_failed: detailFetchesFailed,
+    extractions_ok: extractionsOk,
+    extractions_failed: extractionsFailed,
+    attributes_extracted: attributesExtracted,
+    attributes_missing: attributesMissing,
+    items_merged: research.duplicatesRemoved,
+    detail_cost_estimate: detailCostEstimate,
     error: research.errors.length ? research.errors.join(" | ").slice(0, 800) : null,
     finished_at: now,
   });
@@ -597,10 +810,10 @@ ${eligible
     newItems: changed.length,
     alertsCreated,
     provider: research.provider,
-    sourcesRetrieved: research.documents.length,
+    sourcesRetrieved: allDocs.length,
     searchRequests: research.requests,
     searchFailures: research.failures,
-    costEstimate: research.costEstimate,
+    costEstimate: Number((research.costEstimate + detailCostEstimate).toFixed(4)),
     duplicatesRemoved: research.duplicatesRemoved,
     baselineFindings,
     incrementalFindings,
@@ -608,5 +821,16 @@ ${eligible
     suppressedRecency,
     suppressedDuplicate,
     suppressedRelevance,
+    candidatesDiscovered: candidates.length,
+    candidatesSelected: selected.length,
+    detailFetchesOk,
+    detailFetchesFailed,
+    extractionsOk,
+    extractionsFailed,
+    attributesExtracted,
+    attributesMissing,
+    indexPages: indexPages.length,
+    detailCostEstimate,
+    attributeChanges: attributeEvents.length,
   };
 }
