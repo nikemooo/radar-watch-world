@@ -123,6 +123,7 @@ export interface RunResult {
   searchRequests?: number;
   searchFailures?: number;
   costEstimate?: number;
+  duplicatesRemoved?: number;
 }
 
 export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult> {
@@ -217,6 +218,8 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
       searchRequests: research.requests,
       searchFailures: research.failures,
       costEstimate: research.costEstimate,
+    duplicatesRemoved: research.duplicatesRemoved,
+      duplicatesRemoved: research.duplicatesRemoved,
     };
   }
 
@@ -390,6 +393,7 @@ ${changed
     searchRequests: research.requests,
     searchFailures: research.failures,
     costEstimate: research.costEstimate,
+    duplicatesRemoved: research.duplicatesRemoved,
   };
 }
 
