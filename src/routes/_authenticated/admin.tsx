@@ -21,6 +21,15 @@ export const Route = createFileRoute("/_authenticated/admin")({
 
 function Admin() {
   const { data: isAdmin, isLoading: checking } = useIsAdmin();
+  const searchOps = useServerFn(getSearchOpsMetrics);
+
+  const { data: ops } = useQuery({
+    queryKey: ["search-ops"],
+    enabled: isAdmin === true,
+    queryFn: () => searchOps({}),
+  });
+
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-metrics"],
