@@ -35,6 +35,14 @@ function RadarDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const run = useServerFn(runRadarNow);
+  const fetchSources = useServerFn(listRadarSources);
+
+  const { data: sources } = useQuery({
+    queryKey: ["radar-sources", radarId],
+    queryFn: () => fetchSources({ data: { radarId, limit: 25 } }),
+  });
+
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["radar", radarId],
