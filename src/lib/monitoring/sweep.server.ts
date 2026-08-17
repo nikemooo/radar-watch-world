@@ -12,10 +12,10 @@
  * reports its persisted truth.
  */
 
-import { getRequest } from "@tanstack/react-start/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { runRadarCycle, type RunOptions, type RunResult } from "./engine.server";
+import { keepRuntimeAlive } from "../runtime-context.server";
 
 type Db = SupabaseClient<Database>;
 type RadarRow = Database["public"]["Tables"]["radars"]["Row"];
@@ -42,18 +42,6 @@ export type SweepStatus = {
   startedAt: string | null;
   finishedAt: string | null;
 };
-
-/** Keep background work alive on runtimes that cancel work when the response ends. */
-function keepAlive(promise: Promise<unknown>) {
-  try {
-    const request = getRequest() as unknown as {
-      waitUntil?: (p: Promise<unknown>) => void;
-    } | null;
-    request?.waitUntil?.(promise);
-  } catch {
-    // no request context (tests, scripts) — the promise runs on the event loop
-  }
-}
 
 export async function startRadarSweep(
   db: Db,
@@ -101,7 +89,10 @@ export async function startRadarSweep(
     }
   })();
 
-  keepAlive(sweep);
+  const backgroundAttached = keepRuntimeAlive(sweep);
+  console.info(
+    `[radar:sweep] radar ${radar.id} background ${backgroundAttached ? "attached" : "unavailable"}`,
+  );
   sweep.catch(() => undefined); // handled above; prevents unhandled rejection
 
   const raced = await Promise.race([
