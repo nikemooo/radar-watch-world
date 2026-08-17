@@ -82,16 +82,31 @@ function AuthPage() {
   };
 
   const google = async () => {
+    // Land on the PUBLIC callback route: in the full-page redirect flow the
+    // browser returns before supabase-js has written the session, and a
+    // protected destination would bounce straight back to /auth.
+    window.sessionStorage.setItem("radar:auth-next", "/dashboard");
     const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+      redirect_uri: `${window.location.origin}/auth/callback`,
     });
     if (result.error) {
       toast.error("Google sign-in failed. Try email instead.");
       return;
     }
     if (result.redirected) return;
-    navigate({ to: "/dashboard", replace: true });
+    // Popup (preview/iframe) flow: tokens are already set — wait for the
+    // session to be readable before navigating into the protected subtree.
+    for (let i = 0; i < 20; i += 1) {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        navigate({ to: "/dashboard", replace: true });
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    toast.error("Signed in with Google, but the session didn't stick. Please retry.");
   };
+
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-12">
