@@ -218,7 +218,6 @@ export async function runRadarCycle(db: Db, radar: RadarRow): Promise<RunResult>
       searchRequests: research.requests,
       searchFailures: research.failures,
       costEstimate: research.costEstimate,
-    duplicatesRemoved: research.duplicatesRemoved,
       duplicatesRemoved: research.duplicatesRemoved,
     };
   }
