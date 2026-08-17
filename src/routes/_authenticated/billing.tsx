@@ -185,7 +185,8 @@ function Billing() {
           )}
           {sub?.current_period_end && !sub.pending_plan_key && (
             <p className="text-sm text-muted-foreground">
-              Renews {new Date(sub.current_period_end).toLocaleDateString()}.
+              {sub.cancel_at_period_end ? "Access ends" : "Next billing date"}:{" "}
+              {new Date(sub.current_period_end).toLocaleDateString()}.
             </p>
           )}
           <div className="flex flex-wrap gap-2 pt-1">
