@@ -81,27 +81,20 @@ function NewRadar() {
     if (!config) return;
     setBusy(true);
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error("Not signed in.");
-      const { data, error } = await supabase
-        .from("radars")
-        .insert({
-          user_id: userData.user.id,
+      const created = await createRadarFn({
+        data: {
           name,
           category,
           frequency,
           raw_request: request,
           monitoring_window: monitoringWindow,
           recency_days: recencyDays,
-          recency_source: "ai_inferred",
-          config: config as unknown as never,
-        })
-        .select("id")
-        .single();
-      if (error) throw error;
+          config,
+        },
+      });
       await track("radar_created", { category, frequency });
       toast.success("Radar created. The first sweep records a baseline — no alerts yet.");
-      navigate({ to: "/radars/$radarId", params: { radarId: data.id } });
+      navigate({ to: "/radars/$radarId", params: { radarId: created.id } });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create radar.");
     } finally {
