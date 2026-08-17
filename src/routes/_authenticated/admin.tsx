@@ -124,6 +124,18 @@ function Admin() {
             <Metric label="Sources retrieved" value={String(ops?.sources ?? 0)} />
           </div>
 
+          <h2 className="mono-label">Temporal engine · 7d</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Metric label="Baseline sweeps" value={String(ops?.baselineRuns ?? 0)} />
+            <Metric label="Baseline findings" value={String(ops?.baselineFindings ?? 0)} />
+            <Metric label="Incremental findings" value={String(ops?.incrementalFindings ?? 0)} />
+            <Metric label="Alerts created" value={String(ops?.alertsCreated ?? 0)} />
+            <Metric label="Suppressed · baseline" value={String(ops?.suppressedBaseline ?? 0)} />
+            <Metric label="Suppressed · recency" value={String(ops?.suppressedRecency ?? 0)} />
+            <Metric label="Suppressed · duplicate" value={String(ops?.suppressedDuplicate ?? 0)} />
+            <Metric label="Suppressed · relevance" value={String(ops?.suppressedRelevance ?? 0)} />
+          </div>
+
           <section className="panel grid gap-4 p-5 sm:grid-cols-3">
             <div>
               <p className="mono-label">Estimated search cost · 7d</p>
