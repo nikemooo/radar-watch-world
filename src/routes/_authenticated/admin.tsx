@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useIsAdmin } from "@/components/app-shell";
+import { getSearchOpsMetrics } from "@/lib/radar.functions";
+
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
