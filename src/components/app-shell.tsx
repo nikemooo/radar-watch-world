@@ -75,7 +75,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { data: unread } = useUnreadAlerts();
 
   const nav = isAdmin
-    ? [...primaryNav, { to: "/admin", label: "Admin", icon: Shield }]
+    ? [...primaryNav, { to: "/admin", label: "Admin", icon: Shield } satisfies NavItem]
     : primaryNav;
 
   const signOut = async () => {

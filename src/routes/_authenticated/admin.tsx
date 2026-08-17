@@ -1,0 +1,111 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useIsAdmin } from "@/components/app-shell";
+
+export const Route = createFileRoute("/_authenticated/admin")({
+  head: () => ({
+    meta: [
+      { title: "Admin — Radar" },
+      { name: "description", content: "Platform health, monitoring volume and product analytics." },
+      { property: "og:title", content: "Admin — Radar" },
+      { property: "og:description", content: "Platform health and product analytics." },
+    ],
+  }),
+  component: Admin,
+});
+
+function Admin() {
+  const { data: isAdmin, isLoading: checking } = useIsAdmin();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-metrics"],
+    enabled: isAdmin === true,
+    queryFn: async () => {
+      const since = new Date(Date.now() - 7 * 864e5).toISOString();
+      const [radars, alerts, runs, events] = await Promise.all([
+        supabase.from("radars").select("id", { count: "exact", head: true }),
+        supabase.from("alerts").select("id", { count: "exact", head: true }),
+        supabase
+          .from("monitor_runs")
+          .select("id, status, cost_estimate, started_at")
+          .gte("started_at", since),
+        supabase
+          .from("analytics_events")
+          .select("event, created_at")
+          .gte("created_at", since)
+          .limit(500),
+      ]);
+      const runRows = runs.data ?? [];
+      const counts = new Map<string, number>();
+      for (const row of events.data ?? []) counts.set(row.event, (counts.get(row.event) ?? 0) + 1);
+      return {
+        radars: radars.count ?? 0,
+        alerts: alerts.count ?? 0,
+        runs: runRows.length,
+        errors: runRows.filter((r) => r.status === "error").length,
+        cost: runRows.reduce((sum, r) => sum + Number(r.cost_estimate ?? 0), 0),
+        events: [...counts.entries()].sort((a, b) => b[1] - a[1]),
+      };
+    },
+  });
+
+  if (checking) return <Skeleton className="h-48" />;
+  if (!isAdmin) {
+    return (
+      <p className="panel p-10 text-center text-sm text-muted-foreground">
+        You don't have access to this area.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <header>
+        <p className="mono-label">Operations</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Admin</h1>
+      </header>
+
+      {isLoading ? (
+        <Skeleton className="h-48" />
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Metric label="Radars (visible)" value={String(data?.radars ?? 0)} />
+            <Metric label="Alerts (visible)" value={String(data?.alerts ?? 0)} />
+            <Metric label="Sweeps · 7d" value={String(data?.runs ?? 0)} />
+            <Metric label="Failed sweeps · 7d" value={String(data?.errors ?? 0)} />
+          </div>
+
+          <section className="panel p-5">
+            <p className="mono-label">Estimated research cost · 7d</p>
+            <p className="mt-2 font-mono text-2xl">${(data?.cost ?? 0).toFixed(2)}</p>
+          </section>
+
+          <section className="panel p-5">
+            <p className="mono-label">Product events · 7d</p>
+            <ul className="mt-3 space-y-1.5 text-sm">
+              {(data?.events ?? []).map(([event, count]) => (
+                <li key={event} className="flex justify-between border-b border-border py-1.5 last:border-0">
+                  <span>{event}</span>
+                  <span className="font-mono text-muted-foreground">{count}</span>
+                </li>
+              ))}
+              {!data?.events.length && <li className="text-muted-foreground">No events recorded yet.</li>}
+            </ul>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="panel p-4">
+      <p className="mono-label">{label}</p>
+      <p className="mt-2 font-mono text-2xl">{value}</p>
+    </div>
+  );
+}
