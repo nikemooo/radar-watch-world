@@ -2,20 +2,35 @@ import { createFileRoute } from "@tanstack/react-router";
 import type Stripe from "stripe";
 import { createStripeClient, type StripeEnv } from "@/lib/stripe.server";
 
-async function planKeyForPrice(db: any, priceId: string | null | undefined): Promise<string | null> {
-  if (!priceId) return null;
+async function planForPrice(
+  db: any,
+  priceId: string | null | undefined,
+): Promise<{ planKey: string | null; marketCode: string | null; currency: string | null }> {
+  if (!priceId) return { planKey: null, marketCode: null, currency: null };
+  const { data: localized } = await db
+    .from("plan_prices")
+    .select("plan_key, market_code, currency")
+    .eq("stripe_price_id", priceId)
+    .maybeSingle();
+  if (localized) {
+    return { planKey: localized.plan_key, marketCode: localized.market_code, currency: localized.currency };
+  }
+  // Legacy fallback for prices predating the localized catalog.
   const { data } = await db
     .from("plans")
-    .select("key")
+    .select("key, currency")
     .or(`stripe_price_id.eq.${priceId},stripe_price_id_yearly.eq.${priceId}`)
     .maybeSingle();
-  return data?.key ?? null;
+  return { planKey: data?.key ?? null, marketCode: null, currency: data?.currency ?? null };
 }
 
 async function syncSubscription(db: any, sub: Stripe.Subscription, environment: StripeEnv) {
   const item = sub.items.data[0];
   const priceId = item?.price?.id ?? null;
-  const planKey = (await planKeyForPrice(db, priceId)) ?? "pro";
+  const resolvedPrice = await planForPrice(db, priceId);
+  const planKey = resolvedPrice.planKey ?? "pro";
+  const marketCode = resolvedPrice.marketCode ?? (sub.metadata?.['market_code'] as string | undefined) ?? null;
+  const currency = (resolvedPrice.currency ?? item?.price?.currency ?? null)?.toUpperCase() ?? null;
   const periodEndUnix = (item as any)?.current_period_end ?? (sub as any).current_period_end ?? null;
   const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000).toISOString() : null;
   const userId = (sub.metadata?.['user_id'] as string | undefined) ?? null;
@@ -40,6 +55,8 @@ async function syncSubscription(db: any, sub: Stripe.Subscription, environment: 
     current_period_end: periodEnd,
     billing_interval: item?.price?.recurring?.interval === "year" ? "year" : "month",
     price_id: priceId,
+    market_code: marketCode,
+    currency,
     stripe_customer_id: typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null,
     stripe_subscription_id: sub.id,
     ...(existing?.pending_plan_key && existing.pending_plan_key === planKey
