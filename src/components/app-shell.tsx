@@ -130,6 +130,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Wordmark />
         </Link>
         <div className="flex items-center gap-1">
+          <Button asChild variant="ghost" size="icon" aria-label="Create radar">
+            <Link to="/radars/new">
+              <Plus className="size-4" />
+            </Link>
+          </Button>
           <ThemeToggle />
           <Button variant="ghost" size="icon" onClick={signOut} aria-label="Sign out">
             <LogOut className="size-4" />
