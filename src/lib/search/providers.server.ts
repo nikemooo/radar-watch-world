@@ -229,7 +229,11 @@ export interface ResearchResult {
 }
 
 /** Runs every query through the active provider and deduplicates by URL. */
-export async function researchQueries(queries: string[], perQuery = 8): Promise<ResearchResult> {
+export async function researchQueries(
+  queries: string[],
+  perQuery = 8,
+  maxQueries = 8,
+): Promise<ResearchResult> {
   const provider = activeProvider();
   if (!provider) {
     return {
