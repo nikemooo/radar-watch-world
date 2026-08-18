@@ -309,9 +309,14 @@ function NewRadar() {
               )}
             </div>
 
-            <Button onClick={create} disabled={busy} className="w-full gap-2">
+            <Button
+              onClick={create}
+              disabled={busy || (start === "scheduled" && !scheduledAt)}
+              className="w-full gap-2"
+            >
               {busy && <Loader2 className="size-4 animate-spin" />}
-              Activate radar
+              {start === "now" ? "Aktivera och sök nu" : "Aktivera radar"}
+
             </Button>
           </div>
         )
