@@ -1589,6 +1589,8 @@ ${eligible
     attributes_extracted: attributesExtracted,
     attributes_missing: attributesMissing,
     items_merged: research.duplicatesRemoved,
+    listings_removed: listingsRemoved,
+
     baselines_computed: baselinesComputed,
     baselines_insufficient: baselinesInsufficient,
     comparable_observations: population.length,
