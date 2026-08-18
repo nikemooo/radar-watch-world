@@ -395,10 +395,28 @@ export async function runRadarCycle(
 ): Promise<RunResult> {
   let alertBudget = options.alertBudget ?? null;
   const config: RadarConfig = asConfig(radar.config);
-  const started = new Date().toISOString();
   const isBaseline = !radar.baseline_completed;
   const runType: "baseline" | "incremental" = isBaseline ? "baseline" : "incremental";
   const recencyDays = clampRecencyDays(radar.recency_days);
+
+  // Claim the run first (or adopt the caller's claim) so the running state is
+  // durable before any slow work starts.
+  const claim: RunClaim =
+    options.runId !== undefined && options.runId !== null
+      ? {
+          runId: options.runId,
+          startedAt: options.startedAt ?? new Date().toISOString(),
+          runType,
+          scanPhase: isBaseline ? "initial_scan" : "monitoring",
+        }
+      : await beginRun(db, radar);
+  const runId = claim.runId;
+  const started = claim.startedAt;
+  const scanPhase = claim.scanPhase;
+  const patchRun = async (patch: Database["public"]["Tables"]["monitor_runs"]["Update"]) => {
+    if (!runId) return;
+    await db.from("monitor_runs").update(patch).eq("id", runId);
+  };
 
   // Discovery strategy: a single broad natural-language query mostly returns
   // editorial/specification pages. The planner expands the radar's own
@@ -414,15 +432,14 @@ export async function runRadarCycle(
   const research = await researchQueries(queries, isBaseline ? 10 : 8, queries.length);
 
   if (!research.configured) {
-    await db.from("monitor_runs").insert({
-      radar_id: radar.id,
-      user_id: radar.user_id,
+    await patchRun({
       status: "no_provider",
-      run_type: runType,
       error: "No search provider configured",
-      started_at: started,
       finished_at: new Date().toISOString(),
     });
+    if (isBaseline) {
+      await db.from("radars").update({ scan_state: "initial_scan_pending" }).eq("id", radar.id);
+    }
     return {
       status: "no_provider",
       runType,
@@ -435,35 +452,15 @@ export async function runRadarCycle(
     };
   }
 
-  // Phase 1 (initial market scan) vs phase 2 (continuous monitoring).
-  const scanPhase: "initial_scan" | "monitoring" = isBaseline ? "initial_scan" : "monitoring";
-  if (isBaseline) {
-    await db
-      .from("radars")
-      .update({ scan_state: "INITIAL_SCAN_RUNNING", initial_scan_started_at: started })
-      .eq("id", radar.id);
-  }
+  await patchRun({
+    provider: research.provider,
+    search_requests: research.requests,
+    search_successes: research.successes,
+    search_failures: research.failures,
+    sources_retrieved: research.documents.length,
+    cost_estimate: research.costEstimate,
+  });
 
-  // Every retrieved source is persisted verbatim so alerts stay verifiable.
-  const { data: runRow } = await db
-    .from("monitor_runs")
-    .insert({
-      radar_id: radar.id,
-      user_id: radar.user_id,
-      status: "running",
-      run_type: runType,
-      scan_phase: scanPhase,
-      provider: research.provider,
-      started_at: started,
-      search_requests: research.requests,
-      search_successes: research.successes,
-      search_failures: research.failures,
-      sources_retrieved: research.documents.length,
-      cost_estimate: research.costEstimate,
-    })
-    .select("id")
-    .maybeSingle();
-  const runId = runRow?.id ?? null;
 
   // ---------------------------------------------------------------------
   // Source priority. Learned from this radar's own history (which hosts
