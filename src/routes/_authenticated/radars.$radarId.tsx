@@ -16,9 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { asConfig, frequencyLabel, recencyPresets, type RadarFrequency } from "@/lib/radar-types";
-import { isFactual, type AttributeValue } from "@/lib/monitoring/normalize";
 import { track } from "@/lib/analytics";
-import { BaselinePanel } from "@/components/baseline-panel";
+import { ListingRail, snapshotOf, type FindingLike } from "@/components/listing-card";
 
 export const Route = createFileRoute("/_authenticated/radars/$radarId")({
   head: () => ({
@@ -102,16 +101,16 @@ function RadarDetail() {
     mutationFn: async () => run({ data: { radarId } }),
     onSuccess: (outcome) => {
       if (outcome.state === "running") {
-        toast.success("Sweep started — it keeps running in the background.");
+        toast.success("Sökningen har startat — den fortsätter i bakgrunden.");
       } else {
         const r = outcome.result as { alertsCreated?: number; runType?: string; itemsFound?: number };
         const created = r?.alertsCreated ?? 0;
         toast.success(
           r?.runType === "baseline"
-            ? `Initial market scan complete — ${r.itemsFound ?? 0} matching listings found. Radar is now monitoring.`
+            ? `Marknadsskanningen är klar — ${r.itemsFound ?? 0} annonser hittades. Radar bevakar nu marknaden.`
             : created > 0
-              ? `${created} new alert${created > 1 ? "s" : ""}.`
-              : "Sweep complete — nothing new.",
+              ? `${created} ny${created > 1 ? "a" : "tt"} larm.`
+              : "Kontrollen är klar — inget nytt.",
         );
 
       }
@@ -152,33 +151,168 @@ function RadarDetail() {
   if (!data?.radar) {
     return (
       <div className="panel p-10 text-center text-sm text-muted-foreground">
-        This radar no longer exists.
+        Den här radarn finns inte längre.
       </div>
     );
   }
 
   const radar = data.radar;
   const config = asConfig(radar.config);
+  const findings = data.findings as unknown as FindingLike[];
+  const statusOf = (f: FindingLike) => snapshotOf(f.snapshot).match_status ?? "unverified";
+  const matched = findings.filter((f) => statusOf(f) === "match");
+  const unverified = findings.filter((f) => statusOf(f) === "unverified");
+  const rejected = findings.filter((f) => statusOf(f) === "reject");
+  const scanning = radar.scan_state === "INITIAL_SCAN_RUNNING";
+
+  const statusLine = scanning
+    ? "Söker igenom marknaden…"
+    : radar.scan_state === "MONITORING"
+      ? "Bevakar marknaden"
+      : "Redo att söka marknaden";
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-8">
       <Link to="/radars" className="mono-label inline-flex items-center gap-1.5 hover:text-foreground">
         <ArrowLeft className="size-3" />
-        All radars
+        Alla radars
       </Link>
 
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">{radar.name}</h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            {config.interpretation || radar.raw_request}
+          <p className="mt-2 flex flex-wrap items-center gap-x-3 text-sm">
+            <span className={scanning ? "text-muted-foreground" : "text-interesting"}>
+              {scanning ? "🔎" : "🟢"} {statusLine}
+            </span>
+            <span className="text-muted-foreground">
+              {matched.length} annons{matched.length === 1 ? "" : "er"} matchar just nu
+            </span>
+            <span className="text-muted-foreground">
+              {radar.last_successful_sweep_at
+                ? `Senaste kontroll ${new Date(radar.last_successful_sweep_at).toLocaleString("sv-SE")}`
+                : "Ingen kontroll ännu"}
+            </span>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={radar.frequency}
-            onValueChange={(frequency) => update.mutate({ frequency })}
+          <Button className="gap-2" onClick={() => sweep.mutate()} disabled={sweep.isPending}>
+            {sweep.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            {sweep.isPending ? "Söker…" : "Sök nu"}
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={radar.status === "active" ? "Pausa radar" : "Återuppta radar"}
+            onClick={() => update.mutate({ status: radar.status === "active" ? "paused" : "active" })}
           >
+            {radar.status === "active" ? <Pause className="size-4" /> : <Play className="size-4" />}
+          </Button>
+          <Button variant="outline" size="icon" aria-label="Ta bort radar" onClick={() => remove.mutate()}>
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      </header>
+
+      {scanning && (
+        <section className="panel p-5">
+          <p className="text-sm font-medium">Söker igenom marknaden…</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Hittar aktuella annonser · läser annonsdetaljer · jämför priser. Det tar några minuter och
+            fortsätter även om du lämnar sidan.
+          </p>
+          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
+          </div>
+        </section>
+      )}
+
+      <section>
+        <h2 className="text-lg font-medium">Matchar dina kriterier</h2>
+        {matched.length > 0 ? (
+          <div className="mt-4">
+            <ListingRail findings={matched} />
+          </div>
+        ) : (
+          <div className="panel mt-4 p-6 text-sm">
+            <p className="font-medium">Inga matchande annonser just nu</p>
+            <p className="mt-1 text-muted-foreground">
+              Radar fortsätter bevaka marknaden och meddelar dig när en match dyker upp.
+              {findings.length > 0 && ` ${findings.length} relevanta annonser kontrollerades.`}
+            </p>
+          </div>
+        )}
+      </section>
+
+      {unverified.length > 0 && (
+        <section>
+          <h2 className="text-lg font-medium">Behöver verifieras</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Radar hittade annonsen men kunde inte verifiera all information — den räknas inte som en match.
+          </p>
+          <div className="mt-4">
+            <ListingRail findings={unverified} />
+          </div>
+        </section>
+      )}
+
+      {rejected.length > 0 && (
+        <details className="panel p-5">
+          <summary className="cursor-pointer text-sm font-medium">
+            Sorterade bort ({rejected.length}) — visa filtrerade
+          </summary>
+          <ul className="mt-3 divide-y divide-border text-sm">
+            {rejected.map((f) => (
+              <li key={f.id} className="flex flex-wrap items-baseline gap-x-3 py-2">
+                <a
+                  href={f.primary_url ?? f.url ?? "#"}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="min-w-0 flex-1 truncate underline underline-offset-4"
+                >
+                  {f.title}
+                </a>
+                <span className="text-muted-foreground">{snapshotOf(f.snapshot).match_reason}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <section>
+        <h2 className="text-lg font-medium">Senaste nytt</h2>
+        {data.alerts.length ? (
+          <div className="mt-4 space-y-3">
+            {data.alerts.map((alert) => (
+              <AlertCard key={alert.id} alert={alert} />
+            ))}
+          </div>
+        ) : (
+          <p className="panel mt-4 p-5 text-sm text-muted-foreground">
+            Inget nytt ännu. Radar hör av sig när en ny annons dyker upp, ett pris ändras eller en annons
+            försvinner.
+          </p>
+        )}
+        {data.changes.length > 0 && (
+          <ul className="panel mt-3 divide-y divide-border">
+            {data.changes.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-baseline gap-x-3 px-4 py-2.5 text-sm">
+                <span className="mono-label">{c.attribute.replace(/_/g, " ")}</span>
+                <span className="text-muted-foreground line-through">{c.previous_raw ?? c.previous_value}</span>
+                <span>→ {c.new_raw ?? c.new_value}</span>
+                <span className="mono-label ml-auto">
+                  {new Date(c.changed_at).toLocaleString("sv-SE")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <details className="panel p-5">
+        <summary className="cursor-pointer text-sm font-medium">Inställningar</summary>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Select value={radar.frequency} onValueChange={(frequency) => update.mutate({ frequency })}>
             <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
@@ -192,11 +326,9 @@ function RadarDetail() {
           </Select>
           <Select
             value={String(radar.recency_days)}
-            onValueChange={(v) =>
-              update.mutate({ recency_days: Number(v), recency_source: "user_override" })
-            }
+            onValueChange={(v) => update.mutate({ recency_days: Number(v), recency_source: "user_override" })}
           >
-            <SelectTrigger className="w-44" aria-label="Recency window">
+            <SelectTrigger className="w-44" aria-label="Tidsfönster">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -207,277 +339,81 @@ function RadarDetail() {
               ))}
             </SelectContent>
           </Select>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label={radar.status === "active" ? "Pause radar" : "Resume radar"}
-            onClick={() => update.mutate({ status: radar.status === "active" ? "paused" : "active" })}
-          >
-            {radar.status === "active" ? <Pause className="size-4" /> : <Play className="size-4" />}
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Delete radar"
-            onClick={() => remove.mutate()}
-          >
-            <Trash2 className="size-4" />
-          </Button>
-          <Button className="gap-2" onClick={() => sweep.mutate()} disabled={sweep.isPending}>
-            {sweep.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="size-4" />
-            )}
-            {sweep.isPending ? "Sweeping…" : "Run now"}
-          </Button>
         </div>
-      </header>
+        <p className="mt-4 text-sm text-muted-foreground">{config.interpretation || radar.raw_request}</p>
+        <div className="mt-4 grid gap-5 sm:grid-cols-2">
+          <Facts title="Bevakar" items={config.monitored_events} />
+          <Facts title="Viktigast" items={config.important_criteria} />
+          <Facts title="Sökstrategi" items={config.search_queries} />
+          <Facts title="Utesluter" items={config.exclusions} />
+        </div>
+      </details>
 
-      <section className="panel flex flex-wrap items-center gap-x-6 gap-y-2 p-4 text-sm">
-        <span className="mono-label">
-          {radar.scan_state === "MONITORING"
-            ? "Monitoring"
-            : radar.scan_state === "INITIAL_SCAN_RUNNING"
-              ? "Initial market scan running"
-              : "Initial market scan pending"}
-        </span>
-        <span className="text-muted-foreground">
-          {radar.scan_state === "MONITORING"
-            ? `Found ${radar.initial_listings_count || data.findings.length} matching listings right now. Radar is now monitoring the market for new listings and changes.`
-            : radar.scan_state === "INITIAL_SCAN_RUNNING"
-              ? "Scanning live sources for every matching listing available right now — this can take a few minutes."
-              : "The first run scans the market and lists everything available right now, without alerting."}
-        </span>
+      <details className="panel p-5">
+        <summary className="cursor-pointer text-sm font-medium">Diagnostik</summary>
 
-        <span className="ml-auto text-muted-foreground">
-          Window: last {radar.recency_days} days ·{" "}
-          {radar.last_successful_sweep_at
-            ? `last successful sweep ${new Date(radar.last_successful_sweep_at).toLocaleString()}`
-            : "no successful sweep yet"}
-        </span>
-      </section>
+        <div className="mt-4 space-y-4">
+          {data.runs.map((entry) => (
+            <div key={entry.id} className="space-y-1 border-b border-border pb-3 text-xs text-muted-foreground last:border-0">
+              <p className="text-sm text-foreground">
+                {new Date(entry.started_at).toLocaleString("sv-SE")} · {entry.status} · {entry.run_type} ·{" "}
+                {entry.items_found} found · {entry.new_items} new · {entry.alerts_created} alerts
+              </p>
+              <p>
+                detail — {entry.candidates_discovered} candidates · budget {entry.detail_fetch_budget} ·{" "}
+                {entry.detail_fetches_attempted} attempted · {entry.detail_fetches_ok} fetched ·{" "}
+                {entry.detail_fetches_failed} blocked · {entry.detail_fetches_skipped_backoff} skipped (backoff) ·{" "}
+                {entry.attributes_extracted} attributes · {entry.attributes_missing} missing
+              </p>
+              <p>
+                criteria — {entry.criteria_matched} matched · {entry.criteria_rejected} rejected ·{" "}
+                {entry.criteria_unverified} unverified · pagination {entry.pagination_pages_attempted} attempted /{" "}
+                {entry.pagination_pages_succeeded} ok / {entry.pagination_pages_blocked} blocked
+              </p>
+              <p>
+                comparables — {entry.usable_comparables} usable of {entry.comparable_observations} observations ·{" "}
+                {entry.baselines_computed} baselines · {entry.baselines_insufficient} insufficient · est. cost $
+                {Number(entry.cost_estimate ?? 0).toFixed(3)}
+              </p>
+              <p>
+                suppressed — baseline {entry.suppressed_baseline} · recency {entry.suppressed_recency} · duplicate{" "}
+                {entry.suppressed_duplicate} · relevance {entry.suppressed_relevance}
+              </p>
+              {entry.error && <p className="text-critical">{entry.error}</p>}
+            </div>
+          ))}
 
-      <section className="panel grid gap-5 p-5 sm:grid-cols-2">
-        <Facts title="Watching for" items={config.monitored_events} />
-        <Facts title="Matters most" items={config.important_criteria} />
-        <Facts title="Search strategy" items={config.search_queries} />
-        <Facts title="Excluding" items={config.exclusions} />
-      </section>
-
-      {data.runs.length > 0 && (
-        <section>
-          <h2 className="mono-label">Recent sweeps</h2>
-          <div className="panel mt-3 divide-y divide-border">
-            {data.runs.map((entry) => (
-              <div key={entry.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5 text-sm">
-                <span className="mono-label">{new Date(entry.started_at).toLocaleString()}</span>
-                <span className={entry.status === "error" ? "text-critical" : "text-muted-foreground"}>
-                  {entry.status}
-                </span>
-                <span className="rounded-full border border-border px-2 py-0.5 text-xs uppercase tracking-wide text-muted-foreground">
-                  {entry.run_type}
-                </span>
-                <span className="ml-auto text-muted-foreground">
-                  {entry.items_found} found · {entry.new_items} new · {entry.alerts_created} alerts
-                </span>
-                <span className="w-full text-xs text-muted-foreground">
-                  detail — {entry.candidates_discovered} candidates · budget {entry.detail_fetch_budget} ·{" "}
-                  {entry.detail_fetches_attempted} attempted · {entry.detail_fetches_ok} fetched ·{" "}
-                  {entry.detail_fetches_failed} blocked · {entry.detail_fetches_skipped_backoff} skipped (backoff) ·{" "}
-                  {entry.attributes_extracted} attributes · {entry.attributes_missing} missing
-                </span>
-                <span className="w-full text-xs text-muted-foreground">
-                  comparables — {entry.usable_comparables} usable of {entry.comparable_observations} observations (
-                  {Number(entry.comparable_coverage ?? 0).toFixed(1)}% coverage) · {entry.baselines_computed} baselines
-                  computed · {entry.baselines_backfilled} backfilled · {entry.baselines_insufficient} insufficient ·
-                  est. cost ${Number(entry.cost_estimate ?? 0).toFixed(3)} of ${Number(entry.cost_ceiling ?? 0).toFixed(3)} ceiling
-                </span>
-
-                <span className="w-full text-xs text-muted-foreground">
-                  comparables — {entry.comparable_observations} observations ·{" "}
-                  {entry.baselines_computed} baselines calculated · {entry.baselines_insufficient} insufficient
-                </span>
-                <span className="w-full text-xs text-muted-foreground">
-                  suppressed — baseline {entry.suppressed_baseline} · recency {entry.suppressed_recency} ·
-                  duplicate {entry.suppressed_duplicate} · relevance {entry.suppressed_relevance}
-                </span>
-                {entry.error && <p className="w-full text-xs text-critical">{entry.error}</p>}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section>
-        <h2 className="text-lg font-medium">Findings</h2>
-        {data.alerts.length ? (
-          <div className="mt-4 space-y-3">
-            {data.alerts.map((alert) => (
-              <AlertCard key={alert.id} alert={alert} />
-            ))}
-          </div>
-        ) : (
-          <p className="panel mt-4 p-5 text-sm text-muted-foreground">
-            Nothing found yet. Run a sweep to check right now.
-          </p>
-        )}
-      </section>
-
-      {data.decisions.length > 0 && (
-        <section>
-          <h2 className="text-lg font-medium">Alert decisions</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Why each finding did or did not become an alert. Baseline history is kept, never deleted.
-          </p>
-          <ul className="panel mt-4 divide-y divide-border">
-            {data.decisions.map((d) => (
-              <li key={d.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 text-sm">
-                <span className={d.eligible ? "text-primary" : "text-muted-foreground"}>
-                  {d.decision.replace(/_/g, " ")}
-                </span>
-                <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                <span className="mono-label">
-                  {d.published_at ? new Date(d.published_at).toLocaleDateString() : "undated"}
-                </span>
-                <p className="w-full text-xs text-muted-foreground">{d.reason}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {data.findings.length > 0 && (
-        <section>
-          <h2 className="text-lg font-medium">
-            Current market inventory — found {data.findings.length} matching listings right now
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {radar.scan_state === "MONITORING"
-              ? "Radar is now monitoring the market for new listings and changes. Only values the source states are shown as facts."
-              : "Item-level data read from individual pages. Only values the source states are shown as facts."}
-          </p>
-          <ul className="panel mt-4 divide-y divide-border">
-            {data.findings.map((f) => {
-              const attributes = Object.values(
-                (f.attributes ?? {}) as unknown as Record<string, AttributeValue>,
-              ).filter((a) => a && typeof a === "object" && a.raw);
-              return (
-                <li key={f.id} className="p-4">
-                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                    <a
-                      href={f.primary_url ?? f.url ?? "#"}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="text-sm font-medium underline underline-offset-4"
-                    >
-                      {f.title}
-                    </a>
-                    {f.numeric_value !== null && (
-                      <span className="text-sm font-medium">
-                        {Math.round(Number(f.numeric_value)).toLocaleString("en-US")}
-                        {f.currency ? ` ${f.currency}` : ""}
-                      </span>
-                    )}
-                    <span className="mono-label">
-                      {f.detail_status === "fetched"
-                        ? "detail page read"
-                        : f.detail_status === "failed"
-                          ? "detail page unavailable"
-                          : "index source only"}
-                    </span>
-                    {f.availability && <span className="mono-label">{f.availability}</span>}
-                  </div>
-
-                  {attributes.length > 0 ? (
-                    <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                      {attributes.map((a) => (
-                        <div key={a.key} className="flex gap-2">
-                          <dt className="mono-label">{a.key.replace(/_/g, " ")}</dt>
-                          <dd className={isFactual(a) ? "" : "text-muted-foreground italic"}>
-                            {a.raw}
-                            {!isFactual(a) && " (inferred)"}
-                            {a.value !== null && (a.currency || a.unit) && (
-                              <span className="ml-1 text-xs text-muted-foreground">
-                                = {a.value} {a.currency ?? a.unit}
-                              </span>
-                            )}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  ) : (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      No item-level attributes available from the source — fields remain unknown.
-                    </p>
-                  )}
-                  <BaselinePanel baseline={f.baseline} />
-                  {f.discovery_url && f.discovery_url !== (f.primary_url ?? f.url) && (
-                    <p className="mono-label mt-2">
-                      discovered on{" "}
-                      <a href={f.discovery_url} target="_blank" rel="noreferrer noopener" className="underline">
-                        {new URL(f.discovery_url).hostname}
-                      </a>
-                    </p>
-                  )}
+          {data.decisions.length > 0 && (
+            <ul className="divide-y divide-border">
+              {data.decisions.map((d) => (
+                <li key={d.id} className="flex flex-wrap items-baseline gap-x-3 py-2 text-xs">
+                  <span className={d.eligible ? "text-primary" : "text-muted-foreground"}>
+                    {d.decision.replace(/_/g, " ")}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                  <span className="text-muted-foreground">{d.reason}</span>
                 </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
+              ))}
+            </ul>
+          )}
 
-      {data.changes.length > 0 && (
-        <section>
-          <h2 className="text-lg font-medium">Attribute changes</h2>
-          <ul className="panel mt-4 divide-y divide-border">
-            {data.changes.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-baseline gap-x-3 px-4 py-3 text-sm">
-                <span className="mono-label">{c.attribute.replace(/_/g, " ")}</span>
-                <span className="text-muted-foreground line-through">{c.previous_raw ?? c.previous_value}</span>
-                <span>→ {c.new_raw ?? c.new_value}</span>
-                <span className="mono-label ml-auto">{new Date(c.changed_at).toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section>
-        <h2 className="text-lg font-medium">Retrieved sources</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Every source Radar read during its sweeps. Alerts may only cite these.
-        </p>
-        {sources?.length ? (
-          <ul className="panel mt-4 divide-y divide-border">
-            {sources.map((s) => (
-              <li key={s.id} className="p-4">
-                <a
-                  href={s.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="text-sm font-medium underline underline-offset-4"
-                >
-                  {s.title}
-                </a>
-                <p className="mono-label mt-1">
-                  {s.publisher ?? new URL(s.url).hostname} ·{" "}
-                  {s.published_at ? new Date(s.published_at).toLocaleDateString() : "no publish date"} ·
-                  retrieved {new Date(s.retrieved_at).toLocaleString()}
-                </p>
-                {s.snippet && (
-                  <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{s.snippet}</p>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="panel mt-4 p-5 text-sm text-muted-foreground">
-            No sources retrieved yet.
-          </p>
-        )}
-      </section>
-
+          {sources?.length ? (
+            <ul className="divide-y divide-border">
+              {sources.map((s) => (
+                <li key={s.id} className="py-2 text-xs">
+                  <a href={s.url} target="_blank" rel="noreferrer noopener" className="underline">
+                    {s.title}
+                  </a>
+                  <span className="ml-2 text-muted-foreground">
+                    {s.publisher ?? new URL(s.url).hostname} · retrieved{" "}
+                    {new Date(s.retrieved_at).toLocaleString("sv-SE")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </details>
     </div>
   );
 }
