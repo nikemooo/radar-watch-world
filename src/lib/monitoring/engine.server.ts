@@ -412,6 +412,30 @@ export async function runRadarCycle(
     .maybeSingle();
   const runId = runRow?.id ?? null;
 
+  // ---------------------------------------------------------------------
+  // Source priority. Learned from this radar's own history (which hosts
+  // actually produced listings that passed the criteria gate, and which hosts
+  // can be read at all) plus the market the radar asked for. It only ORDERS
+  // sources — nothing is filtered away, so new sources stay discoverable.
+  // ---------------------------------------------------------------------
+  const markets = requiredMarkets(config.locations);
+  const [{ data: priorFindings }, { data: priorHosts }] = await Promise.all([
+    db.from("findings").select("url, primary_url, snapshot").eq("radar_id", radar.id).limit(500),
+    db.from("source_fetch_stats").select("host, attempts, successes").eq("user_id", radar.user_id),
+  ]);
+  const priorityContext: PriorityContext = {
+    markets,
+    history: buildHistory(priorFindings ?? [], priorHosts ?? []),
+  };
+  const priorityOf = (host: string) => hostPriority(host, priorityContext).score;
+  let geoResolved = 0;
+  if (markets.length > 0) {
+    console.info(
+      `[radar:geo] ${radar.id} required market(s): ${markets.map((m) => m.name).join(", ")}`,
+    );
+  }
+
+
   // Index-page expansion: any retrieved page that links to a repeating family
   // of item URLs is re-read at full width so the concrete listing URLs it
   // contains become visible to candidate discovery. Purely structural — no
