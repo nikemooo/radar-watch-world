@@ -206,9 +206,10 @@ export function ListingCard({
               href={link}
               target="_blank"
               rel="noreferrer noopener"
+              title={directLink ? undefined : "Direktlänken till annonsen kunde inte verifieras"}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted/60"
             >
-              Öppna annons
+              {directLink ? "Öppna annons" : "Öppna källa"}
               <ExternalLink className="size-3.5" aria-hidden />
             </a>
           )}
