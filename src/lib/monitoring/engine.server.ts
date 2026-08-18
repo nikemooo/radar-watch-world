@@ -537,6 +537,7 @@ export async function runRadarCycle(
   let unknownPrices = 0;
   let detailFetchBudget = 0;
   let budgetReason = "detail stage not reached";
+  const imageByUrl = new Map<string, { url: string; source: string }>();
   const detailDocs: SearchDocument[] = [];
   const discoveryByUrl = new Map<string, string>();
 
@@ -611,6 +612,11 @@ export async function runRadarCycle(
 
       if (selected.length > 0) {
         const fetched = await fetchDetailPages(selected.map((c) => c.url!));
+        // Real listing imagery only — captured from the item's own page, with
+        // its provenance. A missing image is left missing; nothing is invented.
+        for (const p of fetched.pages) {
+          if (p.image) imageByUrl.set(p.url, { url: p.image, source: p.image_source ?? p.url });
+        }
         detailFetchesOk = fetched.pages.length;
         detailFetchesFailed = fetched.failures.length;
         detailCostEstimate = fetched.costEstimate;
@@ -1245,6 +1251,11 @@ ${eligible
           snapshot: {
             summary: item.summary,
             event_type: item.event_type,
+            image: imageByUrl.get(item.url)?.url ?? (prev?.snapshot as { image?: string } | null)?.image ?? null,
+            image_source:
+              imageByUrl.get(item.url)?.source ??
+              (prev?.snapshot as { image_source?: string } | null)?.image_source ??
+              null,
             match_status: verdicts.get(item.fingerprint)?.status ?? "unverified",
             match_reason: verdicts.get(item.fingerprint)?.reason ?? "no machine-checkable constraints defined",
             criteria: verdicts.get(item.fingerprint)?.outcomes ?? [],
