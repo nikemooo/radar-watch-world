@@ -420,7 +420,10 @@ export async function expandIndexPages(
   let costEstimate = 0;
   let totalReads = 0;
 
-  for (const doc of targets) {
+  // Index pages on different hosts are independent, so they are read
+  // concurrently — pagination inside one index stays strictly sequential
+  // because each next page is discovered on the previous one.
+  const expandTarget = async (doc: SearchDocument) => {
     const ownSig = pathSignature(doc.url);
     const seenItems = new Set<string>();
     const allLinks = new Set<string>(doc.links ?? []);
