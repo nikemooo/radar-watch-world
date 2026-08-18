@@ -19,7 +19,10 @@ import {
   mergeAttributeMaps,
   missingKeys,
   parseStructured,
+  largestSrcCandidate,
+  isLikelyContentImage,
 } from "../monitoring/enrichment";
+import { cleanListingUrl, resolveListingUrl } from "../search/listing-url";
 
 
 const priceSpec = { key: "price", label: "Price", kind: "money" as const };
@@ -415,5 +418,51 @@ describe("direct listing urls", () => {
     expect(looksLikeItemUrl("https://www.blocket.se/annonser/hela_sverige?q=bmw")).toBe(false);
     expect(looksLikeItemUrl("https://www.blocket.se/")).toBe(false);
     expect(looksLikeItemUrl("not a url")).toBe(false);
+  });
+});
+
+describe("listing url resolution", () => {
+  it("prefers a same-host canonical item URL and marks it direct", () => {
+    const r = resolveListingUrl({
+      requestedUrl: "https://www.blocket.se/annons/goteborg/bmw/1234567?utm_source=x#gallery",
+      finalUrl: "https://www.blocket.se/annons/goteborg/bmw/1234567",
+      canonical: "https://www.blocket.se/annons/goteborg/bmw/1234567",
+    });
+    expect(r.status).toBe("direct");
+    expect(r.source).toBe("canonical");
+    expect(r.url).toBe("https://www.blocket.se/annons/goteborg/bmw/1234567");
+  });
+
+  it("never claims a search/index page is the advert", () => {
+    const r = resolveListingUrl({ requestedUrl: "https://www.blocket.se/annonser/hela_sverige?q=bmw" });
+    expect(r.status).toBe("unverified");
+  });
+
+  it("strips tracking parameters and hashes", () => {
+    expect(cleanListingUrl("https://x.se/annons/1?gclid=a&color=black#top")).toBe(
+      "https://x.se/annons/1?color=black",
+    );
+  });
+});
+
+describe("image extraction", () => {
+  it("takes the largest srcset rendition", () => {
+    expect(largestSrcCandidate("/a-320.jpg 320w, /a-1200.jpg 1200w, /a-640.jpg 640w")).toBe("/a-1200.jpg");
+    expect(largestSrcCandidate("  /solo.jpg  ")).toBe("/solo.jpg");
+  });
+
+  it("rejects site chrome and data URIs but accepts extensionless CDN photos", () => {
+    expect(isLikelyContentImage("https://cdn.x.se/logo.png")).toBe(false);
+    expect(isLikelyContentImage("data:image/png;base64,AAA")).toBe(false);
+    expect(isLikelyContentImage("https://cdn.x.se/icons/star.svg")).toBe(false);
+    expect(isLikelyContentImage("https://cdn.x.se/images/abc123?width=1200")).toBe(true);
+    expect(isLikelyContentImage("https://cdn.x.se/photos/abc.jpg?w=800")).toBe(true);
+  });
+
+  it("finds gallery images embedded as JSON in a client-rendered page", () => {
+    const html = `<html><body><script>window.__D={"images":["https:\\/\\/cdn.x.se\\/media\\/one.jpg","https:\\/\\/cdn.x.se\\/media\\/two.jpg"]}</script></body></html>`;
+    const s = parseStructured(html, "https://x.se/annons/1");
+    expect(s.images).toContain("https://cdn.x.se/media/one.jpg");
+    expect(s.images).toContain("https://cdn.x.se/media/two.jpg");
   });
 });
