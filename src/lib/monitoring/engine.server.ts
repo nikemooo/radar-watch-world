@@ -397,6 +397,8 @@ export async function runRadarCycle(
   let indexExpansionCost = 0;
   let indexPriceHints = new Map<string, IndexPriceHint>();
   let ambiguousPriceList: { itemUrl: string; values: string[]; sourceUrl: string }[] = [];
+  let indexCards = new Map<string, { itemUrl: string; text: string; sourceUrl: string }>();
+  let indexCardsUsed = 0;
   const indexTelemetry = {
     index_pages_fetched: 0,
     index_pages_expanded: 0,
@@ -409,6 +411,7 @@ export async function runRadarCycle(
     indexExpansionCost = expansion.costEstimate;
     indexPriceHints = expansion.priceHints;
     ambiguousPriceList = expansion.ambiguousPrices;
+    indexCards = expansion.indexCards;
     Object.assign(indexTelemetry, expansion.telemetry);
     for (const e of expansion.expanded) {
       console.info(
@@ -628,7 +631,24 @@ export async function runRadarCycle(
         }
 
         if (specs.length > 0 && fetched.pages.length > 0) {
-          const extracted = await extractDetailAttributes(fetched.pages, specs, criteria);
+          // Detail pages that render their facts client-side come back almost
+          // empty. The card that item was discovered in is real page content
+          // for the same item, joined by exact URL, so it is appended as
+          // clearly-labelled extra evidence rather than left on the floor.
+          const augmented = fetched.pages.map((page) => {
+            const card = indexCards.get(page.url) ?? indexCards.get(`${page.url}/`);
+            if (!card) return page;
+            indexCardsUsed += 1;
+            return {
+              ...page,
+              text:
+                `${page.text}\n\n[listing card for this item, as printed on ${card.sourceUrl}]\n${card.text}`.slice(
+                  0,
+                  12000,
+                ),
+            };
+          });
+          const extracted = await extractDetailAttributes(augmented, specs, criteria);
           details = extracted.details;
           extractionsOk = extracted.details.length;
           extractionsFailed = extracted.failures.length;
@@ -1258,6 +1278,7 @@ ${eligible
     index_pages_expanded: indexTelemetry.index_pages_expanded,
     index_prices_joined: indexPricesApplied,
     ambiguous_price_joins: indexTelemetry.ambiguous_price_joins,
+    index_cards_used: indexCardsUsed,
     unknown_prices: unknownPrices,
     error: research.errors.length ? research.errors.join(" | ").slice(0, 800) : null,
     finished_at: now,
