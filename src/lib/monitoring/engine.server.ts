@@ -394,7 +394,7 @@ export async function runRadarCycle(
   // site-specific rules, and no URL is ever invented.
   let indexExpansionCost = 0;
   try {
-    const expansion = await expandIndexPages(research.documents, isBaseline ? 8 : 5);
+    const expansion = await expandIndexPages(research.documents, isBaseline ? 14 : 8);
     research.documents = expansion.documents;
     indexExpansionCost = expansion.costEstimate;
     for (const e of expansion.expanded) {
