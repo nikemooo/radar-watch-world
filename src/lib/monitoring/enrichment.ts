@@ -174,25 +174,38 @@ export function parseStructured(html: string, pageUrl: string): StructuredSignal
     return href ? absolute(href, pageUrl) : null;
   })();
 
-  // Images: OpenGraph, JSON-LD, then real <img> sources (incl. lazy attrs).
+  // Images: OpenGraph, JSON-LD, embedded JSON galleries, then real <img>
+  // sources (including lazy-loading attributes and srcset renditions).
   const pushImage = (raw: string | undefined | null) => {
     if (!raw) return;
-    const first = raw.split(/\s*,\s*/)[0]!.split(/\s+/)[0]!;
-    const abs = absolute(first, pageUrl);
+    const candidate = largestSrcCandidate(raw);
+    const abs = absolute(candidate, pageUrl);
     if (!abs || images.includes(abs)) return;
-    if (!IMAGE_EXT.test(abs) && !/image/i.test(abs)) return;
+    if (!isLikelyContentImage(abs)) return;
     images.push(abs);
   };
   pushImage(og["image"]);
   pushImage(og["image:secure_url"]);
   pushImage(meta["twitter:image"]);
   pushImage(jsonld["image"] ?? jsonld["contenturl"] ?? jsonld["thumbnailurl"]);
+  // Client-rendered marketplaces ship their gallery as JSON in the page.
+  for (const m of html.matchAll(/"(?:image|imageUrl|imageUrls|images|photos|media)"\s*:\s*(\[[^\]]{0,4000}\]|"[^"]{8,600}")/gi)) {
+    const blob = m[1]!;
+    for (const u of blob.matchAll(/https?:\\?\/\\?\/[^"',\\\s]{8,600}/gi)) {
+      pushImage(u[0]!.replace(/\\\//g, "/"));
+      if (images.length >= 12) break;
+    }
+    if (images.length >= 12) break;
+  }
   for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
     const tag = m[0];
     const src =
+      tag.match(/\bsrcset\s*=\s*["']([^"']+)["']/i)?.[1] ??
+      tag.match(/\bdata-srcset\s*=\s*["']([^"']+)["']/i)?.[1] ??
       tag.match(/\bsrc\s*=\s*["']([^"']+)["']/i)?.[1] ??
       tag.match(/\bdata-src\s*=\s*["']([^"']+)["']/i)?.[1] ??
-      tag.match(/\bsrcset\s*=\s*["']([^"']+)["']/i)?.[1];
+      tag.match(/\bdata-lazy(?:-src)?\s*=\s*["']([^"']+)["']/i)?.[1] ??
+      tag.match(/\bdata-original\s*=\s*["']([^"']+)["']/i)?.[1];
     pushImage(src);
     const alt = tag.match(/\balt\s*=\s*["']([^"']+)["']/i)?.[1];
     if (alt) {
