@@ -101,6 +101,39 @@ function flattenJsonLd(node: unknown, out: Record<string, string>, depth = 0): v
 }
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|avif)(\?|$)/i;
+/** Non-content imagery every site ships: chrome, not the item itself. */
+const IMAGE_NOISE =
+  /(sprite|logo|icon|favicon|avatar|placeholder|spacer|pixel|tracking|badge|banner|1x1|blank|loading|default[-_]?image)/i;
+/** CDN image endpoints frequently carry no file extension at all. */
+const IMAGE_HINT = /(\/image|\/images|\/img|\/media|\/photos?|\/pictures?|format=|resize|w=\d{3}|width=\d{3})/i;
+
+/**
+ * Pick the largest entry of a srcset ("url 320w, url 1200w"), or return a plain
+ * src unchanged. Larger renditions are the listing photo; the smallest is often
+ * a thumbnail placeholder.
+ */
+export function largestSrcCandidate(raw: string): string {
+  const parts = raw
+    .split(/\s*,\s*/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const [url, size] = p.split(/\s+/);
+      const width = size ? Number(size.replace(/[^\d]/g, "")) : 0;
+      return { url: url ?? "", width: Number.isFinite(width) ? width : 0 };
+    })
+    .filter((p) => p.url);
+  if (parts.length === 0) return raw.trim();
+  return parts.sort((a, b) => b.width - a.width)[0]!.url;
+}
+
+/** True when a resolved URL plausibly points at real item imagery. */
+export function isLikelyContentImage(url: string): boolean {
+  if (/^data:/i.test(url)) return false;
+  if (/\.svg(\?|$)/i.test(url)) return false;
+  if (IMAGE_NOISE.test(url)) return false;
+  return IMAGE_EXT.test(url) || IMAGE_HINT.test(url) || /image/i.test(url);
+}
 
 /**
  * Read every structured signal a served HTML page exposes. Nothing here is
