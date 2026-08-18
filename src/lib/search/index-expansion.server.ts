@@ -144,6 +144,25 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
       return url;
     }
   };
+  // A snippet returned by a search provider can be too shallow to reveal a
+  // page's item family, so a site already known to host item URLs elsewhere in
+  // the result set stays eligible for a full re-read instead of being dropped.
+  const itemHosts = new Set<string>();
+  for (const doc of documents) {
+    for (const family of detectItemFamilies(harvest(doc), doc.url)) {
+      for (const u of family.urls.slice(0, 5)) itemHosts.add(hostOf(u));
+    }
+  }
+  const looksLikeIndexPath = (url: string) => {
+    try {
+      const u = new URL(url);
+      if (u.search.length > 1) return true;
+      const last = u.pathname.split("/").filter(Boolean).pop() ?? "";
+      return u.pathname.split("/").filter(Boolean).length >= 2 && !/\d{5,}/.test(last);
+    } catch {
+      return false;
+    }
+  };
   const ranked = documents
     .map((doc) => {
       const families = detectItemFamilies(harvest(doc), doc.url);
@@ -151,7 +170,8 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
       // index rather than an article linking out.
       const own = families.filter((f) => f.signature.startsWith(hostOf(doc.url)));
       const best = own[0] ?? families[0];
-      const score = best ? best.urls.length * (own.length > 0 ? 2 : 1) * best.variableSegments : 0;
+      let score = best ? best.urls.length * (own.length > 0 ? 2 : 1) * best.variableSegments : 0;
+      if (score === 0 && itemHosts.has(hostOf(doc.url)) && looksLikeIndexPath(doc.url)) score = 4;
       return { doc, score };
     })
     .filter((d) => d.score > 0)
