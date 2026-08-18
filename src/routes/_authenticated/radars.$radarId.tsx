@@ -145,6 +145,7 @@ function RadarDetail() {
 
       }
       queryClient.invalidateQueries({ queryKey: ["radar", radarId] });
+      queryClient.invalidateQueries({ queryKey: ["sweep-status", radarId] });
       queryClient.invalidateQueries({ queryKey: ["alerts"] });
       queryClient.invalidateQueries({ queryKey: ["radar-sources", radarId] });
     },
