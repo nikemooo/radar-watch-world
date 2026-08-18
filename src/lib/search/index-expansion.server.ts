@@ -220,7 +220,6 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
   take(probes, max);
   return picked;
 }
-}
 
 /** One read of an index page: text for context, links for discovery, HTML for rows. */
 async function readIndexPage(
