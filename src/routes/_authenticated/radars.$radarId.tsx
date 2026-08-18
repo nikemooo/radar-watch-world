@@ -349,9 +349,13 @@ function RadarDetail() {
 
       {data.findings.length > 0 && (
         <section>
-          <h2 className="text-lg font-medium">Tracked items</h2>
+          <h2 className="text-lg font-medium">
+            Current market inventory — found {data.findings.length} matching listings right now
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Item-level data read from individual pages. Only values the source states are shown as facts.
+            {radar.scan_state === "MONITORING"
+              ? "Radar is now monitoring the market for new listings and changes. Only values the source states are shown as facts."
+              : "Item-level data read from individual pages. Only values the source states are shown as facts."}
           </p>
           <ul className="panel mt-4 divide-y divide-border">
             {data.findings.map((f) => {
@@ -369,6 +373,12 @@ function RadarDetail() {
                     >
                       {f.title}
                     </a>
+                    {f.numeric_value !== null && (
+                      <span className="text-sm font-medium">
+                        {Math.round(Number(f.numeric_value)).toLocaleString("en-US")}
+                        {f.currency ? ` ${f.currency}` : ""}
+                      </span>
+                    )}
                     <span className="mono-label">
                       {f.detail_status === "fetched"
                         ? "detail page read"
@@ -378,6 +388,7 @@ function RadarDetail() {
                     </span>
                     {f.availability && <span className="mono-label">{f.availability}</span>}
                   </div>
+
                   {attributes.length > 0 ? (
                     <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
                       {attributes.map((a) => (
