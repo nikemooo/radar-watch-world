@@ -40,6 +40,7 @@ const configSchema = {
         "search_queries",
         "exclusions",
         "attribute_schema",
+        "hard_constraints",
       ],
       properties: {
         target: { type: "string" },
@@ -54,6 +55,22 @@ const configSchema = {
         monitored_events: { type: "array", items: { type: "string" } },
         search_queries: { type: "array", items: { type: "string" } },
         exclusions: { type: "array", items: { type: "string" } },
+        hard_constraints: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["attribute", "op", "value", "aliases", "currency", "label"],
+            properties: {
+              attribute: { type: "string" },
+              op: { type: "string", enum: ["lte", "lt", "gte", "gt", "eq", "neq", "includes", "excludes"] },
+              value: { type: ["string", "number"] },
+              aliases: { type: "array", items: { type: "string" } },
+              currency: { type: ["string", "null"] },
+              label: { type: "string" },
+            },
+          },
+        },
         attribute_schema: {
           type: "array",
           items: {
@@ -109,7 +126,13 @@ export async function interpretRequest(request: string): Promise<InterpretedRada
       "'year' for model/build years, 'date' for dates, 'number' for counts, 'url' for links, 'text' otherwise. " +
       "Derive them from the subject itself (a car needs make/model/year/mileage/colour/price/location/seller/listing_url; " +
       "a watch needs brand/model/reference/condition/price/seller/listing_url; a property needs location/price/area/rooms/property_type/listing_url). " +
-      "Always include a price attribute when the subject can be bought, and always include a listing_url attribute for marketplace subjects.",
+      "Always include a price attribute when the subject can be bought, and always include a listing_url attribute for marketplace subjects. " +
+      "hard_constraints turns the requirements the user ACTUALLY stated into machine-checkable rules over attribute_schema keys: " +
+      "numeric bounds use lte/lt/gte/gt/eq/neq with a numeric value (and currency for money), text requirements use includes/excludes " +
+      "with a single token value. For every text token, list aliases with the equivalent spellings and local-language words a listing " +
+      "may use (for colour black: black, svart, schwarz, noir, nero; for a variant: the exact variant spellings). " +
+      "label is a short human-readable form of the rule. Never invent a constraint the user did not state, and never turn a soft " +
+      "preference into a hard constraint — if the user only said they prefer something, leave it in preferences.",
     user: request,
   });
 

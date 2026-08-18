@@ -395,6 +395,9 @@ export type Database = {
           comparable_observations: number
           cost_ceiling: number
           cost_estimate: number
+          criteria_matched: number
+          criteria_rejected: number
+          criteria_unverified: number
           detail_cost_estimate: number
           detail_fetch_budget: number
           detail_fetches_attempted: number
@@ -412,11 +415,16 @@ export type Database = {
           index_pages_expanded: number
           index_pages_fetched: number
           index_prices_joined: number
+          indexes_exhausted: number
           items_found: number
           items_merged: number
           matching_listings: number
           monitoring_transition: boolean
           new_items: number
+          pagination_pages_attempted: number
+          pagination_pages_blocked: number
+          pagination_pages_skipped: number
+          pagination_pages_succeeded: number
           provider: string | null
           radar_id: string
           run_type: string
@@ -451,6 +459,9 @@ export type Database = {
           comparable_observations?: number
           cost_ceiling?: number
           cost_estimate?: number
+          criteria_matched?: number
+          criteria_rejected?: number
+          criteria_unverified?: number
           detail_cost_estimate?: number
           detail_fetch_budget?: number
           detail_fetches_attempted?: number
@@ -468,11 +479,16 @@ export type Database = {
           index_pages_expanded?: number
           index_pages_fetched?: number
           index_prices_joined?: number
+          indexes_exhausted?: number
           items_found?: number
           items_merged?: number
           matching_listings?: number
           monitoring_transition?: boolean
           new_items?: number
+          pagination_pages_attempted?: number
+          pagination_pages_blocked?: number
+          pagination_pages_skipped?: number
+          pagination_pages_succeeded?: number
           provider?: string | null
           radar_id: string
           run_type?: string
@@ -507,6 +523,9 @@ export type Database = {
           comparable_observations?: number
           cost_ceiling?: number
           cost_estimate?: number
+          criteria_matched?: number
+          criteria_rejected?: number
+          criteria_unverified?: number
           detail_cost_estimate?: number
           detail_fetch_budget?: number
           detail_fetches_attempted?: number
@@ -524,11 +543,16 @@ export type Database = {
           index_pages_expanded?: number
           index_pages_fetched?: number
           index_prices_joined?: number
+          indexes_exhausted?: number
           items_found?: number
           items_merged?: number
           matching_listings?: number
           monitoring_transition?: boolean
           new_items?: number
+          pagination_pages_attempted?: number
+          pagination_pages_blocked?: number
+          pagination_pages_skipped?: number
+          pagination_pages_succeeded?: number
           provider?: string | null
           radar_id?: string
           run_type?: string

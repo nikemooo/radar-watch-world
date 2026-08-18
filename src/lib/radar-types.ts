@@ -4,8 +4,9 @@
  * with the same structure. No category is special-cased.
  */
 import type { AttributeSpec } from "./monitoring/normalize";
+import type { HardConstraint } from "./monitoring/criteria";
 
-export type { AttributeSpec };
+export type { AttributeSpec, HardConstraint };
 
 export type RadarFrequency = "smart" | "instant" | "daily" | "weekly";
 
@@ -26,6 +27,8 @@ export interface RadarConfig {
   exclusions: string[];
   /** Item-level attributes that matter for THIS radar (category-agnostic). */
   attribute_schema: AttributeSpec[];
+  /** Machine-checkable requirements derived from the user's own wording. */
+  hard_constraints: HardConstraint[];
 }
 
 export const emptyConfig: RadarConfig = {
@@ -42,6 +45,7 @@ export const emptyConfig: RadarConfig = {
   search_queries: [],
   exclusions: [],
   attribute_schema: [],
+  hard_constraints: [],
 };
 
 export function asConfig(value: unknown): RadarConfig {

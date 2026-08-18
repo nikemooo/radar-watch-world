@@ -38,6 +38,10 @@ export interface ExpandedIndex {
   pageUrls: string[];
   pricesJoined: number;
   ambiguousPrices: number;
+  /** Item URLs seen again on a later page of the same index. */
+  duplicateItemUrls: number;
+  /** Why pagination stopped: exhausted, no-new-items, page cap, read failure. */
+  stopReason: string;
 }
 
 export interface ExpansionTelemetry {
@@ -45,6 +49,11 @@ export interface ExpansionTelemetry {
   index_pages_expanded: number;
   index_prices_joined: number;
   ambiguous_price_joins: number;
+  pages_attempted: number;
+  pages_succeeded: number;
+  pages_blocked: number;
+  pages_skipped: number;
+  indexes_exhausted: number;
 }
 
 /** Deterministic explanation of why one document was expanded or skipped. */
@@ -360,6 +369,11 @@ export async function expandIndexPages(
     index_pages_expanded: 0,
     index_prices_joined: 0,
     ambiguous_price_joins: 0,
+    pages_attempted: 0,
+    pages_succeeded: 0,
+    pages_blocked: 0,
+    pages_skipped: 0,
+    indexes_exhausted: 0,
   };
   const selection = selectIndexPages(documents, maxPages);
   const targets = selection.picked;
@@ -406,20 +420,29 @@ export async function expandIndexPages(
     let ambiguousHere = 0;
     let queue: string[] = [doc.url];
     const visited = new Set<string>();
+    let duplicateItemUrls = 0;
+    let stopReason = "no pagination signal on the page";
 
     while (queue.length > 0 && pageUrls.length < MAX_PAGES_PER_INDEX && totalReads < maxTotalPageReads) {
       const pageUrl = queue.shift()!;
-      if (visited.has(pageUrl)) continue;
+      if (visited.has(pageUrl)) {
+        telemetry.pages_skipped += 1;
+        continue;
+      }
       visited.add(pageUrl);
 
       const page = await readIndexPage(pageUrl, pageUrls.length === 0);
       totalReads += 1;
       telemetry.index_pages_fetched += 1;
+      telemetry.pages_attempted += 1;
       costEstimate = Number((costEstimate + (page?.cost ?? 0)).toFixed(4));
       if (!page || page.links.length === 0) {
         failures.push({ url: pageUrl, reason: "index page could not be re-read" });
+        telemetry.pages_blocked += 1;
+        stopReason = "page could not be read";
         continue;
       }
+      telemetry.pages_succeeded += 1;
       pageUrls.push(pageUrl);
       for (const l of page.links) allLinks.add(l);
       if (page.text.length > bestText.length) bestText = page.text;
@@ -429,6 +452,7 @@ export async function expandIndexPages(
         .flatMap((f) => f.urls)
         .filter((u) => pathSignature(u) !== ownSig);
       const newItems = pageItems.filter((u) => !seenItems.has(u));
+      duplicateItemUrls += pageItems.length - newItems.length;
       for (const u of pageItems) seenItems.add(u);
 
       // Row-level prices: only from the page the item card is printed on.
@@ -464,15 +488,24 @@ export async function expandIndexPages(
 
       console.info(
         `[radar:index] read ${pageUrl} — links ${page.links.length}, items ${pageItems.length} (${newItems.length} new), ` +
-          `prices ${pricesJoined}, ambiguous ${ambiguousHere}, families ${families.length}`,
+          `prices ${pricesJoined}, ambiguous ${ambiguousHere}, families ${families.length}, ` +
+          `duplicates ${pageItems.length - newItems.length}`,
       );
 
       // Paginate only while the previous page still produced unseen items.
-      if (newItems.length > 0 && pageUrls.length < MAX_PAGES_PER_INDEX) {
+      if (newItems.length === 0) {
+        stopReason = "no unseen item URLs on the last page — index exhausted";
+        telemetry.indexes_exhausted += 1;
+      } else if (pageUrls.length >= MAX_PAGES_PER_INDEX) {
+        stopReason = `hard page ceiling (${MAX_PAGES_PER_INDEX}) reached`;
+      } else {
         const nextLinks = detectPaginationLinks(page.links, pageUrl);
         const nextParam = nextPageByParam(pageUrl);
         const next = nextLinks.length > 0 ? nextLinks.slice(0, 2) : nextParam ? [nextParam] : [];
-        queue = [...queue, ...next.filter((u) => !visited.has(u))];
+        const queued = next.filter((u) => !visited.has(u));
+        if (queued.length === 0) stopReason = "no further pagination link could be identified";
+        else stopReason = nextLinks.length > 0 ? "paginating via links found on the page" : "paginating via the page's own paging parameter";
+        queue = [...queue, ...queued];
       }
     }
 
@@ -494,6 +527,8 @@ export async function expandIndexPages(
       textLength: bestText.length,
       pagesRead: pageUrls.length,
       pageUrls,
+      duplicateItemUrls,
+      stopReason,
       pricesJoined,
       ambiguousPrices: ambiguousHere,
     });

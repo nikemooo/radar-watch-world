@@ -30,6 +30,7 @@ import {
   type ExtractedDetail,
 } from "./attributes.server";
 import type { AttributeSpec, AttributeValue } from "./normalize";
+import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
 import { normalizeAttribute } from "./normalize";
 import {
   buildBaseline,
@@ -202,6 +203,13 @@ export interface RunResult {
   comparableCoverage?: number;
   baselinesBackfilled?: number;
   costCeiling?: number;
+  criteriaMatched?: number;
+  criteriaRejected?: number;
+  criteriaUnverified?: number;
+  paginationPagesAttempted?: number;
+  paginationPagesSucceeded?: number;
+  paginationPagesBlocked?: number;
+  indexesExhausted?: number;
 }
 
 interface Decision {
@@ -404,6 +412,11 @@ export async function runRadarCycle(
     index_pages_expanded: 0,
     index_prices_joined: 0,
     ambiguous_price_joins: 0,
+    pages_attempted: 0,
+    pages_succeeded: 0,
+    pages_blocked: 0,
+    pages_skipped: 0,
+    indexes_exhausted: 0,
   };
   try {
     const expansion = await expandIndexPages(research.documents, isBaseline ? 14 : 8);
@@ -837,6 +850,42 @@ ${documentBlock(allDocs.slice(0, 45))}`,
     }
   }
 
+  // ------------------------------------------------------------------
+  // 2b. Deterministic criteria matching.
+  // Arithmetic and string containment over STATED facts only — no model, no
+  // "probably". Every item gets match / reject / unverified plus the exact
+  // reason, and only a confirmed match may ever reach the alert pipeline.
+  // ------------------------------------------------------------------
+  const constraints = radarConstraints({
+    hard_constraints: config.hard_constraints,
+    price_min: config.price_min,
+    price_max: config.price_max,
+    currency: config.currency,
+    attribute_schema: specs,
+  });
+  const verdicts = new Map<string, MatchVerdict>();
+  let criteriaMatched = 0;
+  let criteriaRejected = 0;
+  let criteriaUnverified = 0;
+  for (const item of items) {
+    const verdict = evaluateCriteria(
+      {
+        title: item.title,
+        attributes: attributesFor(item) ?? asAttributeMap(existing.get(item.fingerprint)?.attributes ?? null) ?? {},
+        numericValue: item.numeric_value,
+        currency: item.currency,
+      },
+      constraints,
+    );
+    verdicts.set(item.fingerprint, verdict);
+    if (verdict.status === "match") criteriaMatched += 1;
+    else if (verdict.status === "reject") criteriaRejected += 1;
+    else criteriaUnverified += 1;
+    console.info(
+      `[radar:criteria] ${verdict.status.toUpperCase()} ${item.url} — ${verdict.reason}`,
+    );
+  }
+
   const docByUrl = new Map(allDocs.map((d) => [d.url, d]));
   const temporalOf = (item: ExtractedItem): TemporalFacts => {
     const doc = docByUrl.get(item.url);
@@ -974,6 +1023,28 @@ ${documentBlock(allDocs.slice(0, 45))}`,
       published_at: informationDate(temporalOf(item)),
     });
   };
+
+  // 4a0. Deterministic criteria gate — an item that provably falls outside the
+  // user's stated constraints, or whose facts could not be verified, is never
+  // alerted on. This gate only ever tightens: it cannot let anything through.
+  if (constraints.length > 0) {
+    const passed: typeof changed = [];
+    for (const c of changed) {
+      const verdict = verdicts.get(c.item.fingerprint);
+      if (verdict && verdict.status !== "match") {
+        record(
+          c.item,
+          false,
+          verdict.status === "reject" ? "suppressed_criteria" : "suppressed_unverified",
+          verdict.reason,
+        );
+        continue;
+      }
+      passed.push(c);
+    }
+    changed.length = 0;
+    changed.push(...passed);
+  }
 
   // 4a. Baseline gate — the first sweep is a snapshot, never an alert storm.
   let eligible = changed;
@@ -1171,7 +1242,13 @@ ${eligible
           entity: item.entity,
           numeric_value: item.numeric_value,
           currency: item.currency,
-          snapshot: { summary: item.summary, event_type: item.event_type } as never,
+          snapshot: {
+            summary: item.summary,
+            event_type: item.event_type,
+            match_status: verdicts.get(item.fingerprint)?.status ?? "unverified",
+            match_reason: verdicts.get(item.fingerprint)?.reason ?? "no machine-checkable constraints defined",
+            criteria: verdicts.get(item.fingerprint)?.outcomes ?? [],
+          } as never,
           attributes: (attrs ?? {}) as never,
           primary_url: detail ? item.url : (prev?.primary_url ?? null),
           discovery_url: discoveryUrl,
@@ -1279,6 +1356,14 @@ ${eligible
     index_prices_joined: indexPricesApplied,
     ambiguous_price_joins: indexTelemetry.ambiguous_price_joins,
     index_cards_used: indexCardsUsed,
+    criteria_matched: criteriaMatched,
+    criteria_rejected: criteriaRejected,
+    criteria_unverified: criteriaUnverified,
+    pagination_pages_attempted: indexTelemetry.pages_attempted,
+    pagination_pages_succeeded: indexTelemetry.pages_succeeded,
+    pagination_pages_blocked: indexTelemetry.pages_blocked,
+    pagination_pages_skipped: indexTelemetry.pages_skipped,
+    indexes_exhausted: indexTelemetry.indexes_exhausted,
     unknown_prices: unknownPrices,
     error: research.errors.length ? research.errors.join(" | ").slice(0, 800) : null,
     finished_at: now,
@@ -1347,5 +1432,12 @@ ${eligible
     comparableCoverage,
     baselinesBackfilled,
     costCeiling,
+    criteriaMatched,
+    criteriaRejected,
+    criteriaUnverified,
+    paginationPagesAttempted: indexTelemetry.pages_attempted,
+    paginationPagesSucceeded: indexTelemetry.pages_succeeded,
+    paginationPagesBlocked: indexTelemetry.pages_blocked,
+    indexesExhausted: indexTelemetry.indexes_exhausted,
   };
 }
