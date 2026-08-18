@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { createRadar, interpretRadarRequest } from "@/lib/radar.functions";
+import { createRadar, interpretRadarRequest, runRadarNow } from "@/lib/radar.functions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -18,12 +18,17 @@ import {
 import {
   asConfig,
   frequencyLabel,
+  radarModeDescription,
+  radarModeLabel,
   recencyPresets,
   type RadarConfig,
   type RadarFrequency,
+  type RadarMode,
+  type RadarStart,
 } from "@/lib/radar-types";
 import { monitoringWindowLabel, type MonitoringWindow } from "@/lib/monitoring/temporal";
 import { track } from "@/lib/analytics";
+
 
 export const Route = createFileRoute("/_authenticated/radars/new")({
   head: () => ({
