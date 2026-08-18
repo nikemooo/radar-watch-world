@@ -568,6 +568,14 @@ export async function runRadarCycle(
     currency: config.currency,
     attribute_schema: specs,
   });
+  // A radar that named exactly one market gets a machine-checkable country
+  // requirement. A listing proven to be elsewhere is rejected; a listing whose
+  // market could not be established stays unverified — never a match.
+  const geoConstraint = countryConstraint(config.locations);
+  if (geoConstraint && !constraints.some((c) => c.attribute === COUNTRY_ATTRIBUTE)) {
+    constraints.push(geoConstraint);
+  }
+
 
   let candidates: CandidateItem[] = [];
   let indexPages: string[] = [];
