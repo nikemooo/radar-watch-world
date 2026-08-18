@@ -495,6 +495,7 @@ export async function runRadarCycle(
   // editorial/specification pages. The planner expands the radar's own
   // configuration into several short, market-shaped queries (generic — it has
   // no per-category or per-site knowledge).
+  await phase("query_planning");
   const plannedQueries = await planDiscoveryQueries(config, radar.raw_request, isBaseline ? 8 : 6);
   const queries = plannedQueries.map((q) => q.query);
   console.info(
@@ -502,6 +503,7 @@ export async function runRadarCycle(
       .map((q) => `${q.intent}/${q.origin}: ${q.query}`)
       .join(" | ")}`,
   );
+  await phase("searching_sources");
   const research = await researchQueries(queries, isBaseline ? 10 : 8, queries.length);
 
   if (!research.configured) {
@@ -580,6 +582,7 @@ export async function runRadarCycle(
     indexes_exhausted: 0,
   };
   try {
+    await phase("expanding_indexes");
     const expansion = await expandIndexPages(
       research.documents,
       isBaseline ? 14 : 8,
@@ -738,6 +741,7 @@ export async function runRadarCycle(
 
   if (research.documents.length > 0) {
     try {
+      await phase("extracting_candidates");
       const discovery = await discoverCandidates(research.documents, criteria);
       candidates = discovery.candidates;
       indexPages = discovery.indexPages;
@@ -806,6 +810,7 @@ export async function runRadarCycle(
       for (const c of selected) if (c.url) discoveryByUrl.set(c.url, c.discovery_url);
 
       if (selected.length > 0) {
+        await phase("fetching_details");
         const fetched = await fetchDetailPages(selected.map((c) => c.url!));
         // Real listing imagery only — captured from the item's own page, with
         // its provenance. A missing image is left missing; nothing is invented.
@@ -972,6 +977,7 @@ export async function runRadarCycle(
           let aiFailures: { url: string; reason: string }[] = [];
           if (augmented.length > 0) {
             extractionAiCalls += 1;
+            await phase("extracting_attributes");
             const extracted = await extractDetailAttributes(augmented, specs, criteria);
             aiDetails = extracted.details;
             aiFailures = extracted.failures;
@@ -1195,6 +1201,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
   // "probably". Every item gets match / reject / unverified plus the exact
   // reason, and only a confirmed match may ever reach the alert pipeline.
   // ------------------------------------------------------------------
+  await phase("evaluating_criteria");
   const verdicts = new Map<string, MatchVerdict>();
   let criteriaMatched = 0;
   let criteriaRejected = 0;
@@ -1306,6 +1313,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
     .map(asObservation);
   const population = [...currentObservations, ...persistedObservations];
 
+  await phase("building_comparables");
   const baselines = new Map<string, BaselineResult>();
   let baselinesComputed = 0;
   let baselinesInsufficient = 0;
