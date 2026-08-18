@@ -634,8 +634,15 @@ export async function runRadarCycle(
       error: failedAll ? research.errors.join(" | ").slice(0, 800) : null,
       finished_at: new Date().toISOString(),
     });
-    // A failed baseline is never marked complete — it must be retried.
-    await db.from("radars").update({ last_run_at: new Date().toISOString() }).eq("id", radar.id);
+    // A failed initial scan is never marked complete — it must be retried.
+    await db
+      .from("radars")
+      .update({
+        last_run_at: new Date().toISOString(),
+        ...(isBaseline ? { scan_state: "initial_scan_pending" } : {}),
+      })
+      .eq("id", radar.id);
+
     return {
       status: failedAll ? "error" : "ok",
       runType,
