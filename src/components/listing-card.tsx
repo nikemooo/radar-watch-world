@@ -148,19 +148,20 @@ export function ListingCard({ finding }: { finding: FindingLike }) {
           <p className="text-sm text-muted-foreground">Otillräckligt jämförelseunderlag</p>
         )}
 
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1">
           {link && (
             <a
               href={link}
               target="_blank"
               rel="noreferrer noopener"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted/60"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted/60"
             >
               Öppna annons
               <ExternalLink className="size-3.5" aria-hidden />
             </a>
           )}
-          <span className="mono-label">{host(link) ?? "okänd källa"}</span>
+          <span className="mono-label truncate">{host(link) ?? "okänd källa"}</span>
+
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
