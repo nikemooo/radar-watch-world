@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Loader2, Pause, Play, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Pause, Play, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { listRadarSources, runRadarNow } from "@/lib/radar.functions";
+import { reverifyRadar } from "@/lib/verification.functions";
 import { AlertCard, type AlertRow } from "@/components/alert-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +20,14 @@ import {
 import { asConfig, frequencyLabel, recencyPresets, type RadarFrequency } from "@/lib/radar-types";
 import { track } from "@/lib/analytics";
 import { ListingRail, snapshotOf, type FindingLike } from "@/components/listing-card";
+import { VerifyDialog } from "@/components/verify-dialog";
+import {
+  effectiveVerdict,
+  imageObservationsOf,
+  outcomesOf,
+  type UserVerdict,
+} from "@/lib/monitoring/verification";
+
 
 export const Route = createFileRoute("/_authenticated/radars/$radarId")({
   head: () => ({
