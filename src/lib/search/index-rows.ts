@@ -32,10 +32,19 @@ export interface IndexPriceHint {
   origin: "index";
 }
 
+/** Verbatim text of the card an item was discovered in, with its source page. */
+export interface IndexCard {
+  itemUrl: string;
+  text: string;
+  sourceUrl: string;
+}
+
 export interface IndexRowResult {
   hints: Map<string, IndexPriceHint>;
   /** Item URLs whose card held several conflicting values — left unknown. */
   ambiguous: { itemUrl: string; values: string[]; sourceUrl: string }[];
+  /** Card text per item URL — real page content, usable as index-origin evidence. */
+  cards: Map<string, IndexCard>;
 }
 
 const MAX_BLOCK_CHARS = 6000;
