@@ -88,6 +88,27 @@ export async function discoverCandidates(
 ): Promise<DiscoveryResult> {
   if (docs.length === 0) return { candidates: [], indexPages: [], singlePages: [] };
 
+  // Expanded index pages are large; batching keeps every page fully visible to
+  // the model instead of truncating a whole sweep into one prompt.
+  const BATCH = 6;
+  if (docs.length > BATCH) {
+    const batches: SearchDocument[][] = [];
+    for (let i = 0; i < docs.length; i += BATCH) batches.push(docs.slice(i, i + BATCH));
+    const results = await Promise.all(
+      batches.map((batch) =>
+        discoverCandidates(batch, criteria).catch((err) => {
+          console.warn(`[radar:candidates] batch failed — ${(err as Error).message}`);
+          return { candidates: [], indexPages: [], singlePages: [] } as DiscoveryResult;
+        }),
+      ),
+    );
+    return {
+      candidates: results.flatMap((r) => r.candidates),
+      indexPages: results.flatMap((r) => r.indexPages),
+      singlePages: results.flatMap((r) => r.singlePages),
+    };
+  }
+
   const linkIndex = new Map<string, Set<string>>();
   const blocks = docs.map((doc, i) => {
     const links = harvestLinks(doc);
