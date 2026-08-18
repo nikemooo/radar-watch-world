@@ -16,6 +16,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { chatJson, MODELS } from "../ai/gateway.server";
 import { researchQueries, type SearchDocument } from "../search/providers.server";
+import { planDiscoveryQueries } from "../search/query-planner.server";
+import { expandIndexPages } from "../search/index-expansion.server";
 import { asConfig, type RadarConfig } from "../radar-types";
 import { discoverCandidates, type CandidateItem } from "./candidates.server";
 import { fetchDetailPages } from "../search/detail-fetch.server";
