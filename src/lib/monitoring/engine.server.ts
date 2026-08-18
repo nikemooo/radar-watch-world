@@ -588,6 +588,8 @@ export async function runRadarCycle(
   let details: ExtractedDetail[] = [];
   let detailFetchesOk = 0;
   let detailFetchesFailed = 0;
+  let listingsRemoved = 0;
+
   let extractionsOk = 0;
   let extractionsFailed = 0;
   let attributesExtracted = 0;
