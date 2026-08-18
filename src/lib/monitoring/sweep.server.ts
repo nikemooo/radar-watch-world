@@ -14,7 +14,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { runRadarCycle, type RunOptions, type RunResult } from "./engine.server";
+import { beginRun, runRadarCycle, type RunOptions, type RunResult } from "./engine.server";
 import { keepRuntimeAlive } from "../runtime-context.server";
 
 type Db = SupabaseClient<Database>;
@@ -26,8 +26,8 @@ const INLINE_WAIT_MS = 12_000;
 const STALE_RUN_MS = 15 * 60_000;
 
 export type SweepStart =
-  | { state: "completed"; result: RunResult }
-  | { state: "running"; startedAt: string };
+  | { state: "completed"; result: RunResult; runId: string | null; startedAt: string }
+  | { state: "running"; startedAt: string; runId: string | null };
 
 export type SweepStatus = {
   state: "running" | "completed" | "failed" | "none";
@@ -48,23 +48,25 @@ export async function startRadarSweep(
   radar: RadarRow,
   options: RunOptions = {},
 ): Promise<SweepStart> {
-  const startedAt = new Date().toISOString();
+  // The run row (and, for a first sweep, the radar's running scan state) is
+  // written synchronously BEFORE the cycle starts. Only then can the caller
+  // honestly report "the sweep has started" — and a refresh one second later
+  // already shows a running sweep instead of the untouched initial state.
+  const claim = await beginRun(db, radar);
+  const startedAt = claim.startedAt;
 
   const sweep = (async () => {
     try {
-      return await runRadarCycle(db, radar, options);
+      return await runRadarCycle(db, radar, {
+        ...options,
+        runId: claim.runId,
+        startedAt: claim.startedAt,
+      });
     } catch (err) {
       // Without this, a crashed cycle leaves monitor_runs stuck on "running"
       // forever and the UI can never tell success from failure.
       const message = err instanceof Error ? err.message : String(err);
-      const { data: open } = await db
-        .from("monitor_runs")
-        .select("id")
-        .eq("radar_id", radar.id)
-        .eq("status", "running")
-        .gte("started_at", startedAt)
-        .limit(1);
-      if (open?.[0]) {
+      if (claim.runId) {
         await db
           .from("monitor_runs")
           .update({
@@ -72,18 +74,7 @@ export async function startRadarSweep(
             error: message.slice(0, 800),
             finished_at: new Date().toISOString(),
           })
-          .eq("id", open[0].id);
-      } else {
-        await db.from("monitor_runs").insert({
-          radar_id: radar.id,
-          user_id: radar.user_id,
-          status: "failed",
-          run_type: radar.baseline_completed ? "incremental" : "baseline",
-          scan_phase: radar.baseline_completed ? "monitoring" : "initial_scan",
-          error: message.slice(0, 800),
-          started_at: startedAt,
-          finished_at: new Date().toISOString(),
-        });
+          .eq("id", claim.runId);
       }
       if (!radar.baseline_completed) {
         // A crashed initial scan must be retried, never presented as inventory.
@@ -100,7 +91,7 @@ export async function startRadarSweep(
 
   const backgroundAttached = keepRuntimeAlive(sweep);
   console.info(
-    `[radar:sweep] radar ${radar.id} background ${backgroundAttached ? "attached" : "unavailable"}`,
+    `[radar:sweep] radar ${radar.id} run ${claim.runId ?? "?"} background ${backgroundAttached ? "attached" : "unavailable"}`,
   );
   sweep.catch(() => undefined); // handled above; prevents unhandled rejection
 
@@ -111,9 +102,11 @@ export async function startRadarSweep(
     ),
   ]);
 
-  if (raced.done) return { state: "completed", result: raced.result };
-  return { state: "running", startedAt };
+  if (raced.done)
+    return { state: "completed", result: raced.result, runId: claim.runId, startedAt };
+  return { state: "running", startedAt, runId: claim.runId };
 }
+
 
 /** Reads the persisted truth of the most recent run for a radar. */
 export async function readSweepStatus(
