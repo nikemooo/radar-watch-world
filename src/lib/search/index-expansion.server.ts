@@ -13,9 +13,17 @@
  */
 import type { SearchDocument } from "./providers.server";
 import { detectItemFamilies, pathSignature, type UrlFamily } from "./url-shape";
+import {
+  detectPaginationLinks,
+  extractIndexRowPrices,
+  nextPageByParam,
+  type IndexPriceHint,
+} from "./index-rows";
 
 const EXPANSION_TIMEOUT_MS = 30_000;
 const EXA_CONTENT_COST = 0.001;
+/** Hard ceiling on how deep a single index is paginated. */
+const MAX_PAGES_PER_INDEX = 5;
 
 export interface ExpandedIndex {
   url: string;
@@ -24,6 +32,18 @@ export interface ExpandedIndex {
   itemUrls: string[];
   linkCount: number;
   textLength: number;
+  /** Pages read for this index, including pagination pages. */
+  pagesRead: number;
+  pageUrls: string[];
+  pricesJoined: number;
+  ambiguousPrices: number;
+}
+
+export interface ExpansionTelemetry {
+  index_pages_fetched: number;
+  index_pages_expanded: number;
+  index_prices_joined: number;
+  ambiguous_price_joins: number;
 }
 
 export interface ExpansionResult {
@@ -33,6 +53,10 @@ export interface ExpansionResult {
   attempted: number;
   failures: { url: string; reason: string }[];
   costEstimate: number;
+  /** Unambiguous item price read from the card it was discovered in. */
+  priceHints: Map<string, IndexPriceHint>;
+  ambiguousPrices: { itemUrl: string; values: string[]; sourceUrl: string }[];
+  telemetry: ExpansionTelemetry;
 }
 
 function harvest(doc: SearchDocument): string[] {
