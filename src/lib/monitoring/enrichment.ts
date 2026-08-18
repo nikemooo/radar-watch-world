@@ -55,9 +55,13 @@ export interface StructuredSignals {
  * Structured HTML parsing
  * ------------------------------------------------------------------ */
 
-function decode(text: string): string {
+export function decode(text: string): string {
   return text
     .replace(/&nbsp;|&#160;/gi, " ")
+    // Numeric character references: "R&#xF6;d" must read as "Röd", otherwise a
+    // stated fact is compared as gibberish.
+    .replace(/&#x([0-9a-f]{1,6});/gi, (_m, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d{1,7});/g, (_m, dec: string) => String.fromCodePoint(Number(dec)))
     .replace(/&amp;/gi, "&")
     .replace(/&quot;/gi, '"')
     .replace(/&#0?39;|&apos;/gi, "'")
