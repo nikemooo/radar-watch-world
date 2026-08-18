@@ -103,8 +103,9 @@ function absolute(href: string, base: string): string | null {
 }
 
 /**
- * Read one price per item card from an index page's HTML.
- * `itemUrls` restricts the join to URLs discovery already accepted as items.
+ * Read one price per item card from an index page's HTML, plus the verbatim
+ * text of each card. `itemUrls` restricts the join to URLs discovery already
+ * accepted as items.
  */
 export function extractIndexRowPrices(html: string, pageUrl: string, itemUrls: Set<string>): IndexRowResult {
   const anchors: { url: string; at: number }[] = [];
@@ -117,28 +118,43 @@ export function extractIndexRowPrices(html: string, pageUrl: string, itemUrls: S
   anchors.sort((a, b) => a.at - b.at);
 
   // valueKey -> raw, collected per item URL across all of its anchors.
-  const perItem = new Map<string, Map<string, string>>();
+  const perItem = new Map<string, { plain: Map<string, string>; qualified: Map<string, string> }>();
+  const cards = new Map<string, IndexCard>();
   anchors.forEach((anchor, i) => {
     const end = Math.min(anchor.at + MAX_BLOCK_CHARS, anchors[i + 1]?.at ?? html.length);
     const text = stripTags(html.slice(anchor.at, end));
-    const bucket = perItem.get(anchor.url) ?? new Map<string, string>();
-    for (const raw of moneyStringsIn(text)) {
+    const bucket = perItem.get(anchor.url) ?? { plain: new Map(), qualified: new Map() };
+    for (const { raw, qualified } of moneyMatchesIn(text)) {
       const key = normalizedKey(raw);
       if (!key) continue;
-      if (!bucket.has(key)) bucket.set(key, raw);
+      const target = qualified ? bucket.qualified : bucket.plain;
+      if (!target.has(key)) target.set(key, raw);
     }
     perItem.set(anchor.url, bucket);
+    const existing = cards.get(anchor.url);
+    if (!existing || existing.text.length < text.length) {
+      cards.set(anchor.url, { itemUrl: anchor.url, text: text.slice(0, 1200), sourceUrl: pageUrl });
+    }
   });
 
   const hints = new Map<string, IndexPriceHint>();
   const ambiguous: IndexRowResult["ambiguous"] = [];
   for (const [itemUrl, bucket] of perItem) {
-    if (bucket.size === 0) continue;
-    if (bucket.size > 1) {
-      ambiguous.push({ itemUrl, values: [...bucket.values()], sourceUrl: pageUrl });
+    // A value the card itself labels as tax-variant, instalment, deposit or
+    // former price is not the item's asking value, so it never competes with
+    // the headline value — and never becomes the value on its own either.
+    const chosen = bucket.plain;
+    if (chosen.size === 0) {
+      if (bucket.qualified.size > 0) {
+        ambiguous.push({ itemUrl, values: [...bucket.qualified.values()], sourceUrl: pageUrl });
+      }
       continue;
     }
-    const raw = [...bucket.values()][0]!;
+    if (chosen.size > 1) {
+      ambiguous.push({ itemUrl, values: [...chosen.values()], sourceUrl: pageUrl });
+      continue;
+    }
+    const raw = [...chosen.values()][0]!;
     const { value, currency } = normalizeMoney(raw);
     hints.set(itemUrl, {
       itemUrl,
@@ -149,7 +165,7 @@ export function extractIndexRowPrices(html: string, pageUrl: string, itemUrls: S
       origin: "index",
     });
   }
-  return { hints, ambiguous };
+  return { hints, ambiguous, cards };
 }
 
 const PAGE_PARAMS = ["page", "p", "sida", "side", "pagina", "seite", "offset", "start", "from", "pageno"];
