@@ -150,7 +150,21 @@ export const runRadarNow = createServerFn({ method: "POST" })
       }
     }
 
+    // Idempotency: never start a second sweep while one is genuinely running.
+    const { data: open } = await context.supabase
+      .from("monitor_runs")
+      .select("id, started_at")
+      .eq("radar_id", radar.id)
+      .eq("status", "running")
+      .order("started_at", { ascending: false })
+      .limit(1);
+    const openRun = open?.[0];
+    if (openRun && Date.now() - new Date(openRun.started_at).getTime() < 15 * 60_000) {
+      return { state: "running" as const, startedAt: openRun.started_at };
+    }
+
     return startRadarSweep(context.supabase, radar, {
+
       alertBudget: remainingAlerts(e),
       maxDetailFetches: e.isInternal ? undefined : e.plan.max_detail_fetches,
       priority: e.isInternal || e.plan.priority_processing,
