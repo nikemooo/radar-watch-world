@@ -250,7 +250,8 @@ function RadarDetail() {
               {scanning ? "🔎" : "🟢"} {statusLine}
             </span>
             <span className="text-muted-foreground">
-              {matched.length} annons{matched.length === 1 ? "" : "er"} matchar just nu
+              {findings.length} hittade · {matched.length} matchar · {unverified.length} behöver verifieras ·{" "}
+              {rejected.length} matchar inte
             </span>
             <span className="text-muted-foreground">
               {radar.last_successful_sweep_at
@@ -263,6 +264,15 @@ function RadarDetail() {
           <Button className="gap-2" onClick={() => sweep.mutate()} disabled={sweep.isPending}>
             {sweep.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             {sweep.isPending ? "Söker…" : "Sök nu"}
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => recheck.mutate()}
+            disabled={recheck.isPending}
+          >
+            {recheck.isPending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+            {recheck.isPending ? "Verifierar…" : "Verifiera om"}
           </Button>
           <Button
             variant="outline"
@@ -295,14 +305,14 @@ function RadarDetail() {
         <h2 className="text-lg font-medium">Matchar dina kriterier</h2>
         {matched.length > 0 ? (
           <div className="mt-4">
-            <ListingRail findings={matched} />
+            <ListingRail findings={matched} verdictOf={verdictOf} onVerify={openQueue} />
           </div>
         ) : (
           <div className="panel mt-4 p-6 text-sm">
-            <p className="font-medium">Inga matchande annonser just nu</p>
+            <p className="font-medium">Inga verifierade matchningar just nu</p>
             <p className="mt-1 text-muted-foreground">
-              Radar fortsätter bevaka marknaden och meddelar dig när en match dyker upp.
-              {findings.length > 0 && ` ${findings.length} relevanta annonser kontrollerades.`}
+              Radar fortsätter bevaka marknaden och meddelar dig när alla dina kriterier kan bekräftas.
+              {findings.length > 0 && ` ${findings.length} annonser hittades och kontrollerades.`}
             </p>
           </div>
         )}
@@ -310,15 +320,37 @@ function RadarDetail() {
 
       {unverified.length > 0 && (
         <section>
-          <h2 className="text-lg font-medium">Behöver verifieras</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Radar hittade annonsen men kunde inte verifiera all information — den räknas inte som en match.
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-medium">
+                Behöver verifieras{" "}
+                <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-sm">{unverified.length}</span>
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {unverified.length} annonser behöver verifieras — Radar kunde inte säkert bekräfta ett eller
+                flera av dina kriterier.
+              </p>
+            </div>
+            <Button variant="secondary" onClick={() => openQueue()}>
+              Öppna verifieringskö
+            </Button>
+          </div>
           <div className="mt-4">
-            <ListingRail findings={unverified} />
+            <ListingRail findings={unverified} verdictOf={verdictOf} onVerify={openQueue} />
           </div>
         </section>
       )}
+
+      <VerifyDialog
+        findings={unverified}
+        index={queueIndex}
+        onIndexChange={setQueueIndex}
+        open={queueOpen && unverified.length > 0}
+        onOpenChange={setQueueOpen}
+        verdictOf={verdictOf}
+        onAnswer={(input) => answer.mutate(input)}
+      />
+
 
       {rejected.length > 0 && (
         <details className="panel p-5">
