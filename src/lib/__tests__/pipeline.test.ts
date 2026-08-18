@@ -11,6 +11,8 @@ import { containsToken, evaluateCriteria, type HardConstraint } from "../monitor
 import { detectPaginationLinks, extractIndexRowPrices, moneyMatchesIn } from "../search/index-rows";
 import { selectIndexPages } from "../search/index-expansion.server";
 import { assignFingerprints } from "../monitoring/temporal";
+import { countryAttribute, countryConstraint, inferMarket, requiredMarkets } from "../monitoring/geo";
+import { buildHistory, hostPriority } from "../search/source-priority.server";
 import { effectiveVerdict } from "../monitoring/verification";
 import {
   enrichFromEvidence,
@@ -301,5 +303,83 @@ describe("evidence merging", () => {
   it("reports which declared attributes are still missing", () => {
     const specs = [spec, { key: "color", label: "Färg", kind: "text" as const }];
     expect(missingKeys(specs, { year: structured })).toEqual(["color"]);
+  });
+});
+
+describe("geographic relevance", () => {
+  it("establishes the market from a country-code TLD", () => {
+    const v = inferMarket({ url: "https://www.blocket.se/annons/123" });
+    expect(v.market?.code).toBe("SE");
+    expect(v.confidence).toBe("structured");
+  });
+
+  it("prefers a stated address country over the host TLD", () => {
+    const v = inferMarket({
+      url: "https://cars.com/listing/9",
+      fields: { addressCountry: "Germany" },
+    });
+    expect(v.market?.code).toBe("DE");
+    expect(v.confidence).toBe("structured");
+  });
+
+  it("never infers a market from currency alone", () => {
+    const v = inferMarket({ url: "https://cars.com/listing/9", currency: "SEK" });
+    expect(v.market).toBeNull();
+    expect(countryAttribute(v)).toBeNull();
+  });
+
+  it("rejects a listing proven to be in another market", () => {
+    const constraint = countryConstraint(["Sverige"])!;
+    const attribute = countryAttribute(inferMarket({ url: "https://mobile.de/x/1" }))!;
+    const verdict = evaluateCriteria(
+      { title: "BMW", attributes: { country: attribute }, numericValue: null, currency: null },
+      [constraint],
+    );
+    expect(verdict.status).toBe("reject");
+  });
+
+  it("leaves an unproven market unverified rather than matching", () => {
+    const constraint = countryConstraint(["Sverige"])!;
+    const verdict = evaluateCriteria(
+      { title: "BMW", attributes: {}, numericValue: null, currency: null },
+      [constraint],
+    );
+    expect(verdict.status).toBe("unverified");
+  });
+
+  it("adds no country requirement when the radar named several markets", () => {
+    expect(countryConstraint(["Sweden", "Norway"])).toBeNull();
+    expect(countryConstraint([])).toBeNull();
+  });
+});
+
+describe("source priority", () => {
+  const history = buildHistory(
+    [
+      { url: null, primary_url: "https://www.blocket.se/a/1", snapshot: { match_status: "match" } },
+      { url: null, primary_url: "https://www.blocket.se/a/2", snapshot: { match_status: "match" } },
+      { url: null, primary_url: "https://spec-site.com/bmw", snapshot: { match_status: "reject" } },
+    ],
+    [{ host: "spec-site.com", attempts: 10, successes: 1 }],
+  );
+  const ctx = { markets: requiredMarkets(["Sverige"]), history };
+
+  it("ranks a proven in-market marketplace above an unreliable spec site", () => {
+    expect(hostPriority("blocket.se", ctx).score).toBeGreaterThan(
+      hostPriority("spec-site.com", ctx).score,
+    );
+  });
+
+  it("treats an unknown host as neutral, never excluded", () => {
+    expect(hostPriority("brand-new-market.se", ctx).score).toBeGreaterThan(0);
+  });
+
+  it("never turns a page without item evidence into a selected index page", () => {
+    const { picked } = selectIndexPages(
+      [{ title: "About", url: "https://blocket.se/om-oss", snippet: "text", links: [], retrieved_at: new Date().toISOString(), query: "q" } as never],
+      4,
+      () => 5,
+    );
+    expect(picked).toHaveLength(0);
   });
 });
