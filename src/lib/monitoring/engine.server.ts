@@ -732,6 +732,19 @@ export async function runRadarCycle(
             }
             evidenceByUrl.set(page.url, docs);
             const enriched = enrichFromEvidence(specs, docs, constraints);
+            // Geography is derived from explicit evidence only (host ccTLD,
+            // stated address country, or the country written on the page).
+            const geoAttribute = countryAttribute(
+              inferMarket({
+                url: page.url,
+                fields: { ...(st?.jsonld ?? {}), ...(st?.og ?? {}), ...(st?.meta ?? {}), ...(st?.fields ?? {}) },
+                text: `${page.title ?? ""}\n${page.text.slice(0, 4000)}`,
+              }),
+            );
+            if (geoAttribute) {
+              enriched.attributes[COUNTRY_ATTRIBUTE] = geoAttribute;
+              geoResolved += 1;
+            }
             deterministic.set(page.url, enriched.attributes);
             evidenceMergeCount += enriched.telemetry.mergeCount;
             for (const src of enriched.telemetry.sourcesUsed) extractionSourcesUsed.add(src);
