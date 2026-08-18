@@ -27,6 +27,9 @@ export const createRadar = createServerFn({ method: "POST" })
       monitoring_window: string;
       recency_days: number;
       config: unknown;
+      mode?: string;
+      start?: string;
+      scheduled_start_at?: string | null;
     }) => {
       if (!input?.name || !input?.config) throw new Error("Missing radar details.");
       return input;
@@ -34,12 +37,20 @@ export const createRadar = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { getEntitlements } = await import("./billing/entitlements.server");
+    const { asRadarMode } = await import("./radar-types");
     const e = await getEntitlements(context.supabase, context.userId);
     if (!e.isInternal && e.radarCount >= e.plan.max_radars) {
       throw new Error(
         `Your ${e.plan.name} plan allows ${e.plan.max_radars} radars. Upgrade to add more.`,
       );
     }
+    // Scheduling the first sweep is a Pro Plus capability — enforced here, so
+    // the client cannot bypass it by posting a scheduled_start_at.
+    const wantsSchedule = data.start === "scheduled" && !!data.scheduled_start_at;
+    if (wantsSchedule && !e.isInternal && e.planKey !== "pro_plus") {
+      throw new Error("Scheduling the first sweep requires Pro Plus.");
+    }
+    const scheduledAt = wantsSchedule ? new Date(data.scheduled_start_at!).toISOString() : null;
     const { data: radar, error } = await context.supabase
       .from("radars")
       .insert({
@@ -52,13 +63,60 @@ export const createRadar = createServerFn({ method: "POST" })
         recency_days: data.recency_days,
         recency_source: "ai_inferred",
         max_detail_fetches: e.plan.max_detail_fetches,
+        mode: asRadarMode(data.mode),
+        scheduled_start_at: scheduledAt,
+        next_run_at: scheduledAt,
         config: data.config as never,
       })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
-    return { id: radar.id };
+    return { id: radar.id, scheduledStartAt: scheduledAt };
   });
+
+/**
+ * Edit an existing radar's criteria. History, findings and identities are kept
+ * — only the interpretation the gate runs against changes, and the change is
+ * timestamped so the UI can say which observations predate it.
+ */
+export const updateRadarCriteria = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      radarId: string;
+      name?: string;
+      frequency?: string;
+      mode?: string;
+      recency_days?: number;
+      config: unknown;
+    }) => {
+      if (!input?.radarId || !input?.config) throw new Error("Missing radar details.");
+      return input;
+    },
+  )
+  .handler(async ({ data, context }) => {
+    const { asRadarMode } = await import("./radar-types");
+    const patch: Record<string, unknown> = {
+      config: data.config,
+      criteria_updated_at: new Date().toISOString(),
+    };
+    if (data.name) patch["name"] = data.name;
+    if (data.frequency) patch["frequency"] = data.frequency;
+    if (data.mode) patch["mode"] = asRadarMode(data.mode);
+    if (typeof data.recency_days === "number") {
+      patch["recency_days"] = data.recency_days;
+      patch["recency_source"] = "user_set";
+    }
+    const { error } = await context.supabase
+      .from("radars")
+      .update(patch as never)
+      .eq("id", data.radarId)
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true, criteriaUpdatedAt: patch["criteria_updated_at"] as string };
+  });
+
+
 
 /** Run one monitoring cycle for a radar the caller owns. */
 export const runRadarNow = createServerFn({ method: "POST" })
