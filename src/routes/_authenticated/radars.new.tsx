@@ -53,12 +53,16 @@ function NewRadar() {
   const navigate = useNavigate();
   const interpret = useServerFn(interpretRadarRequest);
   const createRadarFn = useServerFn(createRadar);
+  const startSweep = useServerFn(runRadarNow);
   const [request, setRequest] = useState("");
   const [name, setName] = useState("");
   const [category, setCategory] = useState("general");
   const [frequency, setFrequency] = useState<RadarFrequency>("smart");
   const [monitoringWindow, setMonitoringWindow] = useState<MonitoringWindow>("rolling");
   const [recencyDays, setRecencyDays] = useState(30);
+  const [mode, setMode] = useState<RadarMode>("find_and_watch");
+  const [start, setStart] = useState<RadarStart>("now");
+  const [scheduledAt, setScheduledAt] = useState("");
   const [config, setConfig] = useState<RadarConfig | null>(null);
   const [step, setStep] = useState<"describe" | "confirm">("describe");
   const [busy, setBusy] = useState(false);
@@ -94,11 +98,24 @@ function NewRadar() {
           raw_request: request,
           monitoring_window: monitoringWindow,
           recency_days: recencyDays,
+          mode,
+          start,
+          scheduled_start_at: start === "scheduled" && scheduledAt ? new Date(scheduledAt).toISOString() : null,
           config,
         },
       });
       await track("radar_created", { category, frequency });
-      toast.success("Radar created. The first sweep records a baseline — no alerts yet.");
+      if (start === "now") {
+        // Kick the first sweep off immediately; it continues in the background.
+        startSweep({ data: { radarId: created.id } }).catch(() => undefined);
+        toast.success("Radarn är skapad — första sökningen startar nu.");
+      } else if (start === "scheduled") {
+        toast.success(
+          `Radarn är skapad — första sökningen startar ${new Date(scheduledAt).toLocaleString("sv-SE")}.`,
+        );
+      } else {
+        toast.success("Radarn är skapad. Starta sökningen när du vill med “Sök nu”.");
+      }
       navigate({ to: "/radars/$radarId", params: { radarId: created.id } });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create radar.");
@@ -106,6 +123,7 @@ function NewRadar() {
       setBusy(false);
     }
   };
+
 
   return (
     <div className="mx-auto max-w-2xl space-y-8">
