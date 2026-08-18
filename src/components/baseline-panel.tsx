@@ -24,8 +24,9 @@ export function BaselinePanel({ baseline }: { baseline: unknown }) {
   if (b.status !== "computed" || !b.stats) {
     return (
       <div className="mt-3 rounded-md border border-dashed border-border p-3">
-        <p className="mono-label">Market baseline</p>
+        <p className="mono-label">Insufficient comparable data</p>
         <p className="mt-1 text-sm text-muted-foreground">{NO_BASELINE_PHRASE}</p>
+
         {b.limitations?.length > 0 && (
           <p className="mt-1 text-xs text-muted-foreground">{b.limitations.join(" · ")}</p>
         )}
