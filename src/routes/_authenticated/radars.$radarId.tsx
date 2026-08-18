@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, Loader2, Pause, Pencil, Play, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { listRadarSources, runRadarNow } from "@/lib/radar.functions";
+import { getSweepStatus, listRadarSources, runRadarNow } from "@/lib/radar.functions";
 import { reverifyRadar } from "@/lib/verification.functions";
 import { AlertCard, type AlertRow } from "@/components/alert-card";
 import { Button } from "@/components/ui/button";
@@ -50,8 +50,18 @@ function RadarDetail() {
   const run = useServerFn(runRadarNow);
   const reverify = useServerFn(reverifyRadar);
   const fetchSources = useServerFn(listRadarSources);
+  const fetchSweepStatus = useServerFn(getSweepStatus);
   const [queueOpen, setQueueOpen] = useState(false);
   const [queueIndex, setQueueIndex] = useState(0);
+
+  // The persisted run row is the single source of truth for "is a sweep alive?".
+  // Reading it also triggers server-side recovery of runs whose worker died,
+  // so the page can never show an endless "Söker igenom marknaden…".
+  const { data: sweepStatus } = useQuery({
+    queryKey: ["sweep-status", radarId],
+    queryFn: () => fetchSweepStatus({ data: { radarId } }),
+    refetchInterval: (query) => (query.state.data?.state === "running" ? 5000 : false),
+  });
 
   const { data: sources } = useQuery({
     queryKey: ["radar-sources", radarId],
@@ -226,7 +236,9 @@ function RadarDetail() {
   const matched = findings.filter((f) => statusOf(f) === "match");
   const unverified = findings.filter((f) => statusOf(f) === "unverified");
   const rejected = findings.filter((f) => statusOf(f) === "reject");
-  const scanning = radar.scan_state === "INITIAL_SCAN_RUNNING";
+  const running = sweepStatus?.state === "running";
+  const interrupted = sweepStatus?.state === "failed" && !!sweepStatus.failureReason;
+  const scanning = running || (radar.scan_state === "INITIAL_SCAN_RUNNING" && !sweepStatus);
 
   const openQueue = (finding?: FindingLike) => {
     const index = finding ? Math.max(unverified.findIndex((f) => f.id === finding.id), 0) : 0;
@@ -235,7 +247,7 @@ function RadarDetail() {
   };
 
   const statusLine = scanning
-    ? "Söker igenom marknaden…"
+    ? `${sweepStatus?.phaseLabel ?? "Söker igenom marknaden"}…`
     : radar.scan_state === "MONITORING"
       ? "Bevakar marknaden"
       : "Redo att söka marknaden";
@@ -299,12 +311,28 @@ function RadarDetail() {
         </div>
       </header>
 
+      {interrupted && (
+        <section className="panel p-5">
+          <p className="text-sm font-medium">Sökningen avbröts</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {sweepStatus?.error ?? "Bakgrundskörningen avslutades innan den blev klar."} Inga resultat gick
+            förlorade — du kan starta om sökningen.
+          </p>
+          <Button className="mt-3 gap-2" onClick={() => sweep.mutate()} disabled={sweep.isPending}>
+            <RefreshCw className="size-4" />
+            Sök igen
+          </Button>
+        </section>
+      )}
+
       {scanning && (
         <section className="panel p-5">
-          <p className="text-sm font-medium">Söker igenom marknaden…</p>
+          <p className="text-sm font-medium">{sweepStatus?.phaseLabel ?? "Söker igenom marknaden"}…</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Hittar aktuella annonser · läser annonsdetaljer · jämför priser. Det tar några minuter och
-            fortsätter även om du lämnar sidan.
+            {sweepStatus && (sweepStatus.sourcesRetrieved > 0 || sweepStatus.candidates > 0)
+              ? `${sweepStatus.sourcesRetrieved} källor lästa · ${sweepStatus.candidates} annonser hittade · ${sweepStatus.detailFetches} annonser lästa i detalj.`
+              : "Hittar aktuella annonser · läser annonsdetaljer · jämför priser."}{" "}
+            Det tar några minuter och fortsätter även om du lämnar sidan.
           </p>
           <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted">
             <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
