@@ -235,6 +235,64 @@ function NewRadar() {
               </div>
             </div>
 
+            <div className="panel space-y-5 p-5">
+              <div className="space-y-2">
+                <Label>Läge</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(Object.keys(radarModeLabel) as RadarMode[]).map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setMode(key)}
+                      className={`rounded-lg border p-3 text-left transition-colors ${
+                        mode === key ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30"
+                      }`}
+                    >
+                      <p className="text-sm font-medium">{radarModeLabel[key]}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{radarModeDescription[key]}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>När ska första sökningen köras?</Label>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {(
+                    [
+                      ["now", "Starta direkt"],
+                      ["scheduled", "Schemalägg (Pro Plus)"],
+                      ["manual", "Starta manuellt"],
+                    ] as [RadarStart, string][]
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setStart(key)}
+                      className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                        start === key ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {start === "scheduled" && (
+                  <div className="space-y-1.5 pt-1">
+                    <Label htmlFor="scheduled-at">Starttid (din tidszon)</Label>
+                    <Input
+                      id="scheduled-at"
+                      type="datetime-local"
+                      value={scheduledAt}
+                      onChange={(e) => setScheduledAt(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+
+
             <div className="panel grid gap-5 p-5 sm:grid-cols-2">
               <Facts title="Watching for" items={config.monitored_events} />
               <Facts title="Matters most" items={config.important_criteria} />
