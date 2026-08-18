@@ -469,6 +469,7 @@ export type Database = {
           extractions_failed: number
           extractions_ok: number
           finished_at: string | null
+          first_useful_result_at: string | null
           id: string
           images_found: number
           images_persisted: number
@@ -481,6 +482,7 @@ export type Database = {
           items_found: number
           items_merged: number
           jsonld_found: number
+          listings_removed: number
           matching_listings: number
           monitoring_transition: boolean
           new_items: number
@@ -545,6 +547,7 @@ export type Database = {
           extractions_failed?: number
           extractions_ok?: number
           finished_at?: string | null
+          first_useful_result_at?: string | null
           id?: string
           images_found?: number
           images_persisted?: number
@@ -557,6 +560,7 @@ export type Database = {
           items_found?: number
           items_merged?: number
           jsonld_found?: number
+          listings_removed?: number
           matching_listings?: number
           monitoring_transition?: boolean
           new_items?: number
@@ -621,6 +625,7 @@ export type Database = {
           extractions_failed?: number
           extractions_ok?: number
           finished_at?: string | null
+          first_useful_result_at?: string | null
           id?: string
           images_found?: number
           images_persisted?: number
@@ -633,6 +638,7 @@ export type Database = {
           items_found?: number
           items_merged?: number
           jsonld_found?: number
+          listings_removed?: number
           matching_listings?: number
           monitoring_transition?: boolean
           new_items?: number
@@ -855,6 +861,7 @@ export type Database = {
           category: string
           config: Json
           created_at: string
+          criteria_updated_at: string | null
           frequency: string
           id: string
           initial_listings_count: number
@@ -867,6 +874,7 @@ export type Database = {
           max_sweep_cost: number
           memory: Json
           min_comparables: number
+          mode: string
           monitoring_window: string
           name: string
           next_run_at: string | null
@@ -874,6 +882,7 @@ export type Database = {
           recency_days: number
           recency_source: string
           scan_state: string
+          scheduled_start_at: string | null
           status: string
           updated_at: string
           user_id: string
@@ -885,6 +894,7 @@ export type Database = {
           category?: string
           config?: Json
           created_at?: string
+          criteria_updated_at?: string | null
           frequency?: string
           id?: string
           initial_listings_count?: number
@@ -897,6 +907,7 @@ export type Database = {
           max_sweep_cost?: number
           memory?: Json
           min_comparables?: number
+          mode?: string
           monitoring_window?: string
           name: string
           next_run_at?: string | null
@@ -904,6 +915,7 @@ export type Database = {
           recency_days?: number
           recency_source?: string
           scan_state?: string
+          scheduled_start_at?: string | null
           status?: string
           updated_at?: string
           user_id: string
@@ -915,6 +927,7 @@ export type Database = {
           category?: string
           config?: Json
           created_at?: string
+          criteria_updated_at?: string | null
           frequency?: string
           id?: string
           initial_listings_count?: number
@@ -927,6 +940,7 @@ export type Database = {
           max_sweep_cost?: number
           memory?: Json
           min_comparables?: number
+          mode?: string
           monitoring_window?: string
           name?: string
           next_run_at?: string | null
@@ -934,6 +948,7 @@ export type Database = {
           recency_days?: number
           recency_source?: string
           scan_state?: string
+          scheduled_start_at?: string | null
           status?: string
           updated_at?: string
           user_id?: string
