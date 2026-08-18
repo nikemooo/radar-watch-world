@@ -83,18 +83,33 @@ export function moneyStringsIn(text: string): string[] {
   return found;
 }
 
-/** Money strings in a block, each flagged when its own wording qualifies it. */
+/**
+ * Money strings in a block, each flagged when the wording that belongs to THAT
+ * value qualifies it. A qualifier is only attributed to the nearest value: the
+ * lookup window is clipped at the neighbouring money values, so "749 000 kr
+ * 599 200 kr exkl. moms" qualifies the second value only.
+ */
 export function moneyMatchesIn(text: string): { raw: string; qualified: boolean }[] {
-  const out: { raw: string; qualified: boolean }[] = [];
-  const add = (raw: string, at: number) => {
-    // Only the immediate wording around the number can qualify it, so the
-    // window stays tight enough that a neighbouring card cannot bleed in.
-    const context = text.slice(Math.max(0, at - 28), at + raw.length + 28);
-    out.push({ raw: raw.trim(), qualified: QUALIFIER.test(context) });
-  };
-  for (const m of text.matchAll(SUFFIX_MONEY)) add(m[0], m.index!);
-  for (const m of text.matchAll(PREFIX_MONEY)) add(m[0], m.index!);
-  return out;
+  const spans: { raw: string; start: number; end: number }[] = [];
+  for (const m of text.matchAll(SUFFIX_MONEY)) {
+    spans.push({ raw: m[0], start: m.index!, end: m.index! + m[0].length });
+  }
+  for (const m of text.matchAll(PREFIX_MONEY)) {
+    const start = m.index!;
+    const end = start + m[0].length;
+    // The same amount can match both shapes ("kr 599 200" vs "599 200 kr");
+    // an overlapping duplicate would otherwise be counted as a rival value.
+    if (spans.some((s) => start < s.end && end > s.start)) continue;
+    spans.push({ raw: m[0], start, end });
+  }
+  spans.sort((a, b) => a.start - b.start);
+
+  const WINDOW = 24;
+  return spans.map((span, i) => {
+    const from = Math.max(spans[i - 1]?.end ?? 0, span.start - WINDOW);
+    const to = Math.min(spans[i + 1]?.start ?? text.length, span.end + WINDOW);
+    return { raw: span.raw.trim(), qualified: QUALIFIER.test(text.slice(from, to)) };
+  });
 }
 
 function normalizedKey(raw: string): string | null {
