@@ -83,7 +83,6 @@ function marketVerdict(baseline: unknown) {
         : `${Math.abs(pct).toFixed(0)} % ${tone === "under" ? "under" : "över"} marknad`,
     median: money(b.stats.median, b.currency),
     count: b.stats.count,
-    difference: b.stats.median !== undefined && b.stats.median !== null ? b.differenceAbsolute ?? null : null,
   };
 }
 
@@ -101,8 +100,8 @@ export function ListingCard({
   onVerify,
 }: {
   finding: FindingLike;
-  verdict?: EffectiveVerdict;
-  onVerify?: (finding: FindingLike) => void;
+  verdict?: EffectiveVerdict | undefined;
+  onVerify?: ((finding: FindingLike) => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const snapshot = snapshotOf(finding.snapshot);
@@ -277,8 +276,8 @@ export function ListingRail({
   onVerify,
 }: {
   findings: FindingLike[];
-  verdictOf?: (finding: FindingLike) => EffectiveVerdict | undefined;
-  onVerify?: (finding: FindingLike) => void;
+  verdictOf?: ((finding: FindingLike) => EffectiveVerdict | undefined) | undefined;
+  onVerify?: ((finding: FindingLike) => void) | undefined;
 }) {
   return (
     <>
