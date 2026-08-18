@@ -522,7 +522,7 @@ export async function expandIndexPages(
       }
     }
 
-    if (pageUrls.length === 0) continue;
+    if (pageUrls.length === 0) return;
 
     const families = detectItemFamilies([...allLinks], doc.url);
     const itemUrls = [...seenItems].slice(0, 400);
