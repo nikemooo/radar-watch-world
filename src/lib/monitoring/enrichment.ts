@@ -190,9 +190,9 @@ export function parseStructured(html: string, pageUrl: string): StructuredSignal
   pushImage(jsonld["image"] ?? jsonld["contenturl"] ?? jsonld["thumbnailurl"]);
   // Client-rendered marketplaces ship their gallery as JSON in the page.
   for (const m of html.matchAll(/"(?:image|imageUrl|imageUrls|images|photos|media)"\s*:\s*(\[[^\]]{0,4000}\]|"[^"]{8,600}")/gi)) {
-    const blob = m[1]!;
-    for (const u of blob.matchAll(/https?:\\?\/\\?\/[^"',\\\s]{8,600}/gi)) {
-      pushImage(u[0]!.replace(/\\\//g, "/"));
+    const blob = m[1]!.replace(/\\\//g, "/");
+    for (const u of blob.matchAll(/https?:\/\/[^"',\s\\]{8,600}/gi)) {
+      pushImage(u[0]!);
       if (images.length >= 12) break;
     }
     if (images.length >= 12) break;
