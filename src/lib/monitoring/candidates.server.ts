@@ -11,6 +11,7 @@
  */
 import { chatJson, MODELS } from "../ai/gateway.server";
 import type { SearchDocument } from "../search/providers.server";
+import { detectItemFamilies } from "../search/url-shape";
 
 export interface CandidateItem {
   /** Item title as written by the source. */
@@ -91,12 +92,21 @@ export async function discoverCandidates(
   const blocks = docs.map((doc, i) => {
     const links = harvestLinks(doc);
     linkIndex.set(doc.url, new Set([doc.url, ...links]));
+    // Structural clustering surfaces the page's repeating item links first, so
+    // an index page is not represented by its navigation chrome.
+    const families = detectItemFamilies(links, doc.url).slice(0, 4);
+    const familyBlock = families
+      .map((f) => `PATTERN ${f.signature} (${f.urls.length} links):\n${f.urls.slice(0, 40).join("\n")}`)
+      .join("\n");
+    const other = links.filter((l) => !families.some((f) => f.urls.includes(l))).slice(0, 40);
     return `[${i + 1}] PAGE: ${doc.url}
 TITLE: ${doc.title}
-LINKS FOUND ON PAGE:
-${links.slice(0, 60).join("\n") || "(none captured)"}
+REPEATING ITEM LINK PATTERNS ON PAGE:
+${familyBlock || "(none detected)"}
+OTHER LINKS FOUND ON PAGE:
+${other.join("\n") || "(none captured)"}
 TEXT:
-${doc.snippet.slice(0, 3000)}`;
+${doc.snippet.slice(0, 8000)}`;
   });
 
   const result = await chatJson<{ candidates: CandidateItem[] }>({
