@@ -233,7 +233,7 @@ describe("effective verification verdict", () => {
     const v = effectiveVerdict(
       [outcome("color", "unverified")],
       [],
-      [{ attribute: "color", observation: "svart bil", confidence: 0.9, imageUrl: "https://x/1.jpg" }],
+      [{ attribute: "color", observation: "svart bil", confidence: "high", imageUrl: "https://x/1.jpg" }],
     );
     expect(v.status).toBe("unverified");
   });
