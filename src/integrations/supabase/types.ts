@@ -453,6 +453,7 @@ export type Database = {
           criteria_matched: number
           criteria_rejected: number
           criteria_unverified: number
+          current_phase: string
           detail_cost_estimate: number
           detail_fetch_budget: number
           detail_fetches_attempted: number
@@ -468,8 +469,11 @@ export type Database = {
           extraction_sources_used: string[]
           extractions_failed: number
           extractions_ok: number
+          failed_at: string | null
+          failure_reason: string | null
           finished_at: string | null
           first_useful_result_at: string | null
+          heartbeat_at: string | null
           id: string
           images_found: number
           images_persisted: number
@@ -531,6 +535,7 @@ export type Database = {
           criteria_matched?: number
           criteria_rejected?: number
           criteria_unverified?: number
+          current_phase?: string
           detail_cost_estimate?: number
           detail_fetch_budget?: number
           detail_fetches_attempted?: number
@@ -546,8 +551,11 @@ export type Database = {
           extraction_sources_used?: string[]
           extractions_failed?: number
           extractions_ok?: number
+          failed_at?: string | null
+          failure_reason?: string | null
           finished_at?: string | null
           first_useful_result_at?: string | null
+          heartbeat_at?: string | null
           id?: string
           images_found?: number
           images_persisted?: number
@@ -609,6 +617,7 @@ export type Database = {
           criteria_matched?: number
           criteria_rejected?: number
           criteria_unverified?: number
+          current_phase?: string
           detail_cost_estimate?: number
           detail_fetch_budget?: number
           detail_fetches_attempted?: number
@@ -624,8 +633,11 @@ export type Database = {
           extraction_sources_used?: string[]
           extractions_failed?: number
           extractions_ok?: number
+          failed_at?: string | null
+          failure_reason?: string | null
           finished_at?: string | null
           first_useful_result_at?: string | null
+          heartbeat_at?: string | null
           id?: string
           images_found?: number
           images_persisted?: number
@@ -855,6 +867,7 @@ export type Database = {
       }
       radars: {
         Row: {
+          active_run_id: string | null
           allow_broad_comparison: boolean
           baseline_completed: boolean
           baseline_completed_at: string | null
@@ -888,6 +901,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          active_run_id?: string | null
           allow_broad_comparison?: boolean
           baseline_completed?: boolean
           baseline_completed_at?: string | null
@@ -921,6 +935,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          active_run_id?: string | null
           allow_broad_comparison?: boolean
           baseline_completed?: boolean
           baseline_completed_at?: string | null

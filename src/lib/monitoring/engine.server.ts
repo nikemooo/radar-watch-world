@@ -20,6 +20,10 @@ import { planDiscoveryQueries } from "../search/query-planner.server";
 import { expandIndexPages } from "../search/index-expansion.server";
 import type { IndexPriceHint } from "../search/index-rows";
 import { asConfig, type RadarConfig } from "../radar-types";
+import { startRunHeartbeat, type RunTracker } from "./heartbeat.server";
+import type { RunPhase } from "./lifecycle";
+import { reapStaleRuns, releaseRadar } from "./reaper.server";
+
 import { discoverCandidates, type CandidateItem } from "./candidates.server";
 import { fetchDetailPages } from "../search/detail-fetch.server";
 import {
@@ -340,6 +344,8 @@ export type RunOptions = {
    */
   runId?: string | null | undefined;
   startedAt?: string | undefined;
+  /** Heartbeat/phase writer owned by the caller (see startRadarSweep). */
+  tracker?: RunTracker | undefined;
 };
 
 export type RunClaim = {
@@ -349,6 +355,17 @@ export type RunClaim = {
   scanPhase: "initial_scan" | "monitoring";
 };
 
+/** Thrown when a radar already has a live (heartbeating) run. */
+export class ActiveRunError extends Error {
+  constructor(
+    public runId: string,
+    public startedAt: string,
+  ) {
+    super("A sweep is already running for this radar.");
+    this.name = "ActiveRunError";
+  }
+}
+
 /**
  * Claim a run BEFORE any expensive work happens.
  *
@@ -356,37 +373,74 @@ export type RunClaim = {
  * written afterwards, a refresh in that window would show the radar exactly as
  * it was before the click — which is precisely the "nothing happened" bug.
  * Claiming first makes the running state durable and pollable immediately.
+ *
+ * The claim is also the concurrency lock: radars.active_run_id is set with a
+ * conditional update, so two simultaneous clicks can never start two sweeps
+ * (and therefore never two parallel provider bills). Dead runs are reaped
+ * first, so a lost worker never blocks a retry.
  */
+/** Release the concurrency lock, but only if this run still owns it. */
+async function clearRunLock(db: Db, radarId: string, runId: string): Promise<void> {
+  await db.from("radars").update({ active_run_id: null }).eq("id", radarId).eq("active_run_id", runId);
+}
+
 export async function beginRun(db: Db, radar: RadarRow): Promise<RunClaim> {
+
+  // Recover first: a stale lock from a killed worker must not block the user.
+  await reapStaleRuns(db, { radarId: radar.id });
+
   const startedAt = new Date().toISOString();
   const isBaseline = !radar.baseline_completed;
   const runType: "baseline" | "incremental" = isBaseline ? "baseline" : "incremental";
   const scanPhase: "initial_scan" | "monitoring" = isBaseline ? "initial_scan" : "monitoring";
+  const runId = crypto.randomUUID();
 
-  const { data: row, error } = await db
-    .from("monitor_runs")
-    .insert({
-      radar_id: radar.id,
-      user_id: radar.user_id,
-      status: "running",
-      run_type: runType,
-      scan_phase: scanPhase,
-      started_at: startedAt,
+  // Atomic lock: only the update that finds active_run_id NULL wins.
+  const { data: locked } = await db
+    .from("radars")
+    .update({
+      active_run_id: runId,
+      ...(isBaseline
+        ? { scan_state: "INITIAL_SCAN_RUNNING", initial_scan_started_at: startedAt }
+        : {}),
     })
-    .select("id")
-    .maybeSingle();
-  if (error) throw new Error(`Could not start the sweep: ${error.message}`);
+    .eq("id", radar.id)
+    .is("active_run_id", null)
+    .select("id");
 
-  if (isBaseline) {
-    await db
-      .from("radars")
-      .update({ scan_state: "INITIAL_SCAN_RUNNING", initial_scan_started_at: startedAt })
-      .eq("id", radar.id);
+  if (!locked?.length) {
+    const { data: open } = await db
+      .from("monitor_runs")
+      .select("id, started_at")
+      .eq("radar_id", radar.id)
+      .eq("status", "running")
+      .order("started_at", { ascending: false })
+      .limit(1);
+    const existing = open?.[0];
+    if (existing) throw new ActiveRunError(existing.id, existing.started_at);
+    // Lock held but no run row (a torn start): release and retry once.
+    await releaseRadar(db, radar.id);
+    throw new ActiveRunError(runId, startedAt);
   }
 
-  return { runId: row?.id ?? null, startedAt, runType, scanPhase };
-}
+  const { error } = await db.from("monitor_runs").insert({
+    id: runId,
+    radar_id: radar.id,
+    user_id: radar.user_id,
+    status: "running",
+    run_type: runType,
+    scan_phase: scanPhase,
+    started_at: startedAt,
+    heartbeat_at: startedAt,
+    current_phase: "initializing",
+  });
+  if (error) {
+    await releaseRadar(db, radar.id, runId);
+    throw new Error(`Could not start the sweep: ${error.message}`);
+  }
 
+  return { runId, startedAt, runType, scanPhase };
+}
 
 export async function runRadarCycle(
   db: Db,
@@ -413,15 +467,42 @@ export async function runRadarCycle(
   const runId = claim.runId;
   const started = claim.startedAt;
   const scanPhase = claim.scanPhase;
+  const ownsTracker = !options.tracker;
+  const tracker: RunTracker = options.tracker ?? startRunHeartbeat(db, runId);
+  const phase = (name: RunPhase, patch?: Database["public"]["Tables"]["monitor_runs"]["Update"]) =>
+    tracker.phase(name, patch);
+  const seenPhases = new Set<string>();
+  /** Phase transition from inside a loop: written once, not per item. */
+  const phaseOnce = async (name: RunPhase) => {
+    if (seenPhases.has(name)) return;
+    seenPhases.add(name);
+    await phase(name);
+  };
   const patchRun = async (patch: Database["public"]["Tables"]["monitor_runs"]["Update"]) => {
     if (!runId) return;
-    await db.from("monitor_runs").update(patch).eq("id", runId);
+    await db
+      .from("monitor_runs")
+      .update({ ...patch, heartbeat_at: new Date().toISOString() })
+      .eq("id", runId);
   };
+
+  try {
+    return await runCycleBody();
+  } finally {
+    if (ownsTracker) tracker.stop();
+    // Whatever happened, the radar must not stay locked.
+    if (runId) await clearRunLock(db, radar.id, runId);
+  }
+
+  // eslint-disable-next-line no-inner-declarations
+  async function runCycleBody(): Promise<RunResult> {
+
 
   // Discovery strategy: a single broad natural-language query mostly returns
   // editorial/specification pages. The planner expands the radar's own
   // configuration into several short, market-shaped queries (generic — it has
   // no per-category or per-site knowledge).
+  await phase("query_planning");
   const plannedQueries = await planDiscoveryQueries(config, radar.raw_request, isBaseline ? 8 : 6);
   const queries = plannedQueries.map((q) => q.query);
   console.info(
@@ -429,6 +510,7 @@ export async function runRadarCycle(
       .map((q) => `${q.intent}/${q.origin}: ${q.query}`)
       .join(" | ")}`,
   );
+  await phase("searching_sources");
   const research = await researchQueries(queries, isBaseline ? 10 : 8, queries.length);
 
   if (!research.configured) {
@@ -507,6 +589,7 @@ export async function runRadarCycle(
     indexes_exhausted: 0,
   };
   try {
+    await phase("expanding_indexes");
     const expansion = await expandIndexPages(
       research.documents,
       isBaseline ? 14 : 8,
@@ -665,6 +748,7 @@ export async function runRadarCycle(
 
   if (research.documents.length > 0) {
     try {
+      await phase("extracting_candidates");
       const discovery = await discoverCandidates(research.documents, criteria);
       candidates = discovery.candidates;
       indexPages = discovery.indexPages;
@@ -733,6 +817,7 @@ export async function runRadarCycle(
       for (const c of selected) if (c.url) discoveryByUrl.set(c.url, c.discovery_url);
 
       if (selected.length > 0) {
+        await phase("fetching_details");
         const fetched = await fetchDetailPages(selected.map((c) => c.url!));
         // Real listing imagery only — captured from the item's own page, with
         // its provenance. A missing image is left missing; nothing is invented.
@@ -899,6 +984,7 @@ export async function runRadarCycle(
           let aiFailures: { url: string; reason: string }[] = [];
           if (augmented.length > 0) {
             extractionAiCalls += 1;
+            await phaseOnce("extracting_attributes");
             const extracted = await extractDetailAttributes(augmented, specs, criteria);
             aiDetails = extracted.details;
             aiFailures = extracted.failures;
@@ -1008,7 +1094,10 @@ export async function runRadarCycle(
   type RunUpdate = Database["public"]["Tables"]["monitor_runs"]["Update"];
   const finishRun = async (patch: RunUpdate) => {
     if (!runId) return;
-    await db.from("monitor_runs").update(patch).eq("id", runId);
+    await db
+      .from("monitor_runs")
+      .update({ ...patch, current_phase: "completed", heartbeat_at: new Date().toISOString() })
+      .eq("id", runId);
   };
 
   if (research.documents.length === 0) {
@@ -1122,6 +1211,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
   // "probably". Every item gets match / reject / unverified plus the exact
   // reason, and only a confirmed match may ever reach the alert pipeline.
   // ------------------------------------------------------------------
+  await phase("evaluating_criteria");
   const verdicts = new Map<string, MatchVerdict>();
   let criteriaMatched = 0;
   let criteriaRejected = 0;
@@ -1233,6 +1323,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
     .map(asObservation);
   const population = [...currentObservations, ...persistedObservations];
 
+  await phase("building_comparables");
   const baselines = new Map<string, BaselineResult>();
   let baselinesComputed = 0;
   let baselinesInsufficient = 0;
@@ -1489,6 +1580,7 @@ ${eligible
     }
   }
 
+  await phase("persisting_results");
   // 5. Persist monitoring state — findings are never deleted, only updated.
   const now = new Date().toISOString();
   for (const item of items) {
@@ -1750,4 +1842,5 @@ ${eligible
     paginationPagesBlocked: indexTelemetry.pages_blocked,
     indexesExhausted: indexTelemetry.indexes_exhausted,
   };
+}
 }

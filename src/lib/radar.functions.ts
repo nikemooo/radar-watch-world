@@ -127,9 +127,14 @@ export const runRadarNow = createServerFn({ method: "POST" })
   })
   .handler(async ({ data, context }) => {
     const { startRadarSweep } = await import("./monitoring/sweep.server");
+    const { ActiveRunError } = await import("./monitoring/engine.server");
+    const { reapStaleRuns } = await import("./monitoring/reaper.server");
     const { getEntitlements, remainingAlerts, minSweepIntervalMinutes } = await import(
       "./billing/entitlements.server"
     );
+    // Close any run whose worker died before deciding whether one is active.
+    await reapStaleRuns(context.supabase, { radarId: data.radarId });
+
     const { data: radar, error } = await context.supabase
       .from("radars")
       .select("*")
@@ -151,6 +156,7 @@ export const runRadarNow = createServerFn({ method: "POST" })
     }
 
     // Idempotency: never start a second sweep while one is genuinely running.
+    // (beginRun holds the authoritative atomic lock; this is the fast path.)
     const { data: open } = await context.supabase
       .from("monitor_runs")
       .select("id, started_at")
@@ -159,17 +165,25 @@ export const runRadarNow = createServerFn({ method: "POST" })
       .order("started_at", { ascending: false })
       .limit(1);
     const openRun = open?.[0];
-    if (openRun && Date.now() - new Date(openRun.started_at).getTime() < 15 * 60_000) {
+    if (openRun) {
       return { state: "running" as const, startedAt: openRun.started_at, runId: openRun.id };
     }
 
-    return startRadarSweep(context.supabase, radar, {
-
-      alertBudget: remainingAlerts(e),
-      maxDetailFetches: e.isInternal ? undefined : e.plan.max_detail_fetches,
-      priority: e.isInternal || e.plan.priority_processing,
-    });
+    try {
+      return await startRadarSweep(context.supabase, radar, {
+        alertBudget: remainingAlerts(e),
+        maxDetailFetches: e.isInternal ? undefined : e.plan.max_detail_fetches,
+        priority: e.isInternal || e.plan.priority_processing,
+      });
+    } catch (err) {
+      // Two fast clicks: the loser reports the winner's run instead of failing.
+      if (err instanceof ActiveRunError) {
+        return { state: "running" as const, startedAt: err.startedAt, runId: err.runId };
+      }
+      throw err;
+    }
   });
+
 
 /** Persisted outcome of the latest sweep — the single source of truth for the UI. */
 export const getSweepStatus = createServerFn({ method: "POST" })
