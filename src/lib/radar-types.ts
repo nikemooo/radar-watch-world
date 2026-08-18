@@ -10,6 +10,32 @@ export type { AttributeSpec, HardConstraint };
 
 export type RadarFrequency = "smart" | "instant" | "daily" | "weekly";
 
+/**
+ * Two ways to use a radar. The mode never changes what counts as a match —
+ * it only changes how eagerly the first sweep collects current inventory.
+ */
+export type RadarMode = "find_and_watch" | "monitor_market";
+
+export const radarModeLabel: Record<RadarMode, string> = {
+  find_and_watch: "Hitta nu + bevaka",
+  monitor_market: "Övervaka marknaden",
+};
+
+export const radarModeDescription: Record<RadarMode, string> = {
+  find_and_watch:
+    "Hitta allt relevant som finns på marknaden just nu och fortsätt sedan leta efter nya möjligheter.",
+  monitor_market:
+    "Följ marknaden över tid och upptäck förändringar, prisrörelser och nya relevanta observationer.",
+};
+
+export function asRadarMode(value: unknown): RadarMode {
+  return value === "monitor_market" ? "monitor_market" : "find_and_watch";
+}
+
+/** How the first sweep is kicked off. Scheduling is a Pro Plus feature. */
+export type RadarStart = "now" | "scheduled" | "manual";
+
+
 export type Importance = "critical" | "important" | "interesting" | "minor";
 
 export interface RadarConfig {

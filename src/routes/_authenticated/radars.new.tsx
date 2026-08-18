@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { createRadar, interpretRadarRequest } from "@/lib/radar.functions";
+import { createRadar, interpretRadarRequest, runRadarNow } from "@/lib/radar.functions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -18,12 +18,17 @@ import {
 import {
   asConfig,
   frequencyLabel,
+  radarModeDescription,
+  radarModeLabel,
   recencyPresets,
   type RadarConfig,
   type RadarFrequency,
+  type RadarMode,
+  type RadarStart,
 } from "@/lib/radar-types";
 import { monitoringWindowLabel, type MonitoringWindow } from "@/lib/monitoring/temporal";
 import { track } from "@/lib/analytics";
+
 
 export const Route = createFileRoute("/_authenticated/radars/new")({
   head: () => ({
@@ -48,12 +53,16 @@ function NewRadar() {
   const navigate = useNavigate();
   const interpret = useServerFn(interpretRadarRequest);
   const createRadarFn = useServerFn(createRadar);
+  const startSweep = useServerFn(runRadarNow);
   const [request, setRequest] = useState("");
   const [name, setName] = useState("");
   const [category, setCategory] = useState("general");
   const [frequency, setFrequency] = useState<RadarFrequency>("smart");
   const [monitoringWindow, setMonitoringWindow] = useState<MonitoringWindow>("rolling");
   const [recencyDays, setRecencyDays] = useState(30);
+  const [mode, setMode] = useState<RadarMode>("find_and_watch");
+  const [start, setStart] = useState<RadarStart>("now");
+  const [scheduledAt, setScheduledAt] = useState("");
   const [config, setConfig] = useState<RadarConfig | null>(null);
   const [step, setStep] = useState<"describe" | "confirm">("describe");
   const [busy, setBusy] = useState(false);
@@ -89,11 +98,24 @@ function NewRadar() {
           raw_request: request,
           monitoring_window: monitoringWindow,
           recency_days: recencyDays,
+          mode,
+          start,
+          scheduled_start_at: start === "scheduled" && scheduledAt ? new Date(scheduledAt).toISOString() : null,
           config,
         },
       });
       await track("radar_created", { category, frequency });
-      toast.success("Radar created. The first sweep records a baseline — no alerts yet.");
+      if (start === "now") {
+        // Kick the first sweep off immediately; it continues in the background.
+        startSweep({ data: { radarId: created.id } }).catch(() => undefined);
+        toast.success("Radarn är skapad — första sökningen startar nu.");
+      } else if (start === "scheduled") {
+        toast.success(
+          `Radarn är skapad — första sökningen startar ${new Date(scheduledAt).toLocaleString("sv-SE")}.`,
+        );
+      } else {
+        toast.success("Radarn är skapad. Starta sökningen när du vill med “Sök nu”.");
+      }
       navigate({ to: "/radars/$radarId", params: { radarId: created.id } });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create radar.");
@@ -101,6 +123,7 @@ function NewRadar() {
       setBusy(false);
     }
   };
+
 
   return (
     <div className="mx-auto max-w-2xl space-y-8">
@@ -212,6 +235,64 @@ function NewRadar() {
               </div>
             </div>
 
+            <div className="panel space-y-5 p-5">
+              <div className="space-y-2">
+                <Label>Läge</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(Object.keys(radarModeLabel) as RadarMode[]).map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setMode(key)}
+                      className={`rounded-lg border p-3 text-left transition-colors ${
+                        mode === key ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30"
+                      }`}
+                    >
+                      <p className="text-sm font-medium">{radarModeLabel[key]}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{radarModeDescription[key]}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>När ska första sökningen köras?</Label>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {(
+                    [
+                      ["now", "Starta direkt"],
+                      ["scheduled", "Schemalägg (Pro Plus)"],
+                      ["manual", "Starta manuellt"],
+                    ] as [RadarStart, string][]
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setStart(key)}
+                      className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                        start === key ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {start === "scheduled" && (
+                  <div className="space-y-1.5 pt-1">
+                    <Label htmlFor="scheduled-at">Starttid (din tidszon)</Label>
+                    <Input
+                      id="scheduled-at"
+                      type="datetime-local"
+                      value={scheduledAt}
+                      onChange={(e) => setScheduledAt(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+
+
             <div className="panel grid gap-5 p-5 sm:grid-cols-2">
               <Facts title="Watching for" items={config.monitored_events} />
               <Facts title="Matters most" items={config.important_criteria} />
@@ -228,9 +309,14 @@ function NewRadar() {
               )}
             </div>
 
-            <Button onClick={create} disabled={busy} className="w-full gap-2">
+            <Button
+              onClick={create}
+              disabled={busy || (start === "scheduled" && !scheduledAt)}
+              className="w-full gap-2"
+            >
               {busy && <Loader2 className="size-4 animate-spin" />}
-              Activate radar
+              {start === "now" ? "Aktivera och sök nu" : "Aktivera radar"}
+
             </Button>
           </div>
         )

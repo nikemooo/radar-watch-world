@@ -588,6 +588,8 @@ export async function runRadarCycle(
   let details: ExtractedDetail[] = [];
   let detailFetchesOk = 0;
   let detailFetchesFailed = 0;
+  let listingsRemoved = 0;
+
   let extractionsOk = 0;
   let extractionsFailed = 0;
   let attributesExtracted = 0;
@@ -701,6 +703,34 @@ export async function runRadarCycle(
         for (const f of fetched.failures) {
           console.warn(`[radar:detail] could not fetch ${f.url} — ${f.reason}`);
         }
+        // A listing whose own page is proven gone (404/410) is recorded as
+        // removed on the SAME finding — history is never deleted.
+        {
+          const { removedListings } = await import("./availability");
+          const known = new Map<string, (typeof existingRows extends (infer R)[] | null ? R : never)>();
+          for (const row of existingRows ?? []) {
+            for (const u of [row.primary_url, row.url]) if (u) known.set(u, row);
+          }
+          for (const gone of removedListings(fetched.failures, known.keys())) {
+            const row = known.get(gone.url)!;
+            if (row.availability === "removed") continue;
+            await db.from("findings").update({ availability: "removed" }).eq("id", row.id);
+            await db.from("finding_changes").insert({
+              radar_id: radar.id,
+              user_id: radar.user_id,
+              finding_id: row.id,
+              run_id: runId,
+              fingerprint: row.fingerprint,
+              attribute: "availability",
+              previous_value: row.availability ?? "available",
+              new_value: "removed",
+              previous_raw: row.availability ?? "available",
+              new_raw: gone.reason,
+            });
+            listingsRemoved += 1;
+          }
+        }
+
         await recordFetchHealth(db, radar.user_id, {
           ok: fetched.pages.map((p) => p.url),
           failed: fetched.failures,
@@ -1559,6 +1589,8 @@ ${eligible
     attributes_extracted: attributesExtracted,
     attributes_missing: attributesMissing,
     items_merged: research.duplicatesRemoved,
+    listings_removed: listingsRemoved,
+
     baselines_computed: baselinesComputed,
     baselines_insufficient: baselinesInsufficient,
     comparable_observations: population.length,
