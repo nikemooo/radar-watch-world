@@ -109,6 +109,8 @@ export function ListingCard({
   const snapshot = snapshotOf(finding.snapshot);
   const attributes = attributesOf(finding.attributes);
   const link = finding.primary_url ?? finding.url;
+  // Only claim "Öppna annons" when the pipeline proved the URL is the advert.
+  const directLink = snapshot.link_status ? snapshot.link_status === "direct" : !!finding.primary_url;
   const market = marketVerdict(finding.baseline);
   const price = money(finding.numeric_value, finding.currency);
   const image = snapshot.image ?? snapshot.images?.[0] ?? null;
