@@ -79,12 +79,21 @@ export async function startRadarSweep(
           user_id: radar.user_id,
           status: "failed",
           run_type: radar.baseline_completed ? "incremental" : "baseline",
+          scan_phase: radar.baseline_completed ? "monitoring" : "initial_scan",
           error: message.slice(0, 800),
           started_at: startedAt,
           finished_at: new Date().toISOString(),
         });
       }
+      if (!radar.baseline_completed) {
+        // A crashed initial scan must be retried, never presented as inventory.
+        await db
+          .from("radars")
+          .update({ scan_state: "initial_scan_pending" })
+          .eq("id", radar.id);
+      }
       console.error(`[radar:sweep] radar ${radar.id} failed — ${message}`);
+
       throw err;
     }
   })();
