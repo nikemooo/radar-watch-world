@@ -161,6 +161,16 @@ export async function readSweepStatus(
         finished_at: new Date().toISOString(),
       })
       .eq("id", run.id);
+    // Reaping the run is not enough: a radar whose initial scan was cut off
+    // stays pinned on INITIAL_SCAN_RUNNING forever and the UI can never show
+    // anything but "scan running". Release it back to a retryable state.
+    // Nothing else about the radar (config, findings, baseline) is touched.
+    await db
+      .from("radars")
+      .update({ scan_state: "initial_scan_pending" })
+      .eq("id", radarId)
+      .eq("scan_state", "INITIAL_SCAN_RUNNING")
+      .eq("baseline_completed", false);
   }
 
   const state: SweepStatus["state"] =
