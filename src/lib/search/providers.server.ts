@@ -84,7 +84,9 @@ const exaProvider: SearchProvider = {
           query,
           numResults: limit,
           type: "auto",
-          contents: { text: { maxCharacters: 1500 }, extras: { links: 25 } },
+          // Index/aggregator pages need width: a 1500-char snippet with 25
+          // links hides most of the items such a page actually lists.
+          contents: { text: { maxCharacters: 5000 }, extras: { links: 60 } },
         }),
         signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
       });
@@ -111,7 +113,7 @@ const exaProvider: SearchProvider = {
       .map((r) => ({
         title: r.title ?? r.url,
         url: r.url,
-        snippet: (r.text ?? r.summary ?? "").slice(0, 1500),
+        snippet: (r.text ?? r.summary ?? "").slice(0, 5000),
         publisher: r.author ?? hostOf(r.url),
         published_at: r.publishedDate,
         retrieved_at,
