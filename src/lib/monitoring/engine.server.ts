@@ -44,7 +44,7 @@ import {
   inferMarket,
   requiredMarkets,
 } from "./geo";
-import { buildHistory, hostPriority, type PriorityContext } from "@/lib/search/source-priority";
+import { buildHistory, hostPriority, type PriorityContext } from "@/lib/search/source-priority.server";
 import { normalizeAttribute } from "./normalize";
 import {
   buildBaseline,
