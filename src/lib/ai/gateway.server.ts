@@ -21,9 +21,13 @@ export class AiGatewayError extends Error {
   }
 }
 
+type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ContentBlock[];
 }
 
 export async function chatJson<T>(opts: {
@@ -32,14 +36,25 @@ export async function chatJson<T>(opts: {
   user: string;
   schemaName: string;
   schema: Record<string, unknown>;
+  /** Optional image URLs sent alongside the text prompt (vision input). */
+  images?: string[];
 }): Promise<T> {
   const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new AiGatewayError(401, "AI is not configured (missing LOVABLE_API_KEY).");
 
+  const userContent: string | ContentBlock[] =
+    opts.images && opts.images.length > 0
+      ? [
+          { type: "text" as const, text: opts.user },
+          ...opts.images.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+        ]
+      : opts.user;
+
   const messages: ChatMessage[] = [
     { role: "system", content: opts.system },
-    { role: "user", content: opts.user },
+    { role: "user", content: userContent },
   ];
+
 
   const response = await fetch(GATEWAY_URL, {
     method: "POST",
