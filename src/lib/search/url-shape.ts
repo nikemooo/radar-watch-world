@@ -64,3 +64,29 @@ export function detectItemFamilies(links: string[], pageUrl: string, minSize = 3
 export function looksLikeIndexPage(links: string[], pageUrl: string): boolean {
   return detectItemFamilies(links, pageUrl).length > 0;
 }
+
+/**
+ * True when a URL addresses ONE concrete item rather than a search page,
+ * category page or host root. Used to decide whether we may present a link as
+ * "the listing" — when this is false the UI must say the direct listing link
+ * could not be verified instead of linking to a generic page.
+ */
+export function looksLikeItemUrl(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (!/^https?:$/.test(u.protocol)) return false;
+  const segments = u.pathname.split("/").filter(Boolean);
+  if (segments.length === 0) return false;
+  const path = u.pathname.toLowerCase();
+  if (/\/(search|sok|s%C3%B6k|browse|category|categories|kategori|listings|annonser|results)\/?$/.test(path)) {
+    return false;
+  }
+  const last = segments[segments.length - 1]!;
+  const hasId = /\d{4,}/.test(last) || /^[a-z0-9]{12,}$/i.test(last);
+  const hasSlug = last.includes("-") && last.length >= 12;
+  return hasId || hasSlug;
+}
