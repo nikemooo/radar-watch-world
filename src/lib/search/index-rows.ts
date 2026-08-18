@@ -32,10 +32,19 @@ export interface IndexPriceHint {
   origin: "index";
 }
 
+/** Verbatim text of the card an item was discovered in, with its source page. */
+export interface IndexCard {
+  itemUrl: string;
+  text: string;
+  sourceUrl: string;
+}
+
 export interface IndexRowResult {
   hints: Map<string, IndexPriceHint>;
   /** Item URLs whose card held several conflicting values — left unknown. */
   ambiguous: { itemUrl: string; values: string[]; sourceUrl: string }[];
+  /** Card text per item URL — real page content, usable as index-origin evidence. */
+  cards: Map<string, IndexCard>;
 }
 
 const MAX_BLOCK_CHARS = 6000;
@@ -56,12 +65,36 @@ function stripTags(html: string): string {
     .trim();
 }
 
+/**
+ * Wording that marks a money value as something other than the item's own
+ * asking value: tax variants, instalments/leasing, deposits, previous prices.
+ * A card almost always prints one headline value plus one of these; reading
+ * the qualifier keeps the headline value usable instead of discarding both.
+ * The vocabulary is market-level, not site-level or category-level.
+ */
+const QUALIFIER =
+  /(ex(?:kl|cl)?\.?\s*(moms|vat|mwst|tax|btw)|in(?:kl|cl)?\.?\s*(moms|vat|mwst|tax|btw)|moms|vat\b|mwst|\bbtw\b|\/\s*m[åa]n|per\s+m[åa]nad|\bm[åa]n\b|\/\s*mo\b|per\s+month|monthly|month\b|\bmnd\b|leasing|leas|finansiering|financ|avbetalning|kontantinsats|deposit|down\s*payment|r[äa]nta|interest|ord\.?\s*pris|ordinarie|tidigare\s+pris|was\s|f[öo]re\s+detta|rabatt|discount|spara|save|frakt|shipping|avgift|fee|hyra|rent\s*\/|from\s+only)/i;
+
 /** All distinct money strings written inside one card block. */
 export function moneyStringsIn(text: string): string[] {
   const found: string[] = [];
   for (const m of text.matchAll(SUFFIX_MONEY)) found.push(m[0].trim());
   for (const m of text.matchAll(PREFIX_MONEY)) found.push(m[0].trim());
   return found;
+}
+
+/** Money strings in a block, each flagged when its own wording qualifies it. */
+export function moneyMatchesIn(text: string): { raw: string; qualified: boolean }[] {
+  const out: { raw: string; qualified: boolean }[] = [];
+  const add = (raw: string, at: number) => {
+    // Only the immediate wording around the number can qualify it, so the
+    // window stays tight enough that a neighbouring card cannot bleed in.
+    const context = text.slice(Math.max(0, at - 28), at + raw.length + 28);
+    out.push({ raw: raw.trim(), qualified: QUALIFIER.test(context) });
+  };
+  for (const m of text.matchAll(SUFFIX_MONEY)) add(m[0], m.index!);
+  for (const m of text.matchAll(PREFIX_MONEY)) add(m[0], m.index!);
+  return out;
 }
 
 function normalizedKey(raw: string): string | null {
@@ -79,8 +112,9 @@ function absolute(href: string, base: string): string | null {
 }
 
 /**
- * Read one price per item card from an index page's HTML.
- * `itemUrls` restricts the join to URLs discovery already accepted as items.
+ * Read one price per item card from an index page's HTML, plus the verbatim
+ * text of each card. `itemUrls` restricts the join to URLs discovery already
+ * accepted as items.
  */
 export function extractIndexRowPrices(html: string, pageUrl: string, itemUrls: Set<string>): IndexRowResult {
   const anchors: { url: string; at: number }[] = [];
@@ -92,29 +126,48 @@ export function extractIndexRowPrices(html: string, pageUrl: string, itemUrls: S
   }
   anchors.sort((a, b) => a.at - b.at);
 
-  // valueKey -> raw, collected per item URL across all of its anchors.
-  const perItem = new Map<string, Map<string, string>>();
+  // valueKey -> value, collected per item URL across all of its anchors. The
+  // same item is usually anchored twice (image and title), and the shorter
+  // block can be cut off before the wording that qualifies a value, so a value
+  // qualified in ANY block of that item counts as qualified everywhere.
+  const perItem = new Map<string, Map<string, { raw: string; qualified: boolean }>>();
+  const cards = new Map<string, IndexCard>();
   anchors.forEach((anchor, i) => {
     const end = Math.min(anchor.at + MAX_BLOCK_CHARS, anchors[i + 1]?.at ?? html.length);
     const text = stripTags(html.slice(anchor.at, end));
-    const bucket = perItem.get(anchor.url) ?? new Map<string, string>();
-    for (const raw of moneyStringsIn(text)) {
+    const bucket = perItem.get(anchor.url) ?? new Map<string, { raw: string; qualified: boolean }>();
+    for (const { raw, qualified } of moneyMatchesIn(text)) {
       const key = normalizedKey(raw);
       if (!key) continue;
-      if (!bucket.has(key)) bucket.set(key, raw);
+      const prev = bucket.get(key);
+      bucket.set(key, { raw: prev?.raw ?? raw, qualified: (prev?.qualified ?? false) || qualified });
     }
     perItem.set(anchor.url, bucket);
+    const existing = cards.get(anchor.url);
+    if (!existing || existing.text.length < text.length) {
+      cards.set(anchor.url, { itemUrl: anchor.url, text: text.slice(0, 1200), sourceUrl: pageUrl });
+    }
   });
 
   const hints = new Map<string, IndexPriceHint>();
   const ambiguous: IndexRowResult["ambiguous"] = [];
   for (const [itemUrl, bucket] of perItem) {
-    if (bucket.size === 0) continue;
-    if (bucket.size > 1) {
-      ambiguous.push({ itemUrl, values: [...bucket.values()], sourceUrl: pageUrl });
+    // A value the card itself labels as tax-variant, instalment, deposit or
+    // former price is not the item's asking value, so it never competes with
+    // the headline value — and never becomes the value on its own either.
+    const chosen = new Map(
+      [...bucket.entries()].filter(([, v]) => !v.qualified).map(([k, v]) => [k, v.raw]),
+    );
+    if (chosen.size === 0) {
+      const qualified = [...bucket.values()].filter((v) => v.qualified).map((v) => v.raw);
+      if (qualified.length > 0) ambiguous.push({ itemUrl, values: qualified, sourceUrl: pageUrl });
       continue;
     }
-    const raw = [...bucket.values()][0]!;
+    if (chosen.size > 1) {
+      ambiguous.push({ itemUrl, values: [...chosen.values()], sourceUrl: pageUrl });
+      continue;
+    }
+    const raw = [...chosen.values()][0]!;
     const { value, currency } = normalizeMoney(raw);
     hints.set(itemUrl, {
       itemUrl,
@@ -125,7 +178,7 @@ export function extractIndexRowPrices(html: string, pageUrl: string, itemUrls: S
       origin: "index",
     });
   }
-  return { hints, ambiguous };
+  return { hints, ambiguous, cards };
 }
 
 const PAGE_PARAMS = ["page", "p", "sida", "side", "pagina", "seite", "offset", "start", "from", "pageno"];
