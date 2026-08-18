@@ -161,6 +161,39 @@ function RadarDetail() {
     },
   });
 
+  const recheck = useMutation({
+    mutationFn: async () => reverify({ data: { radarId, useImages: true } }),
+    onSuccess: (report) => {
+      toast.success(
+        `Omverifiering klar — ${report.after.match} matchar, ${report.after.unverified} behöver verifieras, ${report.after.reject} matchar inte.`,
+      );
+      queryClient.invalidateQueries({ queryKey: ["radar", radarId] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const answer = useMutation({
+    mutationFn: async (input: { finding: FindingLike; attribute: string; verdict: UserVerdict }) => {
+      const { data: session } = await supabase.auth.getUser();
+      const userId = session.user?.id;
+      if (!userId) throw new Error("Du måste vara inloggad.");
+      const { error } = await supabase.from("finding_verifications").upsert(
+        {
+          finding_id: input.finding.id,
+          radar_id: radarId,
+          user_id: userId,
+          attribute: input.attribute,
+          verdict: input.verdict,
+          verification_source: "user",
+        },
+        { onConflict: "finding_id,attribute,user_id" },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["radar", radarId] }),
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   if (isLoading) return <Skeleton className="h-72" />;
   if (!data?.radar) {
     return (
@@ -173,17 +206,34 @@ function RadarDetail() {
   const radar = data.radar;
   const config = asConfig(radar.config);
   const findings = data.findings as unknown as FindingLike[];
-  const statusOf = (f: FindingLike) => snapshotOf(f.snapshot).match_status ?? "unverified";
+  const verdictOf = (f: FindingLike) => {
+    const snapshot = snapshotOf(f.snapshot) as { criteria?: unknown; image_evidence?: unknown };
+    return effectiveVerdict(
+      outcomesOf(snapshot.criteria),
+      data.verifications
+        .filter((v) => v.finding_id === f.id)
+        .map((v) => ({ attribute: v.attribute, verdict: v.verdict as UserVerdict, note: v.note })),
+      imageObservationsOf(snapshot.image_evidence),
+    );
+  };
+  const statusOf = (f: FindingLike) => verdictOf(f).status;
   const matched = findings.filter((f) => statusOf(f) === "match");
   const unverified = findings.filter((f) => statusOf(f) === "unverified");
   const rejected = findings.filter((f) => statusOf(f) === "reject");
   const scanning = radar.scan_state === "INITIAL_SCAN_RUNNING";
+
+  const openQueue = (finding?: FindingLike) => {
+    const index = finding ? Math.max(unverified.findIndex((f) => f.id === finding.id), 0) : 0;
+    setQueueIndex(index);
+    setQueueOpen(true);
+  };
 
   const statusLine = scanning
     ? "Söker igenom marknaden…"
     : radar.scan_state === "MONITORING"
       ? "Bevakar marknaden"
       : "Redo att söka marknaden";
+
 
   return (
     <div className="space-y-8">
