@@ -165,7 +165,7 @@ export function ListingCard({ finding }: { finding: FindingLike }) {
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground"
             aria-expanded={open}
           >
             {open ? "Visa mindre" : "Visa mer"}
