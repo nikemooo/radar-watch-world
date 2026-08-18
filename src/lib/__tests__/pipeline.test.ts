@@ -11,6 +11,8 @@ import { containsToken, evaluateCriteria, type HardConstraint } from "../monitor
 import { detectPaginationLinks, extractIndexRowPrices, moneyMatchesIn } from "../search/index-rows";
 import { selectIndexPages } from "../search/index-expansion.server";
 import { assignFingerprints } from "../monitoring/temporal";
+import { effectiveVerdict } from "../monitoring/verification";
+
 
 const priceSpec = { key: "price", label: "Price", kind: "money" as const };
 const norm = (raw: string) => normalizeAttribute(priceSpec, raw, "stated", "https://x.se/annons/1");
