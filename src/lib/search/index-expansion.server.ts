@@ -101,7 +101,7 @@ async function readViaExa(urls: string[]): Promise<Map<string, { text: string; l
   return out;
 }
 
-async function readViaHttp(url: string): Promise<{ text: string; links: string[] } | null> {
+async function readViaHttp(url: string): Promise<{ text: string; links: string[]; html: string } | null> {
   try {
     const res = await fetch(url, {
       redirect: "follow",
@@ -125,7 +125,7 @@ async function readViaHttp(url: string): Promise<{ text: string; links: string[]
       .replace(/&nbsp;/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-    return { text, links };
+    return { text, links, html };
   } catch {
     return null;
   }
