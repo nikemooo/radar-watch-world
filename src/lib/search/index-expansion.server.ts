@@ -172,41 +172,54 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
       return false;
     }
   };
-  const ranked = documents
+  const scored = documents
     .map((doc) => {
       const families = detectItemFamilies(harvest(doc), doc.url);
       // Item families hosted by the page's own site indicate a real listing
       // index rather than an article linking out.
       const own = families.filter((f) => f.signature.startsWith(hostOf(doc.url)));
       const best = own[0] ?? families[0];
-      let score = best ? best.urls.length * (own.length > 0 ? 2 : 1) * best.variableSegments : 0;
+      const score = best ? best.urls.length * (own.length > 0 ? 2 : 1) * best.variableSegments : 0;
+      let probe = 0;
       if (score === 0 && looksLikeIndexPath(doc.url)) {
         // Shallow snippets hide item families entirely. Two independent signals
         // still justify one probe read: the site is known to host item URLs, or
         // the search returned this same site repeatedly for the request — which
         // is what a dominant marketplace for the request looks like.
         const host = hostOf(doc.url);
-        if (itemHosts.has(host)) score = 4;
-        else if ((hostHits.get(host) ?? 0) >= 2) score = 3;
+        if (itemHosts.has(host)) probe = 2;
+        else if ((hostHits.get(host) ?? 0) >= 2) probe = 1;
       }
-      return { doc, score };
+      return { doc, score, probe };
     })
-    .filter((d) => d.score > 0)
-    .sort((a, b) => b.score - a.score);
+    .filter((d) => d.score > 0 || d.probe > 0);
+
+  const strong = scored.filter((d) => d.score > 0).sort((a, b) => b.score - a.score);
+  // Probes are reserved a slice of the budget. Without it a marketplace whose
+  // search snippet is shallow always loses to catalog/spec pages that merely
+  // *look* deep, which is exactly how real inventory gets missed.
+  const probes = scored.filter((d) => d.score === 0).sort((a, b) => b.probe - a.probe);
+  const probeSlots = probes.length === 0 ? 0 : Math.max(1, Math.floor(max / 3));
 
   const picked: SearchDocument[] = [];
   const perHost = new Map<string, number>();
-  for (const pass of [1, 2]) {
-    for (const r of ranked) {
-      if (picked.length >= max) break;
-      if (picked.includes(r.doc)) continue;
-      const host = hostOf(r.doc.url);
-      if ((perHost.get(host) ?? 0) >= pass) continue;
-      perHost.set(host, (perHost.get(host) ?? 0) + 1);
-      picked.push(r.doc);
+  const take = (list: typeof scored, limit: number) => {
+    for (const pass of [1, 2]) {
+      for (const r of list) {
+        if (picked.length >= limit) break;
+        if (picked.includes(r.doc)) continue;
+        const host = hostOf(r.doc.url);
+        if ((perHost.get(host) ?? 0) >= pass) continue;
+        perHost.set(host, (perHost.get(host) ?? 0) + 1);
+        picked.push(r.doc);
+      }
     }
-  }
+  };
+  take(probes, probeSlots);
+  take(strong, max);
+  take(probes, max);
   return picked;
+}
 }
 
 /** One read of an index page: text for context, links for discovery, HTML for rows. */
