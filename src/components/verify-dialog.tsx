@@ -151,9 +151,15 @@ export function VerifyDialog({
               href={link}
               target="_blank"
               rel="noreferrer noopener"
+              title={
+                snapshot.link_status === "unverified"
+                  ? "Direktlänken till annonsen kunde inte verifieras"
+                  : undefined
+              }
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm"
             >
-              Öppna annons <ExternalLink className="size-3.5" aria-hidden />
+              {snapshot.link_status === "unverified" ? "Öppna källa" : "Öppna annons"}{" "}
+              <ExternalLink className="size-3.5" aria-hidden />
             </a>
           )}
           <div className="ml-auto flex gap-2">
