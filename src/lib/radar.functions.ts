@@ -160,7 +160,7 @@ export const runRadarNow = createServerFn({ method: "POST" })
       .limit(1);
     const openRun = open?.[0];
     if (openRun && Date.now() - new Date(openRun.started_at).getTime() < 15 * 60_000) {
-      return { state: "running" as const, startedAt: openRun.started_at };
+      return { state: "running" as const, startedAt: openRun.started_at, runId: openRun.id };
     }
 
     return startRadarSweep(context.supabase, radar, {
