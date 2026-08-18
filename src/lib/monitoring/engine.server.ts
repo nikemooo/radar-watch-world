@@ -26,6 +26,7 @@ import { reapStaleRuns, releaseRadar } from "./reaper.server";
 
 import { discoverCandidates, type CandidateItem } from "./candidates.server";
 import { fetchDetailPages } from "../search/detail-fetch.server";
+import { resolveListingUrl, type ResolvedListingUrl } from "../search/listing-url";
 import {
   asAttributeMap,
   diffAttributes,
