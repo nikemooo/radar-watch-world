@@ -108,11 +108,12 @@ function RadarDetail() {
         const created = r?.alertsCreated ?? 0;
         toast.success(
           r?.runType === "baseline"
-            ? `Baseline recorded — ${r.itemsFound ?? 0} findings saved as history, no alerts.`
+            ? `Initial market scan complete — ${r.itemsFound ?? 0} matching listings found. Radar is now monitoring.`
             : created > 0
               ? `${created} new alert${created > 1 ? "s" : ""}.`
               : "Sweep complete — nothing new.",
         );
+
       }
       queryClient.invalidateQueries({ queryKey: ["radar", radarId] });
       queryClient.invalidateQueries({ queryKey: ["alerts"] });
