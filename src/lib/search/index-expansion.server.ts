@@ -372,6 +372,7 @@ export async function expandIndexPages(
   documents: SearchDocument[],
   maxPages = 6,
   maxTotalPageReads = maxPages * 3,
+  priorityOf: (host: string) => number = () => 1,
 ): Promise<ExpansionResult> {
   const emptyTelemetry: ExpansionTelemetry = {
     index_pages_fetched: 0,
