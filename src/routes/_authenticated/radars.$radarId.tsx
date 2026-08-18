@@ -236,13 +236,20 @@ function RadarDetail() {
 
       <section className="panel flex flex-wrap items-center gap-x-6 gap-y-2 p-4 text-sm">
         <span className="mono-label">
-          {radar.baseline_completed ? "Baseline complete" : "Baseline pending"}
+          {radar.scan_state === "MONITORING"
+            ? "Monitoring"
+            : radar.scan_state === "INITIAL_SCAN_RUNNING"
+              ? "Initial market scan running"
+              : "Initial market scan pending"}
         </span>
         <span className="text-muted-foreground">
-          {radar.baseline_completed
-            ? "Only genuinely new or changed information is alerted."
-            : "The first sweep records a snapshot without alerting."}
+          {radar.scan_state === "MONITORING"
+            ? `Found ${radar.initial_listings_count || data.findings.length} matching listings right now. Radar is now monitoring the market for new listings and changes.`
+            : radar.scan_state === "INITIAL_SCAN_RUNNING"
+              ? "Scanning live sources for every matching listing available right now — this can take a few minutes."
+              : "The first run scans the market and lists everything available right now, without alerting."}
         </span>
+
         <span className="ml-auto text-muted-foreground">
           Window: last {radar.recency_days} days ·{" "}
           {radar.last_successful_sweep_at
