@@ -835,6 +835,15 @@ export async function runRadarCycle(
             });
             imagesFound += images.length || 1;
           }
+          // Direct listing URL: canonical > served URL > requested URL, and
+          // only ever labelled "direct" when the URL addresses one item.
+          const link = resolveListingUrl({
+            requestedUrl: p.url,
+            finalUrl: p.final_url,
+            canonical: p.structured?.canonical ?? null,
+          });
+          linkByUrl.set(p.url, link);
+          if (link.status === "direct") directLinksVerified += 1;
         }
         detailFetchesOk = fetched.pages.length;
         detailFetchesFailed = fetched.failures.length;
