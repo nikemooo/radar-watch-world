@@ -259,12 +259,14 @@ export async function researchQueries(
   let rawResults = 0;
   let duplicates = 0;
 
-  for (const query of queries.slice(0, 5)) {
+  for (const query of queries.slice(0, maxQueries)) {
     requests += 1;
+    console.info(`[radar:search] query -> ${query}`);
     try {
       const results = await searchWithRetry(provider, query, perQuery);
       successes += 1;
       rawResults += results.length;
+      for (const r of results) console.info(`[radar:search]   result ${r.url} — ${r.title.slice(0, 90)}`);
       for (const doc of results) {
         const key = doc.url.split("#")[0]!;
         if (seen.has(key)) {
