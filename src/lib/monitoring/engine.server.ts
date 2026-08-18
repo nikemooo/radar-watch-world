@@ -388,6 +388,24 @@ export async function runRadarCycle(
     .maybeSingle();
   const runId = runRow?.id ?? null;
 
+  // Index-page expansion: any retrieved page that links to a repeating family
+  // of item URLs is re-read at full width so the concrete listing URLs it
+  // contains become visible to candidate discovery. Purely structural — no
+  // site-specific rules, and no URL is ever invented.
+  let indexExpansionCost = 0;
+  try {
+    const expansion = await expandIndexPages(research.documents, isBaseline ? 8 : 5);
+    research.documents = expansion.documents;
+    indexExpansionCost = expansion.costEstimate;
+    for (const e of expansion.expanded) {
+      console.info(
+        `[radar:index] expanded ${e.url} — ${e.linkCount} links, ${e.textLength} chars, item URLs: ${e.itemUrls.length}`,
+      );
+    }
+    for (const f of expansion.failures) console.warn(`[radar:index] ${f.url} — ${f.reason}`);
+  } catch (err) {
+    console.warn(`[radar:index] expansion failed — ${(err as Error).message}`);
+  }
 
   if (research.documents.length > 0) {
     await db.from("research_sources").insert(
