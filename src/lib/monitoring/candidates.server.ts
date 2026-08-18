@@ -11,6 +11,7 @@
  */
 import { chatJson, MODELS } from "../ai/gateway.server";
 import type { SearchDocument } from "../search/providers.server";
+import { detectItemFamilies } from "../search/url-shape";
 
 export interface CandidateItem {
   /** Item title as written by the source. */
@@ -68,7 +69,7 @@ export function harvestLinks(doc: SearchDocument): string[] {
   for (const match of doc.snippet.matchAll(/https?:\/\/[^\s)"'<>\]]+/g)) {
     found.add(match[0].replace(/[.,;]+$/, ""));
   }
-  return Array.from(found).slice(0, 120);
+  return Array.from(found).slice(0, 250);
 }
 
 export interface DiscoveryResult {
@@ -87,16 +88,46 @@ export async function discoverCandidates(
 ): Promise<DiscoveryResult> {
   if (docs.length === 0) return { candidates: [], indexPages: [], singlePages: [] };
 
+  // Expanded index pages are large; batching keeps every page fully visible to
+  // the model instead of truncating a whole sweep into one prompt.
+  const BATCH = 6;
+  if (docs.length > BATCH) {
+    const batches: SearchDocument[][] = [];
+    for (let i = 0; i < docs.length; i += BATCH) batches.push(docs.slice(i, i + BATCH));
+    const results = await Promise.all(
+      batches.map((batch) =>
+        discoverCandidates(batch, criteria).catch((err) => {
+          console.warn(`[radar:candidates] batch failed — ${(err as Error).message}`);
+          return { candidates: [], indexPages: [], singlePages: [] } as DiscoveryResult;
+        }),
+      ),
+    );
+    return {
+      candidates: results.flatMap((r) => r.candidates),
+      indexPages: results.flatMap((r) => r.indexPages),
+      singlePages: results.flatMap((r) => r.singlePages),
+    };
+  }
+
   const linkIndex = new Map<string, Set<string>>();
   const blocks = docs.map((doc, i) => {
     const links = harvestLinks(doc);
     linkIndex.set(doc.url, new Set([doc.url, ...links]));
+    // Structural clustering surfaces the page's repeating item links first, so
+    // an index page is not represented by its navigation chrome.
+    const families = detectItemFamilies(links, doc.url).slice(0, 4);
+    const familyBlock = families
+      .map((f) => `PATTERN ${f.signature} (${f.urls.length} links):\n${f.urls.slice(0, 40).join("\n")}`)
+      .join("\n");
+    const other = links.filter((l) => !families.some((f) => f.urls.includes(l))).slice(0, 40);
     return `[${i + 1}] PAGE: ${doc.url}
 TITLE: ${doc.title}
-LINKS FOUND ON PAGE:
-${links.slice(0, 60).join("\n") || "(none captured)"}
+REPEATING ITEM LINK PATTERNS ON PAGE:
+${familyBlock || "(none detected)"}
+OTHER LINKS FOUND ON PAGE:
+${other.join("\n") || "(none captured)"}
 TEXT:
-${doc.snippet.slice(0, 3000)}`;
+${doc.snippet.slice(0, 8000)}`;
   });
 
   const result = await chatJson<{ candidates: CandidateItem[] }>({
@@ -113,7 +144,10 @@ ${doc.snippet.slice(0, 3000)}`;
       "individual=true only when the candidate is one concrete item/listing/entity rather than a category, filter or navigation link. " +
       "likelihood is 0-1 that a real individual item page exists behind the candidate. " +
       "relevance is 0-1 for how well the visible information matches the monitoring criteria; do not filter items out, just score them. " +
-      "clue is a short verbatim fragment from the page (price, reference, address, year) or null. Never invent facts.",
+      "clue is a short verbatim fragment from the page (price, reference, address, year) or null. Never invent facts. " +
+      "NEVER skip an item because the page is in another language, uses local number/date formats, or has no publication date — " +
+      "emit it and let later layers decide. When a repeating item link pattern is listed, prefer those URLs for individual items; " +
+      "when the text shows an item you cannot match to a URL, still emit it with url set to null.",
     user: `Monitoring criteria (for relevance scoring only):
 ${criteria}
 

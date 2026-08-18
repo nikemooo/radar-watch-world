@@ -84,7 +84,9 @@ const exaProvider: SearchProvider = {
           query,
           numResults: limit,
           type: "auto",
-          contents: { text: { maxCharacters: 1500 }, extras: { links: 25 } },
+          // Index/aggregator pages need width: a 1500-char snippet with 25
+          // links hides most of the items such a page actually lists.
+          contents: { text: { maxCharacters: 5000 }, extras: { links: 60 } },
         }),
         signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
       });
@@ -111,7 +113,7 @@ const exaProvider: SearchProvider = {
       .map((r) => ({
         title: r.title ?? r.url,
         url: r.url,
-        snippet: (r.text ?? r.summary ?? "").slice(0, 1500),
+        snippet: (r.text ?? r.summary ?? "").slice(0, 5000),
         publisher: r.author ?? hostOf(r.url),
         published_at: r.publishedDate,
         retrieved_at,
@@ -227,7 +229,11 @@ export interface ResearchResult {
 }
 
 /** Runs every query through the active provider and deduplicates by URL. */
-export async function researchQueries(queries: string[], perQuery = 8): Promise<ResearchResult> {
+export async function researchQueries(
+  queries: string[],
+  perQuery = 8,
+  maxQueries = 8,
+): Promise<ResearchResult> {
   const provider = activeProvider();
   if (!provider) {
     return {
@@ -253,12 +259,14 @@ export async function researchQueries(queries: string[], perQuery = 8): Promise<
   let rawResults = 0;
   let duplicates = 0;
 
-  for (const query of queries.slice(0, 5)) {
+  for (const query of queries.slice(0, maxQueries)) {
     requests += 1;
+    console.info(`[radar:search] query -> ${query}`);
     try {
       const results = await searchWithRetry(provider, query, perQuery);
       successes += 1;
       rawResults += results.length;
+      for (const r of results) console.info(`[radar:search]   result ${r.url} — ${r.title.slice(0, 90)}`);
       for (const doc of results) {
         const key = doc.url.split("#")[0]!;
         if (seen.has(key)) {

@@ -16,6 +16,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { chatJson, MODELS } from "../ai/gateway.server";
 import { researchQueries, type SearchDocument } from "../search/providers.server";
+import { planDiscoveryQueries } from "../search/query-planner.server";
+import { expandIndexPages } from "../search/index-expansion.server";
 import { asConfig, type RadarConfig } from "../radar-types";
 import { discoverCandidates, type CandidateItem } from "./candidates.server";
 import { fetchDetailPages } from "../search/detail-fetch.server";
@@ -321,8 +323,18 @@ export async function runRadarCycle(
   const runType: "baseline" | "incremental" = isBaseline ? "baseline" : "incremental";
   const recencyDays = clampRecencyDays(radar.recency_days);
 
-  const queries = config.search_queries.length ? config.search_queries : [radar.raw_request];
-  const research = await researchQueries(queries);
+  // Discovery strategy: a single broad natural-language query mostly returns
+  // editorial/specification pages. The planner expands the radar's own
+  // configuration into several short, market-shaped queries (generic — it has
+  // no per-category or per-site knowledge).
+  const plannedQueries = await planDiscoveryQueries(config, radar.raw_request, isBaseline ? 8 : 6);
+  const queries = plannedQueries.map((q) => q.query);
+  console.info(
+    `[radar:queries] ${radar.id} planned ${queries.length}: ${plannedQueries
+      .map((q) => `${q.intent}/${q.origin}: ${q.query}`)
+      .join(" | ")}`,
+  );
+  const research = await researchQueries(queries, isBaseline ? 10 : 8, queries.length);
 
   if (!research.configured) {
     await db.from("monitor_runs").insert({
@@ -376,6 +388,24 @@ export async function runRadarCycle(
     .maybeSingle();
   const runId = runRow?.id ?? null;
 
+  // Index-page expansion: any retrieved page that links to a repeating family
+  // of item URLs is re-read at full width so the concrete listing URLs it
+  // contains become visible to candidate discovery. Purely structural — no
+  // site-specific rules, and no URL is ever invented.
+  let indexExpansionCost = 0;
+  try {
+    const expansion = await expandIndexPages(research.documents, isBaseline ? 8 : 5);
+    research.documents = expansion.documents;
+    indexExpansionCost = expansion.costEstimate;
+    for (const e of expansion.expanded) {
+      console.info(
+        `[radar:index] expanded ${e.url} — ${e.linkCount} links, ${e.textLength} chars, item URLs: ${e.itemUrls.length}`,
+      );
+    }
+    for (const f of expansion.failures) console.warn(`[radar:index] ${f.url} — ${f.reason}`);
+  } catch (err) {
+    console.warn(`[radar:index] expansion failed — ${(err as Error).message}`);
+  }
 
   if (research.documents.length > 0) {
     await db.from("research_sources").insert(
@@ -527,7 +557,7 @@ export async function runRadarCycle(
         frequency: radar.frequency,
         comparableGap: specs.length > 0 ? comparableGap : 0,
         fetchableCandidates: fetchable,
-        spentCost: research.costEstimate,
+        spentCost: research.costEstimate + indexExpansionCost,
         costCeiling,
         perFetchCost: 0.001,
       });
@@ -683,7 +713,7 @@ Exclusions: ${config.exclusions.join("; ") || "none"}
 Events to monitor: ${config.monitored_events.join("; ") || "any meaningful change"}
 
 Documents:
-${documentBlock(allDocs)}`,
+${documentBlock(allDocs.slice(0, 45))}`,
   });
 
   // Grounding guard: an item may only cite a retrieved document, or a page on
@@ -1168,7 +1198,7 @@ ${eligible
     comparable_coverage: comparableCoverage,
     baselines_backfilled: baselinesBackfilled,
     cost_ceiling: costCeiling,
-    detail_cost_estimate: detailCostEstimate,
+    detail_cost_estimate: Number((detailCostEstimate + indexExpansionCost).toFixed(4)),
     error: research.errors.length ? research.errors.join(" | ").slice(0, 800) : null,
     finished_at: now,
   });
@@ -1206,7 +1236,7 @@ ${eligible
     sourcesRetrieved: allDocs.length,
     searchRequests: research.requests,
     searchFailures: research.failures,
-    costEstimate: Number((research.costEstimate + detailCostEstimate).toFixed(4)),
+    costEstimate: Number((research.costEstimate + detailCostEstimate + indexExpansionCost).toFixed(4)),
     duplicatesRemoved: research.duplicatesRemoved,
     baselineFindings,
     incrementalFindings,
@@ -1223,7 +1253,7 @@ ${eligible
     attributesExtracted,
     attributesMissing,
     indexPages: indexPages.length,
-    detailCostEstimate,
+    detailCostEstimate: Number((detailCostEstimate + indexExpansionCost).toFixed(4)),
     attributeChanges: attributeEvents.length,
     baselinesComputed,
     baselinesInsufficient,
