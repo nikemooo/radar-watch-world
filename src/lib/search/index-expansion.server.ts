@@ -107,14 +107,45 @@ async function readViaHttp(url: string): Promise<{ text: string; links: string[]
   }
 }
 
-/** Documents that link to a repeating family of item URLs, most promising first. */
+/**
+ * Documents that link to a repeating family of item URLs, most promising first.
+ * Hosts are spread so a single site cannot consume the whole expansion budget —
+ * different sources are what widen coverage.
+ */
 export function selectIndexPages(documents: SearchDocument[], max: number): SearchDocument[] {
-  return documents
-    .map((doc) => ({ doc, families: detectItemFamilies(harvest(doc), doc.url) }))
-    .filter((d) => d.families.length > 0)
-    .sort((a, b) => b.families[0]!.urls.length - a.families[0]!.urls.length)
-    .slice(0, max)
-    .map((d) => d.doc);
+  const hostOf = (url: string) => {
+    try {
+      return new URL(url).host.replace(/^www\./, "");
+    } catch {
+      return url;
+    }
+  };
+  const ranked = documents
+    .map((doc) => {
+      const families = detectItemFamilies(harvest(doc), doc.url);
+      // Item families hosted by the page's own site indicate a real listing
+      // index rather than an article linking out.
+      const own = families.filter((f) => f.signature.startsWith(hostOf(doc.url)));
+      const best = own[0] ?? families[0];
+      const score = best ? best.urls.length * (own.length > 0 ? 2 : 1) * best.variableSegments : 0;
+      return { doc, score };
+    })
+    .filter((d) => d.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const picked: SearchDocument[] = [];
+  const perHost = new Map<string, number>();
+  for (const pass of [1, 2]) {
+    for (const r of ranked) {
+      if (picked.length >= max) break;
+      if (picked.includes(r.doc)) continue;
+      const host = hostOf(r.doc.url);
+      if ((perHost.get(host) ?? 0) >= pass) continue;
+      perHost.set(host, (perHost.get(host) ?? 0) + 1);
+      picked.push(r.doc);
+    }
+  }
+  return picked;
 }
 
 /**
