@@ -457,7 +457,12 @@ export async function runRadarCycle(
     indexes_exhausted: 0,
   };
   try {
-    const expansion = await expandIndexPages(research.documents, isBaseline ? 14 : 8);
+    const expansion = await expandIndexPages(
+      research.documents,
+      isBaseline ? 14 : 8,
+      (isBaseline ? 14 : 8) * 3,
+      priorityOf,
+    );
     research.documents = expansion.documents;
     indexExpansionCost = expansion.costEstimate;
     indexPriceHints = expansion.priceHints;
