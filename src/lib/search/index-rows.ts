@@ -126,18 +126,21 @@ export function extractIndexRowPrices(html: string, pageUrl: string, itemUrls: S
   }
   anchors.sort((a, b) => a.at - b.at);
 
-  // valueKey -> raw, collected per item URL across all of its anchors.
-  const perItem = new Map<string, { plain: Map<string, string>; qualified: Map<string, string> }>();
+  // valueKey -> value, collected per item URL across all of its anchors. The
+  // same item is usually anchored twice (image and title), and the shorter
+  // block can be cut off before the wording that qualifies a value, so a value
+  // qualified in ANY block of that item counts as qualified everywhere.
+  const perItem = new Map<string, Map<string, { raw: string; qualified: boolean }>>();
   const cards = new Map<string, IndexCard>();
   anchors.forEach((anchor, i) => {
     const end = Math.min(anchor.at + MAX_BLOCK_CHARS, anchors[i + 1]?.at ?? html.length);
     const text = stripTags(html.slice(anchor.at, end));
-    const bucket = perItem.get(anchor.url) ?? { plain: new Map(), qualified: new Map() };
+    const bucket = perItem.get(anchor.url) ?? new Map<string, { raw: string; qualified: boolean }>();
     for (const { raw, qualified } of moneyMatchesIn(text)) {
       const key = normalizedKey(raw);
       if (!key) continue;
-      const target = qualified ? bucket.qualified : bucket.plain;
-      if (!target.has(key)) target.set(key, raw);
+      const prev = bucket.get(key);
+      bucket.set(key, { raw: prev?.raw ?? raw, qualified: (prev?.qualified ?? false) || qualified });
     }
     perItem.set(anchor.url, bucket);
     const existing = cards.get(anchor.url);
@@ -152,11 +155,12 @@ export function extractIndexRowPrices(html: string, pageUrl: string, itemUrls: S
     // A value the card itself labels as tax-variant, instalment, deposit or
     // former price is not the item's asking value, so it never competes with
     // the headline value — and never becomes the value on its own either.
-    const chosen = bucket.plain;
+    const chosen = new Map(
+      [...bucket.entries()].filter(([, v]) => !v.qualified).map(([k, v]) => [k, v.raw]),
+    );
     if (chosen.size === 0) {
-      if (bucket.qualified.size > 0) {
-        ambiguous.push({ itemUrl, values: [...bucket.qualified.values()], sourceUrl: pageUrl });
-      }
+      const qualified = [...bucket.values()].filter((v) => v.qualified).map((v) => v.raw);
+      if (qualified.length > 0) ambiguous.push({ itemUrl, values: qualified, sourceUrl: pageUrl });
       continue;
     }
     if (chosen.size > 1) {
