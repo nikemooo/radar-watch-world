@@ -206,7 +206,12 @@ export interface SelectionResult {
  * Hosts are spread so a single site cannot consume the whole expansion budget —
  * different sources are what widen coverage.
  */
-export function selectIndexPages(documents: SearchDocument[], max: number): SelectionResult {
+export function selectIndexPages(
+  documents: SearchDocument[],
+  max: number,
+  /** Learned/structural host priority (1 = no information). Ordering only. */
+  priorityOf: (host: string) => number = () => 1,
+): SelectionResult {
   const hostOf = (url: string) => {
     try {
       return new URL(url).host.replace(/^www\./, "");
