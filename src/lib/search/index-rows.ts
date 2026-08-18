@@ -56,12 +56,36 @@ function stripTags(html: string): string {
     .trim();
 }
 
+/**
+ * Wording that marks a money value as something other than the item's own
+ * asking value: tax variants, instalments/leasing, deposits, previous prices.
+ * A card almost always prints one headline value plus one of these; reading
+ * the qualifier keeps the headline value usable instead of discarding both.
+ * The vocabulary is market-level, not site-level or category-level.
+ */
+const QUALIFIER =
+  /(ex(?:kl|cl)?\.?\s*(moms|vat|mwst|tax|btw)|in(?:kl|cl)?\.?\s*(moms|vat|mwst|tax|btw)|moms|vat\b|mwst|\bbtw\b|\/\s*m[åa]n|per\s+m[åa]nad|\bm[åa]n\b|\/\s*mo\b|per\s+month|monthly|month\b|\bmnd\b|leasing|leas|finansiering|financ|avbetalning|kontantinsats|deposit|down\s*payment|r[äa]nta|interest|ord\.?\s*pris|ordinarie|tidigare\s+pris|was\s|f[öo]re\s+detta|rabatt|discount|spara|save|frakt|shipping|avgift|fee|hyra|rent\s*\/|from\s+only)/i;
+
 /** All distinct money strings written inside one card block. */
 export function moneyStringsIn(text: string): string[] {
   const found: string[] = [];
   for (const m of text.matchAll(SUFFIX_MONEY)) found.push(m[0].trim());
   for (const m of text.matchAll(PREFIX_MONEY)) found.push(m[0].trim());
   return found;
+}
+
+/** Money strings in a block, each flagged when its own wording qualifies it. */
+export function moneyMatchesIn(text: string): { raw: string; qualified: boolean }[] {
+  const out: { raw: string; qualified: boolean }[] = [];
+  const add = (raw: string, at: number) => {
+    // Only the immediate wording around the number can qualify it, so the
+    // window stays tight enough that a neighbouring card cannot bleed in.
+    const context = text.slice(Math.max(0, at - 28), at + raw.length + 28);
+    out.push({ raw: raw.trim(), qualified: QUALIFIER.test(context) });
+  };
+  for (const m of text.matchAll(SUFFIX_MONEY)) add(m[0], m.index!);
+  for (const m of text.matchAll(PREFIX_MONEY)) add(m[0], m.index!);
+  return out;
 }
 
 function normalizedKey(raw: string): string | null {
