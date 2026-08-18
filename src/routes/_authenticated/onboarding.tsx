@@ -110,6 +110,7 @@ function Onboarding() {
   const [sweepPhase, setSweepPhase] = useState(0);
   const [alert, setAlert] = useState<AlertRow | null>(null);
   const [sweepFailed, setSweepFailed] = useState(false);
+  const [listingsFound, setListingsFound] = useState(0);
   const [notify, setNotify] = useState<"in_app" | "email" | "both">("both");
   const [busy, setBusy] = useState(false);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -240,6 +241,11 @@ function Onboarding() {
           setSweepFailed(true);
         } else {
           await track("first_sweep_completed");
+          const { count } = await supabase
+            .from("findings")
+            .select("id", { count: "exact", head: true })
+            .eq("radar_id", created.id);
+          setListingsFound(count ?? 0);
           const { data: alerts } = await supabase
             .from("alerts")
             .select("*")
@@ -494,7 +500,8 @@ function Onboarding() {
           <h1 className="mt-6 text-xl font-semibold">Radar is searching…</h1>
           <p className="mt-2 text-sm text-muted-foreground">{sweepProgress[sweepPhase]}</p>
           <p className="mt-6 text-xs text-muted-foreground">
-            The first check records a baseline, so it won't alert you just because the Radar is new.
+            The first run is a full market scan — it lists everything matching right now instead of
+            alerting you just because the Radar is new.
           </p>
         </div>
       </Screen>
@@ -522,10 +529,11 @@ function Onboarding() {
           ) : (
             <>
               <h1 className="text-xl font-semibold">
-                Radar didn't find anything worth alerting you about yet.
+                Found {listingsFound} matching listing{listingsFound === 1 ? "" : "s"} right now.
               </h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                That's intentional. Radar only notifies you when something meets your criteria.
+                Radar is now monitoring the market for new listings and changes. You'll only get an
+                alert when something genuinely meets your criteria.
               </p>
             </>
           )}
