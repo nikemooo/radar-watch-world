@@ -24,6 +24,8 @@ export interface AttributeValue {
   confidence: AttributeConfidence;
   /** The exact URL the value was read from. */
   source_url: string | null;
+  /** Whether the value came from the item detail page or its parent index row. */
+  origin?: "detail" | "index";
 }
 
 const CURRENCY_SYMBOLS: Record<string, string> = {

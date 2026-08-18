@@ -13,9 +13,17 @@
  */
 import type { SearchDocument } from "./providers.server";
 import { detectItemFamilies, pathSignature, type UrlFamily } from "./url-shape";
+import {
+  detectPaginationLinks,
+  extractIndexRowPrices,
+  nextPageByParam,
+  type IndexPriceHint,
+} from "./index-rows";
 
 const EXPANSION_TIMEOUT_MS = 30_000;
 const EXA_CONTENT_COST = 0.001;
+/** Hard ceiling on how deep a single index is paginated. */
+const MAX_PAGES_PER_INDEX = 5;
 
 export interface ExpandedIndex {
   url: string;
@@ -24,6 +32,18 @@ export interface ExpandedIndex {
   itemUrls: string[];
   linkCount: number;
   textLength: number;
+  /** Pages read for this index, including pagination pages. */
+  pagesRead: number;
+  pageUrls: string[];
+  pricesJoined: number;
+  ambiguousPrices: number;
+}
+
+export interface ExpansionTelemetry {
+  index_pages_fetched: number;
+  index_pages_expanded: number;
+  index_prices_joined: number;
+  ambiguous_price_joins: number;
 }
 
 export interface ExpansionResult {
@@ -33,6 +53,10 @@ export interface ExpansionResult {
   attempted: number;
   failures: { url: string; reason: string }[];
   costEstimate: number;
+  /** Unambiguous item price read from the card it was discovered in. */
+  priceHints: Map<string, IndexPriceHint>;
+  ambiguousPrices: { itemUrl: string; values: string[]; sourceUrl: string }[];
+  telemetry: ExpansionTelemetry;
 }
 
 function harvest(doc: SearchDocument): string[] {
@@ -77,7 +101,7 @@ async function readViaExa(urls: string[]): Promise<Map<string, { text: string; l
   return out;
 }
 
-async function readViaHttp(url: string): Promise<{ text: string; links: string[] } | null> {
+async function readViaHttp(url: string): Promise<{ text: string; links: string[]; html: string } | null> {
   try {
     const res = await fetch(url, {
       redirect: "follow",
@@ -101,7 +125,7 @@ async function readViaHttp(url: string): Promise<{ text: string; links: string[]
       .replace(/&nbsp;/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-    return { text, links };
+    return { text, links, html };
   } catch {
     return null;
   }
@@ -148,67 +172,176 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
   return picked;
 }
 
+/** One read of an index page: text for context, links for discovery, HTML for rows. */
+async function readIndexPage(
+  url: string,
+  allowExa: boolean,
+): Promise<{ text: string; links: string[]; html: string | null; cost: number } | null> {
+  let cost = 0;
+  let text = "";
+  let links: string[] = [];
+  if (allowExa && process.env["EXA_API_KEY"]) {
+    try {
+      const read = await readViaExa([url]);
+      const page = read.get(url);
+      cost = EXA_CONTENT_COST;
+      if (page) {
+        text = page.text;
+        links = page.links;
+      }
+    } catch (err) {
+      console.warn(`[radar:index] contents read failed for ${url} — ${(err as Error).message}`);
+    }
+  }
+  // The raw document is what carries item cards, so it is always attempted:
+  // it is the only place an item URL and its price sit next to each other.
+  const direct = await readViaHttp(url);
+  if (direct) {
+    links = Array.from(new Set([...links, ...direct.links]));
+    if (direct.text.length > text.length) text = direct.text;
+  }
+  if (links.length === 0 && !direct) return null;
+  return { text, links, html: direct?.html ?? null, cost };
+}
+
 /**
- * Re-read index-like documents at full width and expose the concrete item URLs
- * they contain. Nothing is invented: every URL comes from the page itself.
+ * Re-read index-like documents at full width, paginate them while new item
+ * URLs keep appearing, and expose both the concrete item URLs and the price
+ * printed inside each item's own card.
+ *
+ * Nothing is invented: every URL and every price comes from the page itself,
+ * and a card with more than one distinct price yields no price at all.
  */
 export async function expandIndexPages(
   documents: SearchDocument[],
   maxPages = 6,
+  maxTotalPageReads = maxPages * 3,
 ): Promise<ExpansionResult> {
+  const emptyTelemetry: ExpansionTelemetry = {
+    index_pages_fetched: 0,
+    index_pages_expanded: 0,
+    index_prices_joined: 0,
+    ambiguous_price_joins: 0,
+  };
   const targets = selectIndexPages(documents, maxPages);
   if (targets.length === 0) {
-    return { documents, expanded: [], attempted: 0, failures: [], costEstimate: 0 };
+    return {
+      documents,
+      expanded: [],
+      attempted: 0,
+      failures: [],
+      costEstimate: 0,
+      priceHints: new Map(),
+      ambiguousPrices: [],
+      telemetry: emptyTelemetry,
+    };
   }
-
-  const urls = targets.map((d) => d.url);
-  let read = new Map<string, { text: string; links: string[]; title?: string }>();
-  let costEstimate = 0;
-  if (process.env["EXA_API_KEY"]) {
-    try {
-      read = await readViaExa(urls);
-      costEstimate = Number((urls.length * EXA_CONTENT_COST).toFixed(4));
-    } catch (err) {
-      console.warn(`[radar:index] expansion read failed — ${(err as Error).message}`);
-    }
-  }
-  // Direct fallback for pages the contents provider could not return.
-  const missing = urls.filter((u) => !read.get(u)?.links?.length);
-  const fallbacks = await Promise.all(missing.map((u) => readViaHttp(u)));
-  missing.forEach((u, i) => {
-    const r = fallbacks[i];
-    if (r && r.links.length > 0) read.set(u, r);
-  });
 
   const expanded: ExpandedIndex[] = [];
   const failures: { url: string; reason: string }[] = [];
   const byUrl = new Map(documents.map((d) => [d.url, d]));
+  const priceHints = new Map<string, IndexPriceHint>();
+  const ambiguousPrices: ExpansionResult["ambiguousPrices"] = [];
+  const telemetry: ExpansionTelemetry = { ...emptyTelemetry };
+  let costEstimate = 0;
+  let totalReads = 0;
 
   for (const doc of targets) {
-    const page = read.get(doc.url);
-    if (!page || page.links.length === 0) {
-      failures.push({ url: doc.url, reason: "index page could not be re-read" });
-      continue;
-    }
-    const allLinks = Array.from(new Set([...(doc.links ?? []), ...page.links]));
-    const families = detectItemFamilies(allLinks, doc.url);
     const ownSig = pathSignature(doc.url);
-    const itemUrls = families
-      .flatMap((f) => f.urls)
-      .filter((u) => pathSignature(u) !== ownSig)
-      .slice(0, 200);
+    const seenItems = new Set<string>();
+    const allLinks = new Set<string>(doc.links ?? []);
+    const pageUrls: string[] = [];
+    let bestText = doc.snippet;
+    let pricesJoined = 0;
+    let ambiguousHere = 0;
+    let queue: string[] = [doc.url];
+    const visited = new Set<string>();
 
+    while (queue.length > 0 && pageUrls.length < MAX_PAGES_PER_INDEX && totalReads < maxTotalPageReads) {
+      const pageUrl = queue.shift()!;
+      if (visited.has(pageUrl)) continue;
+      visited.add(pageUrl);
+
+      const page = await readIndexPage(pageUrl, pageUrls.length === 0);
+      totalReads += 1;
+      telemetry.index_pages_fetched += 1;
+      costEstimate = Number((costEstimate + (page?.cost ?? 0)).toFixed(4));
+      if (!page || page.links.length === 0) {
+        failures.push({ url: pageUrl, reason: "index page could not be re-read" });
+        continue;
+      }
+      pageUrls.push(pageUrl);
+      for (const l of page.links) allLinks.add(l);
+      if (page.text.length > bestText.length) bestText = page.text;
+
+      const families = detectItemFamilies([...allLinks], doc.url);
+      const pageItems = detectItemFamilies(page.links, pageUrl)
+        .flatMap((f) => f.urls)
+        .filter((u) => pathSignature(u) !== ownSig);
+      const newItems = pageItems.filter((u) => !seenItems.has(u));
+      for (const u of pageItems) seenItems.add(u);
+
+      // Row-level prices: only from the page the item card is printed on.
+      if (page.html) {
+        const rows = extractIndexRowPrices(page.html, pageUrl, new Set(pageItems));
+        for (const [itemUrl, hint] of rows.hints) {
+          if (priceHints.has(itemUrl)) {
+            const prev = priceHints.get(itemUrl)!;
+            // The same item priced differently on two index pages is not a
+            // safe join — drop it rather than pick one.
+            if (prev.value !== hint.value || prev.currency !== hint.currency) {
+              priceHints.delete(itemUrl);
+              ambiguousPrices.push({ itemUrl, values: [prev.raw, hint.raw], sourceUrl: pageUrl });
+              ambiguousHere += 1;
+              telemetry.ambiguous_price_joins += 1;
+            }
+            continue;
+          }
+          priceHints.set(itemUrl, hint);
+          pricesJoined += 1;
+          telemetry.index_prices_joined += 1;
+        }
+        for (const a of rows.ambiguous) {
+          ambiguousPrices.push(a);
+          ambiguousHere += 1;
+          telemetry.ambiguous_price_joins += 1;
+        }
+      }
+
+      console.info(
+        `[radar:index] read ${pageUrl} — links ${page.links.length}, items ${pageItems.length} (${newItems.length} new), ` +
+          `prices ${pricesJoined}, ambiguous ${ambiguousHere}, families ${families.length}`,
+      );
+
+      // Paginate only while the previous page still produced unseen items.
+      if (newItems.length > 0 && pageUrls.length < MAX_PAGES_PER_INDEX) {
+        const nextLinks = detectPaginationLinks(page.links, pageUrl);
+        const nextParam = nextPageByParam(pageUrl);
+        const next = nextLinks.length > 0 ? nextLinks.slice(0, 2) : nextParam ? [nextParam] : [];
+        queue = [...queue, ...next.filter((u) => !visited.has(u))];
+      }
+    }
+
+    if (pageUrls.length === 0) continue;
+
+    const families = detectItemFamilies([...allLinks], doc.url);
+    const itemUrls = [...seenItems].slice(0, 400);
     byUrl.set(doc.url, {
       ...doc,
-      snippet: page.text.length > doc.snippet.length ? page.text : doc.snippet,
-      links: allLinks.slice(0, 250),
+      snippet: bestText.length > doc.snippet.length ? bestText : doc.snippet,
+      links: [...allLinks].slice(0, 400),
     });
+    telemetry.index_pages_expanded += 1;
     expanded.push({
       url: doc.url,
       families: families.slice(0, 6),
       itemUrls,
-      linkCount: allLinks.length,
-      textLength: page.text.length,
+      linkCount: allLinks.size,
+      textLength: bestText.length,
+      pagesRead: pageUrls.length,
+      pageUrls,
+      pricesJoined,
+      ambiguousPrices: ambiguousHere,
     });
   }
 
@@ -218,5 +351,8 @@ export async function expandIndexPages(
     attempted: targets.length,
     failures,
     costEstimate,
+    priceHints,
+    ambiguousPrices,
+    telemetry,
   };
 }

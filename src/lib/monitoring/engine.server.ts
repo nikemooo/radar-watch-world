@@ -18,6 +18,7 @@ import { chatJson, MODELS } from "../ai/gateway.server";
 import { researchQueries, type SearchDocument } from "../search/providers.server";
 import { planDiscoveryQueries } from "../search/query-planner.server";
 import { expandIndexPages } from "../search/index-expansion.server";
+import type { IndexPriceHint } from "../search/index-rows";
 import { asConfig, type RadarConfig } from "../radar-types";
 import { discoverCandidates, type CandidateItem } from "./candidates.server";
 import { fetchDetailPages } from "../search/detail-fetch.server";
@@ -29,6 +30,7 @@ import {
   type ExtractedDetail,
 } from "./attributes.server";
 import type { AttributeSpec, AttributeValue } from "./normalize";
+import { normalizeAttribute } from "./normalize";
 import {
   buildBaseline,
   comparableSettings,
@@ -393,13 +395,25 @@ export async function runRadarCycle(
   // contains become visible to candidate discovery. Purely structural — no
   // site-specific rules, and no URL is ever invented.
   let indexExpansionCost = 0;
+  let indexPriceHints = new Map<string, IndexPriceHint>();
+  let ambiguousPriceList: { itemUrl: string; values: string[]; sourceUrl: string }[] = [];
+  const indexTelemetry = {
+    index_pages_fetched: 0,
+    index_pages_expanded: 0,
+    index_prices_joined: 0,
+    ambiguous_price_joins: 0,
+  };
   try {
     const expansion = await expandIndexPages(research.documents, isBaseline ? 14 : 8);
     research.documents = expansion.documents;
     indexExpansionCost = expansion.costEstimate;
+    indexPriceHints = expansion.priceHints;
+    ambiguousPriceList = expansion.ambiguousPrices;
+    Object.assign(indexTelemetry, expansion.telemetry);
     for (const e of expansion.expanded) {
       console.info(
-        `[radar:index] expanded ${e.url} — ${e.linkCount} links, ${e.textLength} chars, item URLs: ${e.itemUrls.length}`,
+        `[radar:index] expanded ${e.url} — ${e.pagesRead} page(s), ${e.linkCount} links, ${e.textLength} chars, ` +
+          `item URLs: ${e.itemUrls.length}, row prices: ${e.pricesJoined}, ambiguous: ${e.ambiguousPrices}`,
       );
     }
     for (const f of expansion.failures) console.warn(`[radar:index] ${f.url} — ${f.reason}`);
@@ -503,6 +517,8 @@ export async function runRadarCycle(
   let detailCostEstimate = 0;
   let detailFetchesAttempted = 0;
   let detailFetchesSkippedBackoff = 0;
+  let indexPricesApplied = 0;
+  let unknownPrices = 0;
   let detailFetchBudget = 0;
   let budgetReason = "detail stage not reached";
   const detailDocs: SearchDocument[] = [];
@@ -616,6 +632,45 @@ export async function runRadarCycle(
           details = extracted.details;
           extractionsOk = extracted.details.length;
           extractionsFailed = extracted.failures.length;
+
+          // Index-row price provenance: when a detail page is client-rendered
+          // and states no value, the value printed in that item's own card on
+          // the index page it was discovered on may be used. The join is by
+          // exact item URL only, and only when that card held exactly one
+          // price — otherwise the value stays unknown.
+          const valueSpec = valueKey ? specs.find((s) => s.key === valueKey) : undefined;
+          if (valueSpec) {
+            for (const d of details) {
+              const current = d.attributes[valueSpec.key];
+              if (current?.raw) {
+                console.info(`[radar:price] ${d.url} — price from detail page (${current.raw})`);
+                continue;
+              }
+              const hint = indexPriceHints.get(d.url) ?? indexPriceHints.get(`${d.url}/`);
+              if (hint && hint.value !== null) {
+                d.attributes[valueSpec.key] = {
+                  ...normalizeAttribute(valueSpec, hint.raw, "structured", hint.sourceUrl),
+                  origin: "index",
+                };
+                indexPricesApplied += 1;
+                d.extracted += 1;
+                d.missing = Math.max(0, d.missing - 1);
+                console.info(
+                  `[radar:price] ${d.url} — price joined from index row "${hint.raw}" (source ${hint.sourceUrl})`,
+                );
+              } else {
+                unknownPrices += 1;
+                const ambiguous = ambiguousPriceList.find((a) => a.itemUrl === d.url);
+                console.info(
+                  `[radar:price] ${d.url} — price unknown (` +
+                    (ambiguous
+                      ? `ambiguous index row: ${ambiguous.values.join(" / ")}`
+                      : "no price on detail page and no unambiguous index row") +
+                    ")",
+                );
+              }
+            }
+          }
           for (const d of details) {
             attributesExtracted += d.extracted;
             attributesMissing += d.missing;
@@ -1199,6 +1254,11 @@ ${eligible
     baselines_backfilled: baselinesBackfilled,
     cost_ceiling: costCeiling,
     detail_cost_estimate: Number((detailCostEstimate + indexExpansionCost).toFixed(4)),
+    index_pages_fetched: indexTelemetry.index_pages_fetched,
+    index_pages_expanded: indexTelemetry.index_pages_expanded,
+    index_prices_joined: indexPricesApplied,
+    ambiguous_price_joins: indexTelemetry.ambiguous_price_joins,
+    unknown_prices: unknownPrices,
     error: research.errors.length ? research.errors.join(" | ").slice(0, 800) : null,
     finished_at: now,
   });
