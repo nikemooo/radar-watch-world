@@ -321,8 +321,18 @@ export async function runRadarCycle(
   const runType: "baseline" | "incremental" = isBaseline ? "baseline" : "incremental";
   const recencyDays = clampRecencyDays(radar.recency_days);
 
-  const queries = config.search_queries.length ? config.search_queries : [radar.raw_request];
-  const research = await researchQueries(queries);
+  // Discovery strategy: a single broad natural-language query mostly returns
+  // editorial/specification pages. The planner expands the radar's own
+  // configuration into several short, market-shaped queries (generic — it has
+  // no per-category or per-site knowledge).
+  const plannedQueries = await planDiscoveryQueries(config, radar.raw_request, isBaseline ? 8 : 6);
+  const queries = plannedQueries.map((q) => q.query);
+  console.info(
+    `[radar:queries] ${radar.id} planned ${queries.length}: ${plannedQueries
+      .map((q) => `${q.intent}/${q.origin}: ${q.query}`)
+      .join(" | ")}`,
+  );
+  const research = await researchQueries(queries, isBaseline ? 10 : 8, queries.length);
 
   if (!research.configured) {
     await db.from("monitor_runs").insert({
