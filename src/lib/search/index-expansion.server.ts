@@ -545,7 +545,26 @@ export async function expandIndexPages(
       pricesJoined,
       ambiguousPrices: ambiguousHere,
     });
-  }
+  };
+
+  const CONCURRENCY = 4;
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, targets.length) }, async () => {
+      while (cursor < targets.length && totalReads < maxTotalPageReads) {
+        const doc = targets[cursor++];
+        if (!doc) break;
+        try {
+          await expandTarget(doc);
+        } catch (err) {
+          failures.push({ url: doc.url, reason: (err as Error).message });
+        }
+      }
+    }),
+  );
+  // Concurrency must not change the reported order.
+  const targetOrder = new Map(targets.map((t, i) => [t.url, i]));
+  expanded.sort((a, b) => (targetOrder.get(a.url) ?? 0) - (targetOrder.get(b.url) ?? 0));
 
   return {
     documents: documents.map((d) => byUrl.get(d.url) ?? d),
