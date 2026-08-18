@@ -333,7 +333,60 @@ export type RunOptions = {
   maxDetailFetches?: number | undefined;
   /** Plan-level priority processing flag. */
   priority?: boolean | undefined;
+  /**
+   * A run row already claimed by the caller (see beginRun). The cycle then
+   * updates that row instead of creating one, so the run is visible to the UI
+   * from the moment the user pressed "Sök nu" — not only after research ends.
+   */
+  runId?: string | null | undefined;
+  startedAt?: string | undefined;
 };
+
+export type RunClaim = {
+  runId: string | null;
+  startedAt: string;
+  runType: "baseline" | "incremental";
+  scanPhase: "initial_scan" | "monitoring";
+};
+
+/**
+ * Claim a run BEFORE any expensive work happens.
+ *
+ * Research + planning take tens of seconds. If the monitor_runs row were only
+ * written afterwards, a refresh in that window would show the radar exactly as
+ * it was before the click — which is precisely the "nothing happened" bug.
+ * Claiming first makes the running state durable and pollable immediately.
+ */
+export async function beginRun(db: Db, radar: RadarRow): Promise<RunClaim> {
+  const startedAt = new Date().toISOString();
+  const isBaseline = !radar.baseline_completed;
+  const runType: "baseline" | "incremental" = isBaseline ? "baseline" : "incremental";
+  const scanPhase: "initial_scan" | "monitoring" = isBaseline ? "initial_scan" : "monitoring";
+
+  const { data: row, error } = await db
+    .from("monitor_runs")
+    .insert({
+      radar_id: radar.id,
+      user_id: radar.user_id,
+      status: "running",
+      run_type: runType,
+      scan_phase: scanPhase,
+      started_at: startedAt,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(`Could not start the sweep: ${error.message}`);
+
+  if (isBaseline) {
+    await db
+      .from("radars")
+      .update({ scan_state: "INITIAL_SCAN_RUNNING", initial_scan_started_at: startedAt })
+      .eq("id", radar.id);
+  }
+
+  return { runId: row?.id ?? null, startedAt, runType, scanPhase };
+}
+
 
 export async function runRadarCycle(
   db: Db,
