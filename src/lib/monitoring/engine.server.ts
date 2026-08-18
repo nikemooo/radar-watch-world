@@ -1072,6 +1072,11 @@ ${documentBlock(allDocs.slice(0, 45))}`,
       `[radar:criteria] ${verdict.status.toUpperCase()} ${item.url} — ${verdict.reason}`,
     );
   }
+  if (markets.length > 0) {
+    console.info(
+      `[radar:geo] market established for ${geoResolved}/${items.length} item(s) from explicit evidence`,
+    );
+  }
 
   const docByUrl = new Map(allDocs.map((d) => [d.url, d]));
   const temporalOf = (item: ExtractedItem): TemporalFacts => {
