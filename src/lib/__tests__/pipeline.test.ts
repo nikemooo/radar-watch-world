@@ -195,3 +195,44 @@ describe("index page selection", () => {
     expect(res.telemetry[0]!.reason.length).toBeGreaterThan(0);
   });
 });
+
+describe("effective verification verdict", () => {
+  const outcome = (attribute: string, status: "match" | "reject" | "unverified") => ({
+    constraint: { attribute, op: "includes" as const, value: attribute },
+    status,
+    reason: `${attribute}: ${status}`,
+    observedRaw: null,
+  });
+
+  it("never lets a user answer rescue a machine-rejected listing", () => {
+    const v = effectiveVerdict(
+      [outcome("price", "reject"), outcome("color", "unverified")],
+      [
+        { attribute: "price", verdict: "pass" },
+        { attribute: "color", verdict: "pass" },
+      ],
+    );
+    expect(v.status).toBe("reject");
+    expect(v.userInfluenced).toBe(false);
+  });
+
+  it("promotes an unverified listing only when every requirement is resolved", () => {
+    const outcomes = [outcome("color", "unverified"), outcome("year", "unverified")];
+    expect(effectiveVerdict(outcomes, [{ attribute: "color", verdict: "pass" }]).status).toBe("unverified");
+    const full = effectiveVerdict(outcomes, [
+      { attribute: "color", verdict: "pass" },
+      { attribute: "year", verdict: "pass" },
+    ]);
+    expect(full.status).toBe("match");
+    expect(full.userInfluenced).toBe(true);
+  });
+
+  it("treats image evidence as display-only, never as proof", () => {
+    const v = effectiveVerdict(
+      [outcome("color", "unverified")],
+      [],
+      [{ attribute: "color", observation: "svart bil", confidence: 0.9, imageUrl: "https://x/1.jpg" }],
+    );
+    expect(v.status).toBe("unverified");
+  });
+});

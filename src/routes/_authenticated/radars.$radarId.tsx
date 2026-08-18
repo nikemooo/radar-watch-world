@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Loader2, Pause, Play, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Pause, Play, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { listRadarSources, runRadarNow } from "@/lib/radar.functions";
+import { reverifyRadar } from "@/lib/verification.functions";
 import { AlertCard, type AlertRow } from "@/components/alert-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +20,14 @@ import {
 import { asConfig, frequencyLabel, recencyPresets, type RadarFrequency } from "@/lib/radar-types";
 import { track } from "@/lib/analytics";
 import { ListingRail, snapshotOf, type FindingLike } from "@/components/listing-card";
+import { VerifyDialog } from "@/components/verify-dialog";
+import {
+  effectiveVerdict,
+  imageObservationsOf,
+  outcomesOf,
+  type UserVerdict,
+} from "@/lib/monitoring/verification";
+
 
 export const Route = createFileRoute("/_authenticated/radars/$radarId")({
   head: () => ({
@@ -36,14 +46,15 @@ function RadarDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const run = useServerFn(runRadarNow);
+  const reverify = useServerFn(reverifyRadar);
   const fetchSources = useServerFn(listRadarSources);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [queueIndex, setQueueIndex] = useState(0);
 
   const { data: sources } = useQuery({
     queryKey: ["radar-sources", radarId],
     queryFn: () => fetchSources({ data: { radarId, limit: 25 } }),
   });
-
-
 
   const { data, isLoading } = useQuery({
     queryKey: ["radar", radarId],
@@ -52,7 +63,7 @@ function RadarDetail() {
       return runs?.some((entry) => entry.status === "running") ? 4000 : false;
     },
     queryFn: async () => {
-      const [radar, alerts, runs, decisions, findings, changes] = await Promise.all([
+      const [radar, alerts, runs, decisions, findings, changes, verifications] = await Promise.all([
         supabase.from("radars").select("*").eq("id", radarId).maybeSingle(),
         supabase
           .from("alerts")
@@ -77,13 +88,14 @@ function RadarDetail() {
           .select("*")
           .eq("radar_id", radarId)
           .order("last_seen_at", { ascending: false })
-          .limit(40),
+          .limit(100),
         supabase
           .from("finding_changes")
           .select("*")
           .eq("radar_id", radarId)
           .order("changed_at", { ascending: false })
           .limit(25),
+        supabase.from("finding_verifications").select("*").eq("radar_id", radarId),
       ]);
       if (radar.error) throw radar.error;
       return {
@@ -93,9 +105,11 @@ function RadarDetail() {
         decisions: decisions.data ?? [],
         findings: findings.data ?? [],
         changes: changes.data ?? [],
+        verifications: verifications.data ?? [],
       };
     },
   });
+
 
   const sweep = useMutation({
     mutationFn: async () => run({ data: { radarId } }),
@@ -147,6 +161,39 @@ function RadarDetail() {
     },
   });
 
+  const recheck = useMutation({
+    mutationFn: async () => reverify({ data: { radarId, useImages: true } }),
+    onSuccess: (report) => {
+      toast.success(
+        `Omverifiering klar — ${report.after.match} matchar, ${report.after.unverified} behöver verifieras, ${report.after.reject} matchar inte.`,
+      );
+      queryClient.invalidateQueries({ queryKey: ["radar", radarId] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const answer = useMutation({
+    mutationFn: async (input: { finding: FindingLike; attribute: string; verdict: UserVerdict }) => {
+      const { data: session } = await supabase.auth.getUser();
+      const userId = session.user?.id;
+      if (!userId) throw new Error("Du måste vara inloggad.");
+      const { error } = await supabase.from("finding_verifications").upsert(
+        {
+          finding_id: input.finding.id,
+          radar_id: radarId,
+          user_id: userId,
+          attribute: input.attribute,
+          verdict: input.verdict,
+          verification_source: "user",
+        },
+        { onConflict: "finding_id,attribute,user_id" },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["radar", radarId] }),
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   if (isLoading) return <Skeleton className="h-72" />;
   if (!data?.radar) {
     return (
@@ -159,17 +206,34 @@ function RadarDetail() {
   const radar = data.radar;
   const config = asConfig(radar.config);
   const findings = data.findings as unknown as FindingLike[];
-  const statusOf = (f: FindingLike) => snapshotOf(f.snapshot).match_status ?? "unverified";
+  const verdictOf = (f: FindingLike) => {
+    const snapshot = snapshotOf(f.snapshot) as { criteria?: unknown; image_evidence?: unknown };
+    return effectiveVerdict(
+      outcomesOf(snapshot.criteria),
+      data.verifications
+        .filter((v) => v.finding_id === f.id)
+        .map((v) => ({ attribute: v.attribute, verdict: v.verdict as UserVerdict, note: v.note })),
+      imageObservationsOf(snapshot.image_evidence),
+    );
+  };
+  const statusOf = (f: FindingLike) => verdictOf(f).status;
   const matched = findings.filter((f) => statusOf(f) === "match");
   const unverified = findings.filter((f) => statusOf(f) === "unverified");
   const rejected = findings.filter((f) => statusOf(f) === "reject");
   const scanning = radar.scan_state === "INITIAL_SCAN_RUNNING";
+
+  const openQueue = (finding?: FindingLike) => {
+    const index = finding ? Math.max(unverified.findIndex((f) => f.id === finding.id), 0) : 0;
+    setQueueIndex(index);
+    setQueueOpen(true);
+  };
 
   const statusLine = scanning
     ? "Söker igenom marknaden…"
     : radar.scan_state === "MONITORING"
       ? "Bevakar marknaden"
       : "Redo att söka marknaden";
+
 
   return (
     <div className="space-y-8">
@@ -186,7 +250,8 @@ function RadarDetail() {
               {scanning ? "🔎" : "🟢"} {statusLine}
             </span>
             <span className="text-muted-foreground">
-              {matched.length} annons{matched.length === 1 ? "" : "er"} matchar just nu
+              {findings.length} hittade · {matched.length} matchar · {unverified.length} behöver verifieras ·{" "}
+              {rejected.length} matchar inte
             </span>
             <span className="text-muted-foreground">
               {radar.last_successful_sweep_at
@@ -199,6 +264,15 @@ function RadarDetail() {
           <Button className="gap-2" onClick={() => sweep.mutate()} disabled={sweep.isPending}>
             {sweep.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             {sweep.isPending ? "Söker…" : "Sök nu"}
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => recheck.mutate()}
+            disabled={recheck.isPending}
+          >
+            {recheck.isPending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+            {recheck.isPending ? "Verifierar…" : "Verifiera om"}
           </Button>
           <Button
             variant="outline"
@@ -231,14 +305,14 @@ function RadarDetail() {
         <h2 className="text-lg font-medium">Matchar dina kriterier</h2>
         {matched.length > 0 ? (
           <div className="mt-4">
-            <ListingRail findings={matched} />
+            <ListingRail findings={matched} verdictOf={verdictOf} onVerify={openQueue} />
           </div>
         ) : (
           <div className="panel mt-4 p-6 text-sm">
-            <p className="font-medium">Inga matchande annonser just nu</p>
+            <p className="font-medium">Inga verifierade matchningar just nu</p>
             <p className="mt-1 text-muted-foreground">
-              Radar fortsätter bevaka marknaden och meddelar dig när en match dyker upp.
-              {findings.length > 0 && ` ${findings.length} relevanta annonser kontrollerades.`}
+              Radar fortsätter bevaka marknaden och meddelar dig när alla dina kriterier kan bekräftas.
+              {findings.length > 0 && ` ${findings.length} annonser hittades och kontrollerades.`}
             </p>
           </div>
         )}
@@ -246,20 +320,42 @@ function RadarDetail() {
 
       {unverified.length > 0 && (
         <section>
-          <h2 className="text-lg font-medium">Behöver verifieras</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Radar hittade annonsen men kunde inte verifiera all information — den räknas inte som en match.
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-medium">
+                Behöver verifieras{" "}
+                <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-sm">{unverified.length}</span>
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {unverified.length} annonser behöver verifieras — Radar kunde inte säkert bekräfta ett eller
+                flera av dina kriterier.
+              </p>
+            </div>
+            <Button variant="secondary" onClick={() => openQueue()}>
+              Öppna verifieringskö
+            </Button>
+          </div>
           <div className="mt-4">
-            <ListingRail findings={unverified} />
+            <ListingRail findings={unverified} verdictOf={verdictOf} onVerify={openQueue} />
           </div>
         </section>
       )}
 
+      <VerifyDialog
+        findings={unverified}
+        index={queueIndex}
+        onIndexChange={setQueueIndex}
+        open={queueOpen && unverified.length > 0}
+        onOpenChange={setQueueOpen}
+        verdictOf={verdictOf}
+        onAnswer={(input) => answer.mutate(input)}
+      />
+
+
       {rejected.length > 0 && (
         <details className="panel p-5">
           <summary className="cursor-pointer text-sm font-medium">
-            Sorterade bort ({rejected.length}) — visa filtrerade
+            Matchar inte ({rejected.length}) — visa bortsorterade
           </summary>
           <ul className="mt-3 divide-y divide-border text-sm">
             {rejected.map((f) => (
@@ -272,7 +368,7 @@ function RadarDetail() {
                 >
                   {f.title}
                 </a>
-                <span className="text-muted-foreground">{snapshotOf(f.snapshot).match_reason}</span>
+                <span className="text-muted-foreground">{verdictOf(f).reason}</span>
               </li>
             ))}
           </ul>
@@ -350,7 +446,7 @@ function RadarDetail() {
       </details>
 
       <details className="panel p-5">
-        <summary className="cursor-pointer text-sm font-medium">Diagnostik</summary>
+        <summary className="cursor-pointer text-sm font-medium">Teknisk information</summary>
 
         <div className="mt-4 space-y-4">
           {data.runs.map((entry) => (

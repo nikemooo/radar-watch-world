@@ -232,6 +232,60 @@ export type Database = {
           },
         ]
       }
+      finding_verifications: {
+        Row: {
+          attribute: string
+          created_at: string
+          finding_id: string
+          id: string
+          note: string | null
+          radar_id: string
+          updated_at: string
+          user_id: string
+          verdict: string
+          verification_source: string
+        }
+        Insert: {
+          attribute: string
+          created_at?: string
+          finding_id: string
+          id?: string
+          note?: string | null
+          radar_id: string
+          updated_at?: string
+          user_id: string
+          verdict: string
+          verification_source?: string
+        }
+        Update: {
+          attribute?: string
+          created_at?: string
+          finding_id?: string
+          id?: string
+          note?: string | null
+          radar_id?: string
+          updated_at?: string
+          user_id?: string
+          verdict?: string
+          verification_source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finding_verifications_finding_id_fkey"
+            columns: ["finding_id"]
+            isOneToOne: false
+            referencedRelation: "findings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finding_verifications_radar_id_fkey"
+            columns: ["radar_id"]
+            isOneToOne: false
+            referencedRelation: "radars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       findings: {
         Row: {
           anomaly_score: number | null
@@ -404,6 +458,7 @@ export type Database = {
           detail_fetches_failed: number
           detail_fetches_ok: number
           detail_fetches_skipped_backoff: number
+          discovered_listings: number
           duplicates_removed: number
           error: string | null
           extractions_failed: number
@@ -425,8 +480,10 @@ export type Database = {
           pagination_pages_blocked: number
           pagination_pages_skipped: number
           pagination_pages_succeeded: number
+          persisted_findings: number
           provider: string | null
           radar_id: string
+          reverified_findings: number
           run_type: string
           scan_phase: string
           search_failures: number
@@ -468,6 +525,7 @@ export type Database = {
           detail_fetches_failed?: number
           detail_fetches_ok?: number
           detail_fetches_skipped_backoff?: number
+          discovered_listings?: number
           duplicates_removed?: number
           error?: string | null
           extractions_failed?: number
@@ -489,8 +547,10 @@ export type Database = {
           pagination_pages_blocked?: number
           pagination_pages_skipped?: number
           pagination_pages_succeeded?: number
+          persisted_findings?: number
           provider?: string | null
           radar_id: string
+          reverified_findings?: number
           run_type?: string
           scan_phase?: string
           search_failures?: number
@@ -532,6 +592,7 @@ export type Database = {
           detail_fetches_failed?: number
           detail_fetches_ok?: number
           detail_fetches_skipped_backoff?: number
+          discovered_listings?: number
           duplicates_removed?: number
           error?: string | null
           extractions_failed?: number
@@ -553,8 +614,10 @@ export type Database = {
           pagination_pages_blocked?: number
           pagination_pages_skipped?: number
           pagination_pages_succeeded?: number
+          persisted_findings?: number
           provider?: string | null
           radar_id?: string
+          reverified_findings?: number
           run_type?: string
           scan_phase?: string
           search_failures?: number
