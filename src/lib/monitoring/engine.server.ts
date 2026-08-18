@@ -426,7 +426,10 @@ export async function runRadarCycle(
 
   const valueKey = valueAttributeKey(specs);
   const minComparables = Math.max(2, Number(radar.min_comparables ?? 10));
-  const costCeiling = Math.max(0.005, Number(radar.max_sweep_cost ?? 0.06));
+  // The initial market scan is meant to be comprehensive, so it may spend more
+  // of the radar's budget than a routine monitoring sweep — still hard-capped.
+  const costCeiling = Math.max(0.005, Number(radar.max_sweep_cost ?? 0.06)) * (isBaseline ? 2 : 1);
+
 
   // Persisted state is loaded BEFORE the detail stage so the fetch policy can
   // aim the budget at items that actually improve comparable coverage.
