@@ -385,7 +385,7 @@ export async function expandIndexPages(
     pages_skipped: 0,
     indexes_exhausted: 0,
   };
-  const selection = selectIndexPages(documents, maxPages);
+  const selection = selectIndexPages(documents, maxPages, priorityOf);
   const targets = selection.picked;
   for (const row of selection.telemetry) {
     console.info(
