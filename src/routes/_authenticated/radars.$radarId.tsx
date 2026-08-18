@@ -46,14 +46,15 @@ function RadarDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const run = useServerFn(runRadarNow);
+  const reverify = useServerFn(reverifyRadar);
   const fetchSources = useServerFn(listRadarSources);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [queueIndex, setQueueIndex] = useState(0);
 
   const { data: sources } = useQuery({
     queryKey: ["radar-sources", radarId],
     queryFn: () => fetchSources({ data: { radarId, limit: 25 } }),
   });
-
-
 
   const { data, isLoading } = useQuery({
     queryKey: ["radar", radarId],
@@ -62,7 +63,7 @@ function RadarDetail() {
       return runs?.some((entry) => entry.status === "running") ? 4000 : false;
     },
     queryFn: async () => {
-      const [radar, alerts, runs, decisions, findings, changes] = await Promise.all([
+      const [radar, alerts, runs, decisions, findings, changes, verifications] = await Promise.all([
         supabase.from("radars").select("*").eq("id", radarId).maybeSingle(),
         supabase
           .from("alerts")
@@ -87,13 +88,14 @@ function RadarDetail() {
           .select("*")
           .eq("radar_id", radarId)
           .order("last_seen_at", { ascending: false })
-          .limit(40),
+          .limit(100),
         supabase
           .from("finding_changes")
           .select("*")
           .eq("radar_id", radarId)
           .order("changed_at", { ascending: false })
           .limit(25),
+        supabase.from("finding_verifications").select("*").eq("radar_id", radarId),
       ]);
       if (radar.error) throw radar.error;
       return {
@@ -103,9 +105,11 @@ function RadarDetail() {
         decisions: decisions.data ?? [],
         findings: findings.data ?? [],
         changes: changes.data ?? [],
+        verifications: verifications.data ?? [],
       };
     },
   });
+
 
   const sweep = useMutation({
     mutationFn: async () => run({ data: { radarId } }),
