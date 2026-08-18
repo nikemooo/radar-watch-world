@@ -69,7 +69,7 @@ export function harvestLinks(doc: SearchDocument): string[] {
   for (const match of doc.snippet.matchAll(/https?:\/\/[^\s)"'<>\]]+/g)) {
     found.add(match[0].replace(/[.,;]+$/, ""));
   }
-  return Array.from(found).slice(0, 120);
+  return Array.from(found).slice(0, 250);
 }
 
 export interface DiscoveryResult {
@@ -123,7 +123,10 @@ ${doc.snippet.slice(0, 8000)}`;
       "individual=true only when the candidate is one concrete item/listing/entity rather than a category, filter or navigation link. " +
       "likelihood is 0-1 that a real individual item page exists behind the candidate. " +
       "relevance is 0-1 for how well the visible information matches the monitoring criteria; do not filter items out, just score them. " +
-      "clue is a short verbatim fragment from the page (price, reference, address, year) or null. Never invent facts.",
+      "clue is a short verbatim fragment from the page (price, reference, address, year) or null. Never invent facts. " +
+      "NEVER skip an item because the page is in another language, uses local number/date formats, or has no publication date — " +
+      "emit it and let later layers decide. When a repeating item link pattern is listed, prefer those URLs for individual items; " +
+      "when the text shows an item you cannot match to a URL, still emit it with url set to null.",
     user: `Monitoring criteria (for relevance scoring only):
 ${criteria}
 
