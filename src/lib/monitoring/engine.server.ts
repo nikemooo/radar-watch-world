@@ -428,7 +428,7 @@ export async function runRadarCycle(
     history: buildHistory(priorFindings ?? [], priorHosts ?? []),
   };
   const priorityOf = (host: string) => hostPriority(host, priorityContext).score;
-  let geoResolved = 0;
+  const geoResolvedUrls = new Set<string>();
   if (markets.length > 0) {
     console.info(
       `[radar:geo] ${radar.id} required market(s): ${markets.map((m) => m.name).join(", ")}`,
@@ -788,7 +788,7 @@ export async function runRadarCycle(
             );
             if (geoAttribute) {
               enriched.attributes[COUNTRY_ATTRIBUTE] = geoAttribute;
-              geoResolved += 1;
+              geoResolvedUrls.add(page.url);
             }
             deterministic.set(page.url, enriched.attributes);
             evidenceMergeCount += enriched.telemetry.mergeCount;
@@ -831,7 +831,11 @@ export async function runRadarCycle(
             const ai = aiByUrl.get(page.url);
             const { merged, merges } = mergeAttributeMaps(base, ai?.attributes ?? {});
             evidenceMergeCount += merges;
-            const extracted = Object.values(merged).filter((a) => a.confidence !== "unknown").length;
+            // The synthetic country attribute is evidence, not part of the
+            // radar's declared schema, so it never skews coverage counters.
+            const extracted = Object.values(merged).filter(
+              (a) => a.key !== COUNTRY_ATTRIBUTE && a.confidence !== "unknown",
+            ).length;
             attributesVerified += Object.values(merged).filter(
               (a) => a.confidence === "structured" || a.confidence === "stated",
             ).length;
@@ -1052,7 +1056,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
       const geoAttribute = countryAttribute(inferMarket({ url: item.url }));
       if (geoAttribute) {
         attributes[COUNTRY_ATTRIBUTE] = geoAttribute;
-        geoResolved += 1;
+        geoResolvedUrls.add(item.url);
       }
     }
     const verdict = evaluateCriteria(
@@ -1074,7 +1078,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
   }
   if (markets.length > 0) {
     console.info(
-      `[radar:geo] market established for ${geoResolved}/${items.length} item(s) from explicit evidence`,
+      `[radar:geo] market established for ${items.filter((i) => geoResolvedUrls.has(i.url)).length}/${items.length} item(s) from explicit evidence`,
     );
   }
 
