@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Loader2, Pause, Play, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Pause, Pencil, Play, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { listRadarSources, runRadarNow } from "@/lib/radar.functions";
@@ -21,6 +21,7 @@ import { asConfig, frequencyLabel, recencyPresets, type RadarFrequency } from "@
 import { track } from "@/lib/analytics";
 import { ListingRail, snapshotOf, type FindingLike } from "@/components/listing-card";
 import { VerifyDialog } from "@/components/verify-dialog";
+import { EditCriteriaDialog } from "@/components/edit-criteria-dialog";
 import {
   effectiveVerdict,
   imageObservationsOf,
@@ -45,6 +46,7 @@ function RadarDetail() {
   const { radarId } = Route.useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [editOpen, setEditOpen] = useState(false);
   const run = useServerFn(runRadarNow);
   const reverify = useServerFn(reverifyRadar);
   const fetchSources = useServerFn(listRadarSources);
@@ -345,6 +347,17 @@ function RadarDetail() {
           </div>
         </section>
       )}
+
+      <EditCriteriaDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        radarId={radarId}
+        initialName={radar.name}
+        initialFrequency={radar.frequency as RadarFrequency}
+        initialRecencyDays={radar.recency_days ?? 30}
+        config={config}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ["radar", radarId] })}
+      />
 
       <VerifyDialog
         findings={unverified}
