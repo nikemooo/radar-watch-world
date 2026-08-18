@@ -471,6 +471,13 @@ export async function runRadarCycle(
   const tracker: RunTracker = options.tracker ?? startRunHeartbeat(db, runId);
   const phase = (name: RunPhase, patch?: Database["public"]["Tables"]["monitor_runs"]["Update"]) =>
     tracker.phase(name, patch);
+  const seenPhases = new Set<string>();
+  /** Phase transition from inside a loop: written once, not per item. */
+  const phaseOnce = async (name: RunPhase) => {
+    if (seenPhases.has(name)) return;
+    seenPhases.add(name);
+    await phase(name);
+  };
   const patchRun = async (patch: Database["public"]["Tables"]["monitor_runs"]["Update"]) => {
     if (!runId) return;
     await db
@@ -977,7 +984,7 @@ export async function runRadarCycle(
           let aiFailures: { url: string; reason: string }[] = [];
           if (augmented.length > 0) {
             extractionAiCalls += 1;
-            await phase("extracting_attributes");
+            await phaseOnce("extracting_attributes");
             const extracted = await extractDetailAttributes(augmented, specs, criteria);
             aiDetails = extracted.details;
             aiFailures = extracted.failures;
