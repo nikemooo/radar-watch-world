@@ -1128,6 +1128,11 @@ ${eligible
   await finishRun({
     status: failed ? "failed" : "completed",
     run_type: runType,
+    scan_phase: scanPhase,
+    matching_listings: items.length,
+    duplicates_removed: research.duplicatesRemoved,
+    blocked_pages: detailFetchesFailed,
+    monitoring_transition: isBaseline && !failed,
     items_found: items.length,
     new_items: changed.length,
     alerts_created: alertsCreated,
@@ -1169,7 +1174,14 @@ ${eligible
     if (isBaseline) {
       radarPatch.baseline_completed = true;
       radarPatch.baseline_completed_at = now;
+      // Phase 1 -> Phase 2: the inventory exists, so monitoring starts now.
+      radarPatch.scan_state = "MONITORING";
+      radarPatch.initial_scan_completed_at = now;
+      radarPatch.initial_listings_count = items.length;
     }
+  } else if (isBaseline) {
+    // A failed initial scan must be retried, never treated as an inventory.
+    radarPatch.scan_state = "initial_scan_pending";
   }
   await db.from("radars").update(radarPatch).eq("id", radar.id);
 
@@ -1177,8 +1189,9 @@ ${eligible
     status: failed ? "error" : "ok",
     runType,
     message: isBaseline
-      ? `Baseline snapshot complete — ${items.length} findings recorded. Future sweeps will alert only on genuinely new or changed information.`
+      ? `Initial market scan complete — ${items.length} matching listings found right now. Radar is now monitoring the market for new listings and changes.`
       : undefined,
+
     itemsFound: items.length,
     newItems: changed.length,
     alertsCreated,
