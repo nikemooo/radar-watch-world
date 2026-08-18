@@ -190,5 +190,13 @@ export function nextPageByParam(pageUrl: string): string | null {
       return u.toString();
     }
   }
+  // Many marketplaces render their pager client-side, so no next link exists in
+  // the served markup. Trying the conventional ?page=2 is safe: a site that
+  // does not use it simply serves page one again, and the caller stops because
+  // no unseen item URLs appear.
+  if (u.searchParams.toString().length > 0 || u.pathname.length > 1) {
+    u.searchParams.set("page", "2");
+    return u.toString();
+  }
   return null;
 }
