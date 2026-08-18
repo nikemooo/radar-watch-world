@@ -387,6 +387,7 @@ export type Database = {
           baselines_backfilled: number
           baselines_computed: number
           baselines_insufficient: number
+          blocked_pages: number
           candidates_discovered: number
           candidates_selected: number
           comparable_coverage: number
@@ -399,6 +400,7 @@ export type Database = {
           detail_fetches_failed: number
           detail_fetches_ok: number
           detail_fetches_skipped_backoff: number
+          duplicates_removed: number
           error: string | null
           extractions_failed: number
           extractions_ok: number
@@ -407,10 +409,13 @@ export type Database = {
           incremental_findings: number
           items_found: number
           items_merged: number
+          matching_listings: number
+          monitoring_transition: boolean
           new_items: number
           provider: string | null
           radar_id: string
           run_type: string
+          scan_phase: string
           search_failures: number
           search_requests: number
           search_successes: number
@@ -432,6 +437,7 @@ export type Database = {
           baselines_backfilled?: number
           baselines_computed?: number
           baselines_insufficient?: number
+          blocked_pages?: number
           candidates_discovered?: number
           candidates_selected?: number
           comparable_coverage?: number
@@ -444,6 +450,7 @@ export type Database = {
           detail_fetches_failed?: number
           detail_fetches_ok?: number
           detail_fetches_skipped_backoff?: number
+          duplicates_removed?: number
           error?: string | null
           extractions_failed?: number
           extractions_ok?: number
@@ -452,10 +459,13 @@ export type Database = {
           incremental_findings?: number
           items_found?: number
           items_merged?: number
+          matching_listings?: number
+          monitoring_transition?: boolean
           new_items?: number
           provider?: string | null
           radar_id: string
           run_type?: string
+          scan_phase?: string
           search_failures?: number
           search_requests?: number
           search_successes?: number
@@ -477,6 +487,7 @@ export type Database = {
           baselines_backfilled?: number
           baselines_computed?: number
           baselines_insufficient?: number
+          blocked_pages?: number
           candidates_discovered?: number
           candidates_selected?: number
           comparable_coverage?: number
@@ -489,6 +500,7 @@ export type Database = {
           detail_fetches_failed?: number
           detail_fetches_ok?: number
           detail_fetches_skipped_backoff?: number
+          duplicates_removed?: number
           error?: string | null
           extractions_failed?: number
           extractions_ok?: number
@@ -497,10 +509,13 @@ export type Database = {
           incremental_findings?: number
           items_found?: number
           items_merged?: number
+          matching_listings?: number
+          monitoring_transition?: boolean
           new_items?: number
           provider?: string | null
           radar_id?: string
           run_type?: string
+          scan_phase?: string
           search_failures?: number
           search_requests?: number
           search_successes?: number
@@ -710,6 +725,9 @@ export type Database = {
           created_at: string
           frequency: string
           id: string
+          initial_listings_count: number
+          initial_scan_completed_at: string | null
+          initial_scan_started_at: string | null
           is_test: boolean
           last_run_at: string | null
           last_successful_sweep_at: string | null
@@ -723,6 +741,7 @@ export type Database = {
           raw_request: string
           recency_days: number
           recency_source: string
+          scan_state: string
           status: string
           updated_at: string
           user_id: string
@@ -736,6 +755,9 @@ export type Database = {
           created_at?: string
           frequency?: string
           id?: string
+          initial_listings_count?: number
+          initial_scan_completed_at?: string | null
+          initial_scan_started_at?: string | null
           is_test?: boolean
           last_run_at?: string | null
           last_successful_sweep_at?: string | null
@@ -749,6 +771,7 @@ export type Database = {
           raw_request: string
           recency_days?: number
           recency_source?: string
+          scan_state?: string
           status?: string
           updated_at?: string
           user_id: string
@@ -762,6 +785,9 @@ export type Database = {
           created_at?: string
           frequency?: string
           id?: string
+          initial_listings_count?: number
+          initial_scan_completed_at?: string | null
+          initial_scan_started_at?: string | null
           is_test?: boolean
           last_run_at?: string | null
           last_successful_sweep_at?: string | null
@@ -775,6 +801,7 @@ export type Database = {
           raw_request?: string
           recency_days?: number
           recency_source?: string
+          scan_state?: string
           status?: string
           updated_at?: string
           user_id?: string

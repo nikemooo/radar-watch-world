@@ -24,8 +24,9 @@ export function BaselinePanel({ baseline }: { baseline: unknown }) {
   if (b.status !== "computed" || !b.stats) {
     return (
       <div className="mt-3 rounded-md border border-dashed border-border p-3">
-        <p className="mono-label">Market baseline</p>
+        <p className="mono-label">Insufficient comparable data</p>
         <p className="mt-1 text-sm text-muted-foreground">{NO_BASELINE_PHRASE}</p>
+
         {b.limitations?.length > 0 && (
           <p className="mt-1 text-xs text-muted-foreground">{b.limitations.join(" · ")}</p>
         )}
@@ -34,10 +35,22 @@ export function BaselinePanel({ baseline }: { baseline: unknown }) {
   }
 
   const below = (b.difference ?? 0) < 0;
+  const pct = b.differencePct ?? 0;
+  const classification =
+    Math.abs(pct) < 5 ? "around market value" : pct < 0 ? "under market value" : "over market value";
   return (
     <div className="mt-3 rounded-md border border-border p-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="mono-label">Market baseline</p>
+        <span
+          className={
+            classification === "under market value"
+              ? "text-interesting text-sm"
+              : "text-sm text-muted-foreground"
+          }
+        >
+          {classification}
+        </span>
         <span className={below ? "text-interesting text-sm" : "text-sm text-muted-foreground"}>
           {b.differencePct === null
             ? "at median"
@@ -48,9 +61,9 @@ export function BaselinePanel({ baseline }: { baseline: unknown }) {
       </div>
 
       <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
-        <Row label="Observations" value={String(b.stats.count)} />
-        <Row label="Median" value={num(b.stats.median, b.currency)} />
-        <Row label="This item" value={b.value === null ? "—" : num(b.value, b.currency)} />
+        <Row label="Current price" value={b.value === null ? "—" : num(b.value, b.currency)} />
+        <Row label="Market value (median)" value={num(b.stats.median, b.currency)} />
+        <Row label="Comparable observations" value={String(b.stats.count)} />
         <Row label="Difference" value={b.difference === null ? "—" : `${below ? "−" : "+"}${num(Math.abs(b.difference), b.currency)}`} />
         <Row label="P10–P90" value={`${num(b.stats.p10, b.currency)} – ${num(b.stats.p90, b.currency)}`} />
         <Row label="Range" value={`${num(b.stats.min, b.currency)} – ${num(b.stats.max, b.currency)}`} />
@@ -58,6 +71,29 @@ export function BaselinePanel({ baseline }: { baseline: unknown }) {
         {b.opportunityScore !== null && <Row label="Opportunity" value={b.opportunityScore.toFixed(2)} />}
         {b.stats.stddev !== null && <Row label="Std dev" value={num(b.stats.stddev, b.currency)} />}
       </dl>
+
+      {b.sample?.length > 0 && (
+        <details className="mt-2">
+          <summary className="mono-label cursor-pointer">
+            Comparable listings used ({b.sample.length})
+          </summary>
+          <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+            {b.sample.map((c) => (
+              <li key={c.fingerprint} className="flex flex-wrap gap-x-2">
+                {c.url ? (
+                  <a href={c.url} target="_blank" rel="noreferrer noopener" className="underline">
+                    {c.title}
+                  </a>
+                ) : (
+                  <span>{c.title}</span>
+                )}
+                <span>{num(c.value, b.currency)}</span>
+                <span className="mono-label">similarity {(c.similarity * 100).toFixed(0)}%</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {b.comparedOn?.length > 0 && (
         <p className="mt-2 text-xs text-muted-foreground">
@@ -67,6 +103,7 @@ export function BaselinePanel({ baseline }: { baseline: unknown }) {
       {b.limitations?.length > 0 && (
         <p className="mt-1 text-xs text-muted-foreground">Limitations: {b.limitations.join(" · ")}</p>
       )}
+
     </div>
   );
 }

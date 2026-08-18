@@ -108,11 +108,12 @@ function RadarDetail() {
         const created = r?.alertsCreated ?? 0;
         toast.success(
           r?.runType === "baseline"
-            ? `Baseline recorded — ${r.itemsFound ?? 0} findings saved as history, no alerts.`
+            ? `Initial market scan complete — ${r.itemsFound ?? 0} matching listings found. Radar is now monitoring.`
             : created > 0
               ? `${created} new alert${created > 1 ? "s" : ""}.`
               : "Sweep complete — nothing new.",
         );
+
       }
       queryClient.invalidateQueries({ queryKey: ["radar", radarId] });
       queryClient.invalidateQueries({ queryKey: ["alerts"] });
@@ -235,13 +236,20 @@ function RadarDetail() {
 
       <section className="panel flex flex-wrap items-center gap-x-6 gap-y-2 p-4 text-sm">
         <span className="mono-label">
-          {radar.baseline_completed ? "Baseline complete" : "Baseline pending"}
+          {radar.scan_state === "MONITORING"
+            ? "Monitoring"
+            : radar.scan_state === "INITIAL_SCAN_RUNNING"
+              ? "Initial market scan running"
+              : "Initial market scan pending"}
         </span>
         <span className="text-muted-foreground">
-          {radar.baseline_completed
-            ? "Only genuinely new or changed information is alerted."
-            : "The first sweep records a snapshot without alerting."}
+          {radar.scan_state === "MONITORING"
+            ? `Found ${radar.initial_listings_count || data.findings.length} matching listings right now. Radar is now monitoring the market for new listings and changes.`
+            : radar.scan_state === "INITIAL_SCAN_RUNNING"
+              ? "Scanning live sources for every matching listing available right now — this can take a few minutes."
+              : "The first run scans the market and lists everything available right now, without alerting."}
         </span>
+
         <span className="ml-auto text-muted-foreground">
           Window: last {radar.recency_days} days ·{" "}
           {radar.last_successful_sweep_at
@@ -341,9 +349,13 @@ function RadarDetail() {
 
       {data.findings.length > 0 && (
         <section>
-          <h2 className="text-lg font-medium">Tracked items</h2>
+          <h2 className="text-lg font-medium">
+            Current market inventory — found {data.findings.length} matching listings right now
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Item-level data read from individual pages. Only values the source states are shown as facts.
+            {radar.scan_state === "MONITORING"
+              ? "Radar is now monitoring the market for new listings and changes. Only values the source states are shown as facts."
+              : "Item-level data read from individual pages. Only values the source states are shown as facts."}
           </p>
           <ul className="panel mt-4 divide-y divide-border">
             {data.findings.map((f) => {
@@ -361,6 +373,12 @@ function RadarDetail() {
                     >
                       {f.title}
                     </a>
+                    {f.numeric_value !== null && (
+                      <span className="text-sm font-medium">
+                        {Math.round(Number(f.numeric_value)).toLocaleString("en-US")}
+                        {f.currency ? ` ${f.currency}` : ""}
+                      </span>
+                    )}
                     <span className="mono-label">
                       {f.detail_status === "fetched"
                         ? "detail page read"
@@ -370,6 +388,7 @@ function RadarDetail() {
                     </span>
                     {f.availability && <span className="mono-label">{f.availability}</span>}
                   </div>
+
                   {attributes.length > 0 ? (
                     <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
                       {attributes.map((a) => (

@@ -346,6 +346,15 @@ export async function runRadarCycle(
     };
   }
 
+  // Phase 1 (initial market scan) vs phase 2 (continuous monitoring).
+  const scanPhase: "initial_scan" | "monitoring" = isBaseline ? "initial_scan" : "monitoring";
+  if (isBaseline) {
+    await db
+      .from("radars")
+      .update({ scan_state: "INITIAL_SCAN_RUNNING", initial_scan_started_at: started })
+      .eq("id", radar.id);
+  }
+
   // Every retrieved source is persisted verbatim so alerts stay verifiable.
   const { data: runRow } = await db
     .from("monitor_runs")
@@ -354,6 +363,7 @@ export async function runRadarCycle(
       user_id: radar.user_id,
       status: "running",
       run_type: runType,
+      scan_phase: scanPhase,
       provider: research.provider,
       started_at: started,
       search_requests: research.requests,
@@ -365,6 +375,7 @@ export async function runRadarCycle(
     .select("id")
     .maybeSingle();
   const runId = runRow?.id ?? null;
+
 
   if (research.documents.length > 0) {
     await db.from("research_sources").insert(
@@ -415,7 +426,10 @@ export async function runRadarCycle(
 
   const valueKey = valueAttributeKey(specs);
   const minComparables = Math.max(2, Number(radar.min_comparables ?? 10));
-  const costCeiling = Math.max(0.005, Number(radar.max_sweep_cost ?? 0.06));
+  // The initial market scan is meant to be comprehensive, so it may spend more
+  // of the radar's budget than a routine monitoring sweep — still hard-capped.
+  const costCeiling = Math.max(0.005, Number(radar.max_sweep_cost ?? 0.06)) * (isBaseline ? 2 : 1);
+
 
   // Persisted state is loaded BEFORE the detail stage so the fetch policy can
   // aim the budget at items that actually improve comparable coverage.
@@ -505,9 +519,11 @@ export async function runRadarCycle(
       const fetchable = candidates.filter((c) => c.url && c.individual).length;
       const budgetPlan = adaptiveBudget({
         configured: Math.min(
-          Number(radar.max_detail_fetches ?? 8),
-          options.maxDetailFetches ?? Number.MAX_SAFE_INTEGER,
+          // Phase 1 aims for full inventory coverage rather than the first few results.
+          Number(radar.max_detail_fetches ?? 8) * (isBaseline ? 2 : 1),
+          (options.maxDetailFetches ?? Number.MAX_SAFE_INTEGER) * (isBaseline ? 2 : 1),
         ),
+
         frequency: radar.frequency,
         comparableGap: specs.length > 0 ? comparableGap : 0,
         fetchableCandidates: fetchable,
@@ -618,8 +634,15 @@ export async function runRadarCycle(
       error: failedAll ? research.errors.join(" | ").slice(0, 800) : null,
       finished_at: new Date().toISOString(),
     });
-    // A failed baseline is never marked complete — it must be retried.
-    await db.from("radars").update({ last_run_at: new Date().toISOString() }).eq("id", radar.id);
+    // A failed initial scan is never marked complete — it must be retried.
+    await db
+      .from("radars")
+      .update({
+        last_run_at: new Date().toISOString(),
+        ...(isBaseline ? { scan_state: "initial_scan_pending" } : {}),
+      })
+      .eq("id", radar.id);
+
     return {
       status: failedAll ? "error" : "ok",
       runType,
@@ -1112,6 +1135,11 @@ ${eligible
   await finishRun({
     status: failed ? "failed" : "completed",
     run_type: runType,
+    scan_phase: scanPhase,
+    matching_listings: items.length,
+    duplicates_removed: research.duplicatesRemoved,
+    blocked_pages: detailFetchesFailed,
+    monitoring_transition: isBaseline && !failed,
     items_found: items.length,
     new_items: changed.length,
     alerts_created: alertsCreated,
@@ -1153,7 +1181,14 @@ ${eligible
     if (isBaseline) {
       radarPatch.baseline_completed = true;
       radarPatch.baseline_completed_at = now;
+      // Phase 1 -> Phase 2: the inventory exists, so monitoring starts now.
+      radarPatch.scan_state = "MONITORING";
+      radarPatch.initial_scan_completed_at = now;
+      radarPatch.initial_listings_count = items.length;
     }
+  } else if (isBaseline) {
+    // A failed initial scan must be retried, never treated as an inventory.
+    radarPatch.scan_state = "initial_scan_pending";
   }
   await db.from("radars").update(radarPatch).eq("id", radar.id);
 
@@ -1161,8 +1196,9 @@ ${eligible
     status: failed ? "error" : "ok",
     runType,
     message: isBaseline
-      ? `Baseline snapshot complete — ${items.length} findings recorded. Future sweeps will alert only on genuinely new or changed information.`
+      ? `Initial market scan complete — ${items.length} matching listings found right now. Radar is now monitoring the market for new listings and changes.`
       : undefined,
+
     itemsFound: items.length,
     newItems: changed.length,
     alertsCreated,
