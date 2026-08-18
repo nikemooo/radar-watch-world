@@ -381,6 +381,7 @@ export type Database = {
       monitor_runs: {
         Row: {
           alerts_created: number
+          ambiguous_price_joins: number
           attributes_extracted: number
           attributes_missing: number
           baseline_findings: number
@@ -407,6 +408,9 @@ export type Database = {
           finished_at: string | null
           id: string
           incremental_findings: number
+          index_pages_expanded: number
+          index_pages_fetched: number
+          index_prices_joined: number
           items_found: number
           items_merged: number
           matching_listings: number
@@ -426,11 +430,13 @@ export type Database = {
           suppressed_duplicate: number
           suppressed_recency: number
           suppressed_relevance: number
+          unknown_prices: number
           usable_comparables: number
           user_id: string
         }
         Insert: {
           alerts_created?: number
+          ambiguous_price_joins?: number
           attributes_extracted?: number
           attributes_missing?: number
           baseline_findings?: number
@@ -457,6 +463,9 @@ export type Database = {
           finished_at?: string | null
           id?: string
           incremental_findings?: number
+          index_pages_expanded?: number
+          index_pages_fetched?: number
+          index_prices_joined?: number
           items_found?: number
           items_merged?: number
           matching_listings?: number
@@ -476,11 +485,13 @@ export type Database = {
           suppressed_duplicate?: number
           suppressed_recency?: number
           suppressed_relevance?: number
+          unknown_prices?: number
           usable_comparables?: number
           user_id: string
         }
         Update: {
           alerts_created?: number
+          ambiguous_price_joins?: number
           attributes_extracted?: number
           attributes_missing?: number
           baseline_findings?: number
@@ -507,6 +518,9 @@ export type Database = {
           finished_at?: string | null
           id?: string
           incremental_findings?: number
+          index_pages_expanded?: number
+          index_pages_fetched?: number
+          index_prices_joined?: number
           items_found?: number
           items_merged?: number
           matching_listings?: number
@@ -526,6 +540,7 @@ export type Database = {
           suppressed_duplicate?: number
           suppressed_recency?: number
           suppressed_relevance?: number
+          unknown_prices?: number
           usable_comparables?: number
           user_id?: string
         }
