@@ -1649,9 +1649,20 @@ ${eligible
                   .filter((a) => a.confidence === "unknown")
                   .map((a) => a.key)
               : [],
+            // Link honesty: the UI must not present a generic page as "the advert".
+            link_status:
+              linkByUrl.get(item.url)?.status ??
+              (prev?.snapshot as { link_status?: string } | null)?.link_status ??
+              (looksLikeItemUrl(item.url) ? "direct" : "unverified"),
+            canonical_url:
+              linkByUrl.get(item.url)?.canonical ??
+              (prev?.snapshot as { canonical_url?: string } | null)?.canonical_url ??
+              null,
+            requested_url: item.url,
           } as never,
           attributes: (attrs ?? {}) as never,
-          primary_url: detail ? item.url : (prev?.primary_url ?? null),
+          primary_url:
+            linkByUrl.get(item.url)?.url ?? (detail ? item.url : (prev?.primary_url ?? null)),
           discovery_url: discoveryUrl,
           secondary_sources: secondary as never,
           detail_status: detail
