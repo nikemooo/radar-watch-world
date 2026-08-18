@@ -101,6 +101,39 @@ function flattenJsonLd(node: unknown, out: Record<string, string>, depth = 0): v
 }
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|avif)(\?|$)/i;
+/** Non-content imagery every site ships: chrome, not the item itself. */
+const IMAGE_NOISE =
+  /(sprite|logo|icon|favicon|avatar|placeholder|spacer|pixel|tracking|badge|banner|1x1|blank|loading|default[-_]?image)/i;
+/** CDN image endpoints frequently carry no file extension at all. */
+const IMAGE_HINT = /(\/image|\/images|\/img|\/media|\/photos?|\/pictures?|format=|resize|w=\d{3}|width=\d{3})/i;
+
+/**
+ * Pick the largest entry of a srcset ("url 320w, url 1200w"), or return a plain
+ * src unchanged. Larger renditions are the listing photo; the smallest is often
+ * a thumbnail placeholder.
+ */
+export function largestSrcCandidate(raw: string): string {
+  const parts = raw
+    .split(/\s*,\s*/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const [url, size] = p.split(/\s+/);
+      const width = size ? Number(size.replace(/[^\d]/g, "")) : 0;
+      return { url: url ?? "", width: Number.isFinite(width) ? width : 0 };
+    })
+    .filter((p) => p.url);
+  if (parts.length === 0) return raw.trim();
+  return parts.sort((a, b) => b.width - a.width)[0]!.url;
+}
+
+/** True when a resolved URL plausibly points at real item imagery. */
+export function isLikelyContentImage(url: string): boolean {
+  if (/^data:/i.test(url)) return false;
+  if (/\.svg(\?|$)/i.test(url)) return false;
+  if (IMAGE_NOISE.test(url)) return false;
+  return IMAGE_EXT.test(url) || IMAGE_HINT.test(url) || /image/i.test(url);
+}
 
 /**
  * Read every structured signal a served HTML page exposes. Nothing here is
@@ -141,25 +174,38 @@ export function parseStructured(html: string, pageUrl: string): StructuredSignal
     return href ? absolute(href, pageUrl) : null;
   })();
 
-  // Images: OpenGraph, JSON-LD, then real <img> sources (incl. lazy attrs).
+  // Images: OpenGraph, JSON-LD, embedded JSON galleries, then real <img>
+  // sources (including lazy-loading attributes and srcset renditions).
   const pushImage = (raw: string | undefined | null) => {
     if (!raw) return;
-    const first = raw.split(/\s*,\s*/)[0]!.split(/\s+/)[0]!;
-    const abs = absolute(first, pageUrl);
+    const candidate = largestSrcCandidate(raw);
+    const abs = absolute(candidate, pageUrl);
     if (!abs || images.includes(abs)) return;
-    if (!IMAGE_EXT.test(abs) && !/image/i.test(abs)) return;
+    if (!isLikelyContentImage(abs)) return;
     images.push(abs);
   };
   pushImage(og["image"]);
   pushImage(og["image:secure_url"]);
   pushImage(meta["twitter:image"]);
   pushImage(jsonld["image"] ?? jsonld["contenturl"] ?? jsonld["thumbnailurl"]);
+  // Client-rendered marketplaces ship their gallery as JSON in the page.
+  for (const m of html.matchAll(/"(?:image|imageUrl|imageUrls|images|photos|media)"\s*:\s*(\[[^\]]{0,4000}\]|"[^"]{8,600}")/gi)) {
+    const blob = m[1]!.replace(/\\\//g, "/");
+    for (const u of blob.matchAll(/https?:\/\/[^"',\s\\]{8,600}/gi)) {
+      pushImage(u[0]!);
+      if (images.length >= 12) break;
+    }
+    if (images.length >= 12) break;
+  }
   for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
     const tag = m[0];
     const src =
+      tag.match(/\bsrcset\s*=\s*["']([^"']+)["']/i)?.[1] ??
+      tag.match(/\bdata-srcset\s*=\s*["']([^"']+)["']/i)?.[1] ??
       tag.match(/\bsrc\s*=\s*["']([^"']+)["']/i)?.[1] ??
       tag.match(/\bdata-src\s*=\s*["']([^"']+)["']/i)?.[1] ??
-      tag.match(/\bsrcset\s*=\s*["']([^"']+)["']/i)?.[1];
+      tag.match(/\bdata-lazy(?:-src)?\s*=\s*["']([^"']+)["']/i)?.[1] ??
+      tag.match(/\bdata-original\s*=\s*["']([^"']+)["']/i)?.[1];
     pushImage(src);
     const alt = tag.match(/\balt\s*=\s*["']([^"']+)["']/i)?.[1];
     if (alt) {

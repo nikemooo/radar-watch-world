@@ -460,6 +460,8 @@ export type Database = {
           detail_fetches_failed: number
           detail_fetches_ok: number
           detail_fetches_skipped_backoff: number
+          direct_links_unverified: number
+          direct_links_verified: number
           discovered_listings: number
           duplicates_removed: number
           error: string | null
@@ -542,6 +544,8 @@ export type Database = {
           detail_fetches_failed?: number
           detail_fetches_ok?: number
           detail_fetches_skipped_backoff?: number
+          direct_links_unverified?: number
+          direct_links_verified?: number
           discovered_listings?: number
           duplicates_removed?: number
           error?: string | null
@@ -624,6 +628,8 @@ export type Database = {
           detail_fetches_failed?: number
           detail_fetches_ok?: number
           detail_fetches_skipped_backoff?: number
+          direct_links_unverified?: number
+          direct_links_verified?: number
           discovered_listings?: number
           duplicates_removed?: number
           error?: string | null

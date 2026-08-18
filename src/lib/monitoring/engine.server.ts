@@ -26,6 +26,8 @@ import { reapStaleRuns, releaseRadar } from "./reaper.server";
 
 import { discoverCandidates, type CandidateItem } from "./candidates.server";
 import { fetchDetailPages } from "../search/detail-fetch.server";
+import { resolveListingUrl, type ResolvedListingUrl } from "../search/listing-url";
+import { looksLikeItemUrl } from "../search/url-shape";
 import {
   asAttributeMap,
   diffAttributes,
@@ -735,6 +737,9 @@ export async function runRadarCycle(
   let detailFetchBudget = 0;
   let budgetReason = "detail stage not reached";
   const imageByUrl = new Map<string, { url: string; source: string; images: string[] }>();
+  /** Verified direct listing URL per requested candidate URL. */
+  const linkByUrl = new Map<string, ResolvedListingUrl>();
+  let directLinksVerified = 0;
   let extractionAttempted = 0;
   let extractionAiCalls = 0;
   let jsonldFound = 0;
@@ -831,6 +836,15 @@ export async function runRadarCycle(
             });
             imagesFound += images.length || 1;
           }
+          // Direct listing URL: canonical > served URL > requested URL, and
+          // only ever labelled "direct" when the URL addresses one item.
+          const link = resolveListingUrl({
+            requestedUrl: p.url,
+            finalUrl: p.final_url,
+            canonical: p.structured?.canonical ?? null,
+          });
+          linkByUrl.set(p.url, link);
+          if (link.status === "direct") directLinksVerified += 1;
         }
         detailFetchesOk = fetched.pages.length;
         detailFetchesFailed = fetched.failures.length;
@@ -1636,9 +1650,20 @@ ${eligible
                   .filter((a) => a.confidence === "unknown")
                   .map((a) => a.key)
               : [],
+            // Link honesty: the UI must not present a generic page as "the advert".
+            link_status:
+              linkByUrl.get(item.url)?.status ??
+              (prev?.snapshot as { link_status?: string } | null)?.link_status ??
+              (looksLikeItemUrl(item.url) ? "direct" : "unverified"),
+            canonical_url:
+              linkByUrl.get(item.url)?.canonical ??
+              (prev?.snapshot as { canonical_url?: string } | null)?.canonical_url ??
+              null,
+            requested_url: item.url,
           } as never,
           attributes: (attrs ?? {}) as never,
-          primary_url: detail ? item.url : (prev?.primary_url ?? null),
+          primary_url:
+            linkByUrl.get(item.url)?.url ?? (detail ? item.url : (prev?.primary_url ?? null)),
           discovery_url: discoveryUrl,
           secondary_sources: secondary as never,
           detail_status: detail
@@ -1755,6 +1780,8 @@ ${eligible
     attributes_verified: attributesVerified,
     images_found: imagesFound,
     images_persisted: imageByUrl.size,
+    direct_links_verified: directLinksVerified,
+    direct_links_unverified: Math.max(0, linkByUrl.size - directLinksVerified),
     jsonld_found: jsonldFound,
     og_data_found: ogDataFound,
     evidence_merge_count: evidenceMergeCount,

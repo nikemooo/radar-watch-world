@@ -43,6 +43,9 @@ export interface FindingSnapshot {
   missing_attributes?: string[];
   criteria?: { label?: string; ok?: boolean | null; reason?: string }[];
   image_evidence?: unknown;
+  /** "direct" when the stored URL provably addresses the advert itself. */
+  link_status?: "direct" | "unverified";
+  canonical_url?: string | null;
 }
 
 export function snapshotOf(value: unknown): FindingSnapshot {
@@ -109,6 +112,8 @@ export function ListingCard({
   const snapshot = snapshotOf(finding.snapshot);
   const attributes = attributesOf(finding.attributes);
   const link = finding.primary_url ?? finding.url;
+  // Only claim "Öppna annons" when the pipeline proved the URL is the advert.
+  const directLink = snapshot.link_status ? snapshot.link_status === "direct" : !!finding.primary_url;
   const market = marketVerdict(finding.baseline);
   const price = money(finding.numeric_value, finding.currency);
   const image = snapshot.image ?? snapshot.images?.[0] ?? null;
@@ -206,9 +211,10 @@ export function ListingCard({
               href={link}
               target="_blank"
               rel="noreferrer noopener"
+              title={directLink ? undefined : "Direktlänken till annonsen kunde inte verifieras"}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted/60"
             >
-              Öppna annons
+              {directLink ? "Öppna annons" : "Öppna källa"}
               <ExternalLink className="size-3.5" aria-hidden />
             </a>
           )}
