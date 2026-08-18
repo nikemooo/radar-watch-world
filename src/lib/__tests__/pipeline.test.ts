@@ -383,3 +383,37 @@ describe("source priority", () => {
     expect(picked).toHaveLength(0);
   });
 });
+
+describe("availability", () => {
+  it("only marks a listing removed when the source proves it", async () => {
+    const { removedListings, reasonProvesRemoved, availabilityFromStructured } = await import(
+      "../monitoring/availability"
+    );
+    expect(reasonProvesRemoved("HTTP 404")).toBe(true);
+    expect(reasonProvesRemoved("timeout")).toBe(false);
+    expect(availabilityFromStructured("https://schema.org/SoldOut")).toBe("removed");
+    expect(availabilityFromStructured("InStock")).toBe("available");
+    expect(availabilityFromStructured(null)).toBe("unknown");
+
+    const gone = removedListings(
+      [
+        { url: "https://a.se/annons/1", reason: "HTTP 410 Gone" },
+        { url: "https://a.se/annons/2", reason: "network timeout" },
+        { url: "https://a.se/annons/3", reason: "HTTP 404" },
+      ],
+      ["https://a.se/annons/1", "https://a.se/annons/2"],
+    );
+    expect(gone.map((g) => g.url)).toEqual(["https://a.se/annons/1"]);
+  });
+});
+
+describe("direct listing urls", () => {
+  it("separates item pages from search and category pages", async () => {
+    const { looksLikeItemUrl } = await import("../search/url-shape");
+    expect(looksLikeItemUrl("https://www.blocket.se/annons/bmw-m340i/12345678")).toBe(true);
+    expect(looksLikeItemUrl("https://shop.example.com/p/rolex-submariner-124060-full-set")).toBe(true);
+    expect(looksLikeItemUrl("https://www.blocket.se/annonser/hela_sverige?q=bmw")).toBe(false);
+    expect(looksLikeItemUrl("https://www.blocket.se/")).toBe(false);
+    expect(looksLikeItemUrl("not a url")).toBe(false);
+  });
+});
