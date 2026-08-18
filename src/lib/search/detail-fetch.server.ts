@@ -22,6 +22,10 @@ export interface FetchedPage {
   updated_at?: string | undefined;
   fetched_at: string;
   via: "exa" | "http";
+  /** Real listing image from the source page, when one was published. */
+  image?: string | undefined;
+  /** Where the image came from — always the item's own page. */
+  image_source?: string | undefined;
 }
 
 export interface DetailFetchResult {
@@ -54,7 +58,12 @@ async function fetchViaExa(urls: string[], maxChars: number): Promise<DetailFetc
       "Content-Type": "application/json",
       "x-api-key": process.env["EXA_API_KEY"]!,
     },
-    body: JSON.stringify({ urls, text: { maxCharacters: maxChars }, livecrawl: "fallback" }),
+    body: JSON.stringify({
+      urls,
+      text: { maxCharacters: maxChars },
+      livecrawl: "fallback",
+      extras: { imageLinks: 1 },
+    }),
     signal: AbortSignal.timeout(CONTENT_TIMEOUT_MS),
   });
   if (!res.ok) {
@@ -66,7 +75,14 @@ async function fetchViaExa(urls: string[], maxChars: number): Promise<DetailFetc
     };
   }
   const data = (await res.json()) as {
-    results?: { url: string; title?: string; text?: string; publishedDate?: string }[];
+    results?: {
+      url: string;
+      title?: string;
+      text?: string;
+      publishedDate?: string;
+      image?: string;
+      extras?: { imageLinks?: string[] };
+    }[];
     statuses?: { id: string; status: string; error?: { tag?: string } }[];
   };
   const pages: FetchedPage[] = [];
@@ -82,6 +98,8 @@ async function fetchViaExa(urls: string[], maxChars: number): Promise<DetailFetc
       published_at: r.publishedDate,
       fetched_at,
       via: "exa",
+      image: pickImage(r.image ?? r.extras?.imageLinks?.[0], r.url),
+      image_source: r.url,
     });
   }
   const failures = urls
@@ -91,6 +109,32 @@ async function fetchViaExa(urls: string[], maxChars: number): Promise<DetailFetc
       return { url, reason: status?.error?.tag ?? status?.status ?? "no readable content returned" };
     });
   return { pages, failures, costEstimate: Number((urls.length * EXA_CONTENT_COST).toFixed(4)) };
+}
+
+/** Accept only absolute http(s) image URLs that the source itself published. */
+function pickImage(raw: string | undefined, pageUrl: string): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const u = new URL(raw, pageUrl);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return undefined;
+    return u.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+/** og:image / twitter:image straight out of the served HTML — never a stock photo. */
+function metaImage(html: string, pageUrl: string): string | undefined {
+  const patterns = [
+    /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
+    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m?.[1]) return pickImage(m[1], pageUrl);
+  }
+  return undefined;
 }
 
 function stripHtml(html: string): { title: string | null; text: string } {
@@ -131,6 +175,8 @@ async function fetchViaHttp(url: string, maxChars: number): Promise<FetchedPage 
       text: text.slice(0, maxChars),
       fetched_at: new Date().toISOString(),
       via: "http",
+      image: metaImage(html, res.url || url),
+      image_source: res.url || url,
     };
   } catch (err) {
     return { url, reason: (err as Error).message.slice(0, 200) };
