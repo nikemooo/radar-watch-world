@@ -37,6 +37,14 @@ import {
   type EvidenceDoc,
 } from "./enrichment";
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
+import {
+  COUNTRY_ATTRIBUTE,
+  countryAttribute,
+  countryConstraint,
+  inferMarket,
+  requiredMarkets,
+} from "./geo";
+import { buildHistory, hostPriority, type PriorityContext } from "@/lib/search/source-priority.server";
 import { normalizeAttribute } from "./normalize";
 import {
   buildBaseline,
@@ -404,6 +412,30 @@ export async function runRadarCycle(
     .maybeSingle();
   const runId = runRow?.id ?? null;
 
+  // ---------------------------------------------------------------------
+  // Source priority. Learned from this radar's own history (which hosts
+  // actually produced listings that passed the criteria gate, and which hosts
+  // can be read at all) plus the market the radar asked for. It only ORDERS
+  // sources — nothing is filtered away, so new sources stay discoverable.
+  // ---------------------------------------------------------------------
+  const markets = requiredMarkets(config.locations);
+  const [{ data: priorFindings }, { data: priorHosts }] = await Promise.all([
+    db.from("findings").select("url, primary_url, snapshot").eq("radar_id", radar.id).limit(500),
+    db.from("source_fetch_stats").select("host, attempts, successes").eq("user_id", radar.user_id),
+  ]);
+  const priorityContext: PriorityContext = {
+    markets,
+    history: buildHistory(priorFindings ?? [], priorHosts ?? []),
+  };
+  const priorityOf = (host: string) => hostPriority(host, priorityContext).score;
+  const geoResolvedUrls = new Set<string>();
+  if (markets.length > 0) {
+    console.info(
+      `[radar:geo] ${radar.id} required market(s): ${markets.map((m) => m.name).join(", ")}`,
+    );
+  }
+
+
   // Index-page expansion: any retrieved page that links to a repeating family
   // of item URLs is re-read at full width so the concrete listing URLs it
   // contains become visible to candidate discovery. Purely structural — no
@@ -425,7 +457,12 @@ export async function runRadarCycle(
     indexes_exhausted: 0,
   };
   try {
-    const expansion = await expandIndexPages(research.documents, isBaseline ? 14 : 8);
+    const expansion = await expandIndexPages(
+      research.documents,
+      isBaseline ? 14 : 8,
+      (isBaseline ? 14 : 8) * 3,
+      priorityOf,
+    );
     research.documents = expansion.documents;
     indexExpansionCost = expansion.costEstimate;
     indexPriceHints = expansion.priceHints;
@@ -536,6 +573,14 @@ export async function runRadarCycle(
     currency: config.currency,
     attribute_schema: specs,
   });
+  // A radar that named exactly one market gets a machine-checkable country
+  // requirement. A listing proven to be elsewhere is rejected; a listing whose
+  // market could not be established stays unverified — never a match.
+  const geoConstraint = countryConstraint(config.locations);
+  if (geoConstraint && !constraints.some((c) => c.attribute === COUNTRY_ATTRIBUTE)) {
+    constraints.push(geoConstraint);
+  }
+
 
   let candidates: CandidateItem[] = [];
   let indexPages: string[] = [];
@@ -732,6 +777,19 @@ export async function runRadarCycle(
             }
             evidenceByUrl.set(page.url, docs);
             const enriched = enrichFromEvidence(specs, docs, constraints);
+            // Geography is derived from explicit evidence only (host ccTLD,
+            // stated address country, or the country written on the page).
+            const geoAttribute = countryAttribute(
+              inferMarket({
+                url: page.url,
+                fields: { ...(st?.jsonld ?? {}), ...(st?.og ?? {}), ...(st?.meta ?? {}), ...(st?.fields ?? {}) },
+                text: `${page.title ?? ""}\n${page.text.slice(0, 4000)}`,
+              }),
+            );
+            if (geoAttribute) {
+              enriched.attributes[COUNTRY_ATTRIBUTE] = geoAttribute;
+              geoResolvedUrls.add(page.url);
+            }
             deterministic.set(page.url, enriched.attributes);
             evidenceMergeCount += enriched.telemetry.mergeCount;
             for (const src of enriched.telemetry.sourcesUsed) extractionSourcesUsed.add(src);
@@ -773,7 +831,11 @@ export async function runRadarCycle(
             const ai = aiByUrl.get(page.url);
             const { merged, merges } = mergeAttributeMaps(base, ai?.attributes ?? {});
             evidenceMergeCount += merges;
-            const extracted = Object.values(merged).filter((a) => a.confidence !== "unknown").length;
+            // The synthetic country attribute is evidence, not part of the
+            // radar's declared schema, so it never skews coverage counters.
+            const extracted = Object.values(merged).filter(
+              (a) => a.key !== COUNTRY_ATTRIBUTE && a.confidence !== "unknown",
+            ).length;
             attributesVerified += Object.values(merged).filter(
               (a) => a.confidence === "structured" || a.confidence === "stated",
             ).length;
@@ -985,10 +1047,22 @@ ${documentBlock(allDocs.slice(0, 45))}`,
   let criteriaRejected = 0;
   let criteriaUnverified = 0;
   for (const item of items) {
+    const attributes = {
+      ...(attributesFor(item) ?? asAttributeMap(existing.get(item.fingerprint)?.attributes ?? null) ?? {}),
+    };
+    // Items that never got a detail read can still carry structural geography
+    // (the item URL's own country-code TLD). Text is not consulted here.
+    if (!attributes[COUNTRY_ATTRIBUTE]) {
+      const geoAttribute = countryAttribute(inferMarket({ url: item.url }));
+      if (geoAttribute) {
+        attributes[COUNTRY_ATTRIBUTE] = geoAttribute;
+        geoResolvedUrls.add(item.url);
+      }
+    }
     const verdict = evaluateCriteria(
       {
         title: item.title,
-        attributes: attributesFor(item) ?? asAttributeMap(existing.get(item.fingerprint)?.attributes ?? null) ?? {},
+        attributes,
         numericValue: item.numeric_value,
         currency: item.currency,
       },
@@ -1000,6 +1074,11 @@ ${documentBlock(allDocs.slice(0, 45))}`,
     else criteriaUnverified += 1;
     console.info(
       `[radar:criteria] ${verdict.status.toUpperCase()} ${item.url} — ${verdict.reason}`,
+    );
+  }
+  if (markets.length > 0) {
+    console.info(
+      `[radar:geo] market established for ${items.filter((i) => geoResolvedUrls.has(i.url)).length}/${items.length} item(s) from explicit evidence`,
     );
   }
 

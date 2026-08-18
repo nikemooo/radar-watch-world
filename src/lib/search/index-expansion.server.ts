@@ -206,7 +206,12 @@ export interface SelectionResult {
  * Hosts are spread so a single site cannot consume the whole expansion budget —
  * different sources are what widen coverage.
  */
-export function selectIndexPages(documents: SearchDocument[], max: number): SelectionResult {
+export function selectIndexPages(
+  documents: SearchDocument[],
+  max: number,
+  /** Learned/structural host priority (1 = no information). Ordering only. */
+  priorityOf: (host: string) => number = () => 1,
+): SelectionResult {
   const hostOf = (url: string) => {
     try {
       return new URL(url).host.replace(/^www\./, "");
@@ -247,15 +252,19 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sele
       .map((e) => ({ ...e, s: familyScore(e.f, e.own) }))
       .sort((a, b) => b.s - a.s);
     const best = ranked[0];
-    const score = best?.s ?? 0;
+    // Learned source priority re-orders equally structural candidates; it can
+    // never create evidence where the page shows none (0 stays 0).
+    const priority = priorityOf(host);
+    const score = (best?.s ?? 0) * priority;
     let probe = 0;
     if (score === 0 && looksLikeIndexPath(doc.url)) {
       // Shallow snippets hide item families entirely. Two independent signals
       // still justify one probe read: the site is known to host item URLs, or
       // the search returned this same site repeatedly for the request — which
       // is what a dominant marketplace for the request looks like.
-      if (itemHosts.has(host)) probe = 2;
-      else if ((hostHits.get(host) ?? 0) >= 2) probe = 1;
+      if (itemHosts.has(host)) probe = 2 * priority;
+      else if ((hostHits.get(host) ?? 0) >= 2) probe = 1 * priority;
+      probe = Number(probe.toFixed(3));
     }
     return {
       doc,
@@ -363,6 +372,7 @@ export async function expandIndexPages(
   documents: SearchDocument[],
   maxPages = 6,
   maxTotalPageReads = maxPages * 3,
+  priorityOf: (host: string) => number = () => 1,
 ): Promise<ExpansionResult> {
   const emptyTelemetry: ExpansionTelemetry = {
     index_pages_fetched: 0,
@@ -375,7 +385,7 @@ export async function expandIndexPages(
     pages_skipped: 0,
     indexes_exhausted: 0,
   };
-  const selection = selectIndexPages(documents, maxPages);
+  const selection = selectIndexPages(documents, maxPages, priorityOf);
   const targets = selection.picked;
   for (const row of selection.telemetry) {
     console.info(
@@ -410,7 +420,10 @@ export async function expandIndexPages(
   let costEstimate = 0;
   let totalReads = 0;
 
-  for (const doc of targets) {
+  // Index pages on different hosts are independent, so they are read
+  // concurrently — pagination inside one index stays strictly sequential
+  // because each next page is discovered on the previous one.
+  const expandTarget = async (doc: SearchDocument) => {
     const ownSig = pathSignature(doc.url);
     const seenItems = new Set<string>();
     const allLinks = new Set<string>(doc.links ?? []);
@@ -509,7 +522,7 @@ export async function expandIndexPages(
       }
     }
 
-    if (pageUrls.length === 0) continue;
+    if (pageUrls.length === 0) return;
 
     const families = detectItemFamilies([...allLinks], doc.url);
     const itemUrls = [...seenItems].slice(0, 400);
@@ -532,7 +545,26 @@ export async function expandIndexPages(
       pricesJoined,
       ambiguousPrices: ambiguousHere,
     });
-  }
+  };
+
+  const CONCURRENCY = 4;
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, targets.length) }, async () => {
+      while (cursor < targets.length && totalReads < maxTotalPageReads) {
+        const doc = targets[cursor++];
+        if (!doc) break;
+        try {
+          await expandTarget(doc);
+        } catch (err) {
+          failures.push({ url: doc.url, reason: (err as Error).message });
+        }
+      }
+    }),
+  );
+  // Concurrency must not change the reported order.
+  const targetOrder = new Map(targets.map((t, i) => [t.url, i]));
+  expanded.sort((a, b) => (targetOrder.get(a.url) ?? 0) - (targetOrder.get(b.url) ?? 0));
 
   return {
     documents: documents.map((d) => byUrl.get(d.url) ?? d),
