@@ -30,6 +30,7 @@ import {
   type ExtractedDetail,
 } from "./attributes.server";
 import type { AttributeSpec, AttributeValue } from "./normalize";
+import { normalizeAttribute } from "./normalize";
 import {
   buildBaseline,
   comparableSettings,
