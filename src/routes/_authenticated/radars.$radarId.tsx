@@ -355,7 +355,7 @@ function RadarDetail() {
       {rejected.length > 0 && (
         <details className="panel p-5">
           <summary className="cursor-pointer text-sm font-medium">
-            Sorterade bort ({rejected.length}) — visa filtrerade
+            Matchar inte ({rejected.length}) — visa bortsorterade
           </summary>
           <ul className="mt-3 divide-y divide-border text-sm">
             {rejected.map((f) => (
@@ -368,7 +368,7 @@ function RadarDetail() {
                 >
                   {f.title}
                 </a>
-                <span className="text-muted-foreground">{snapshotOf(f.snapshot).match_reason}</span>
+                <span className="text-muted-foreground">{verdictOf(f).reason}</span>
               </li>
             ))}
           </ul>
@@ -446,7 +446,7 @@ function RadarDetail() {
       </details>
 
       <details className="panel p-5">
-        <summary className="cursor-pointer text-sm font-medium">Diagnostik</summary>
+        <summary className="cursor-pointer text-sm font-medium">Teknisk information</summary>
 
         <div className="mt-4 space-y-4">
           {data.runs.map((entry) => (

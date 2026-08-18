@@ -1329,7 +1329,10 @@ ${eligible
     status: failed ? "failed" : "completed",
     run_type: runType,
     scan_phase: scanPhase,
-    matching_listings: items.length,
+    // Terminology: "matching" means verified against the user's hard criteria.
+    matching_listings: criteriaMatched,
+    discovered_listings: items.length,
+    persisted_findings: items.length,
     duplicates_removed: research.duplicatesRemoved,
     blocked_pages: detailFetchesFailed,
     monitoring_transition: isBaseline && !failed,
