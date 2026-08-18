@@ -379,7 +379,13 @@ export class ActiveRunError extends Error {
  * (and therefore never two parallel provider bills). Dead runs are reaped
  * first, so a lost worker never blocks a retry.
  */
+/** Release the concurrency lock, but only if this run still owns it. */
+async function clearRunLock(db: Db, radarId: string, runId: string): Promise<void> {
+  await db.from("radars").update({ active_run_id: null }).eq("id", radarId).eq("active_run_id", runId);
+}
+
 export async function beginRun(db: Db, radar: RadarRow): Promise<RunClaim> {
+
   // Recover first: a stale lock from a killed worker must not block the user.
   await reapStaleRuns(db, { radarId: radar.id });
 
