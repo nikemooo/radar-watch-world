@@ -1,0 +1,10 @@
+import { createClient } from "@supabase/supabase-js";
+import { runRadarCycle } from "../src/lib/monitoring/engine.server";
+const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+const id = process.argv[2]!;
+const { data: radar } = await db.from("radars").select("*").eq("id", id).single();
+const t = Date.now();
+const res = await runRadarCycle(db as never, radar as never, {});
+console.log(JSON.stringify(res, null, 2), "duration", (Date.now() - t) / 1000);
+const { data: r } = await db.from("radars").select("scan_state, initial_listings_count, baseline_completed").eq("id", id).single();
+console.log(r);
