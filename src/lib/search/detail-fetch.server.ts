@@ -12,6 +12,8 @@
  * failure — never as invented content.
  */
 
+import { parseStructured, type StructuredSignals } from "../monitoring/enrichment";
+
 export interface FetchedPage {
   url: string;
   /** URL the server ultimately served, when it differs (redirects). */
@@ -26,6 +28,10 @@ export interface FetchedPage {
   image?: string | undefined;
   /** Where the image came from — always the item's own page. */
   image_source?: string | undefined;
+  /** Every usable image URL the page published, primary first. */
+  images?: string[] | undefined;
+  /** Structured signals (JSON-LD, OpenGraph, meta, spec tables) when served. */
+  structured?: StructuredSignals | undefined;
 }
 
 export interface DetailFetchResult {
@@ -62,7 +68,7 @@ async function fetchViaExa(urls: string[], maxChars: number): Promise<DetailFetc
       urls,
       text: { maxCharacters: maxChars },
       livecrawl: "fallback",
-      extras: { imageLinks: 1 },
+      extras: { imageLinks: 6 },
     }),
     signal: AbortSignal.timeout(CONTENT_TIMEOUT_MS),
   });
@@ -100,6 +106,11 @@ async function fetchViaExa(urls: string[], maxChars: number): Promise<DetailFetc
       via: "exa",
       image: pickImage(r.image ?? r.extras?.imageLinks?.[0], r.url),
       image_source: r.url,
+      images: [r.image, ...(r.extras?.imageLinks ?? [])]
+        .map((i) => pickImage(i, r.url))
+        .filter((i): i is string => !!i)
+        .filter((i, idx, all) => all.indexOf(i) === idx)
+        .slice(0, 8),
     });
   }
   const failures = urls
@@ -167,16 +178,27 @@ async function fetchViaHttp(url: string, maxChars: number): Promise<FetchedPage 
     }
     const html = (await res.text()).slice(0, 400_000);
     const { title, text } = stripHtml(html);
-    if (text.length < 200) return { url, reason: "page returned no readable text (likely JS-rendered or blocked)" };
+    const structured = parseStructured(html, res.url || url);
+    // A client-rendered page can still carry every fact in its metadata: keep
+    // it when structured signals exist, instead of discarding the whole page.
+    const hasStructured =
+      Object.keys(structured.jsonld).length > 0 ||
+      Object.keys(structured.og).length > 0 ||
+      Object.keys(structured.fields).length > 0;
+    if (text.length < 200 && !hasStructured) {
+      return { url, reason: "page returned no readable text (likely JS-rendered or blocked)" };
+    }
     return {
       url,
       final_url: res.url || url,
-      title,
+      title: title ?? structured.og["title"] ?? null,
       text: text.slice(0, maxChars),
       fetched_at: new Date().toISOString(),
       via: "http",
-      image: metaImage(html, res.url || url),
+      image: metaImage(html, res.url || url) ?? structured.images[0],
       image_source: res.url || url,
+      images: structured.images,
+      structured,
     };
   } catch (err) {
     return { url, reason: (err as Error).message.slice(0, 200) };
@@ -217,5 +239,27 @@ export async function fetchDetailPages(urls: string[], maxChars = 6000): Promise
     failures = stillFailed;
   }
 
+  // Structured-signal top-up: the contents provider returns readable text but
+  // no JSON-LD / OpenGraph / gallery. A plain GET of the same page is free and
+  // often carries the metadata that makes the listing verifiable. Only pages
+  // that are actually short on evidence are topped up.
+  const needsSignals = pages.filter(
+    (p) => p.via === "exa" && (!p.structured || !p.images?.length || p.text.length < 1500),
+  );
+  if (needsSignals.length > 0) {
+    const topped = await Promise.all(needsSignals.slice(0, 15).map((p) => fetchViaHttp(p.url, maxChars)));
+    for (const result of topped) {
+      if (!("text" in result)) continue;
+      const target = pages.find((p) => p.url === result.url);
+      if (!target) continue;
+      target.structured = result.structured;
+      target.images = Array.from(new Set([...(target.images ?? []), ...(result.images ?? [])])).slice(0, 8);
+      target.image = target.image ?? result.image;
+      target.image_source = target.image_source ?? result.image_source;
+      if (result.text.length > target.text.length) target.text = result.text;
+    }
+  }
+
   return { pages, failures: [...failures, ...rejected], costEstimate };
 }
+
