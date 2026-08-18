@@ -47,6 +47,26 @@ export interface ExpansionTelemetry {
   ambiguous_price_joins: number;
 }
 
+/** Deterministic explanation of why one document was expanded or skipped. */
+export interface SelectionTelemetryRow {
+  host: string;
+  url: string;
+  /** Structural signature of the best item family found on the page. */
+  signature: string | null;
+  itemUrls: number;
+  /** Family lives on the page's own host — a real listing index, not an outlink. */
+  ownHost: boolean;
+  /** Characters of readable text the provider returned (shallow vs deep). */
+  textLength: number;
+  textSignal: "shallow" | "deep";
+  score: number;
+  probe: number;
+  probeEligible: boolean;
+  selected: boolean;
+  reason: string;
+}
+
+
 export interface ExpansionResult {
   /** Documents with index pages replaced by their enriched version. */
   documents: SearchDocument[];
@@ -64,6 +84,8 @@ export interface ExpansionResult {
    */
   indexCards: Map<string, IndexCard>;
   telemetry: ExpansionTelemetry;
+  /** Per-candidate explanation of expansion selection. */
+  selection: SelectionTelemetryRow[];
 }
 
 function harvest(doc: SearchDocument): string[] {
@@ -138,12 +160,44 @@ async function readViaHttp(url: string): Promise<{ text: string; links: string[]
   }
 }
 
+/** Static asset / media URLs are never monitorable items. */
+const ASSET_URL = /\.(jpe?g|png|gif|webp|avif|svg|ico|css|js|json|xml|pdf|mp4|webm|woff2?|ttf)(\?|$)/i;
+
+/** A family whose links are mostly static assets is page furniture, not inventory. */
+function isAssetFamily(family: UrlFamily): boolean {
+  const assets = family.urls.filter((u) => ASSET_URL.test(u)).length;
+  return assets * 2 > family.urls.length;
+}
+
+/**
+ * Quality of an item family as evidence of real inventory.
+ *
+ * The dominant signal is HOW MANY sibling item URLs repeat on the page, not how
+ * deep their paths are: depth rewards CDN/media trees and navigation junk, which
+ * is exactly how a real marketplace index loses to a spec/catalog page. A family
+ * ending in a variable id segment is the canonical shape of a detail URL and is
+ * given a modest, bounded boost.
+ */
+function familyScore(family: UrlFamily, ownHost: boolean): number {
+  const segments = family.signature.split("/");
+  const last = segments[segments.length - 1] ?? "";
+  // A trailing numeric id is the canonical shape of a detail/item URL; an
+  // opaque slug is weaker evidence; a static word is a site section.
+  const trailingId = last === "#" ? 2 : last === "*" ? 1.25 : 1;
+  return family.urls.length * (ownHost ? 2 : 1) * trailingId;
+}
+
+export interface SelectionResult {
+  picked: SearchDocument[];
+  telemetry: SelectionTelemetryRow[];
+}
+
 /**
  * Documents that link to a repeating family of item URLs, most promising first.
  * Hosts are spread so a single site cannot consume the whole expansion budget —
  * different sources are what widen coverage.
  */
-export function selectIndexPages(documents: SearchDocument[], max: number): SearchDocument[] {
+export function selectIndexPages(documents: SearchDocument[], max: number): SelectionResult {
   const hostOf = (url: string) => {
     try {
       return new URL(url).host.replace(/^www\./, "");
@@ -159,6 +213,7 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
   for (const doc of documents) {
     hostHits.set(hostOf(doc.url), (hostHits.get(hostOf(doc.url)) ?? 0) + 1);
     for (const family of detectItemFamilies(harvest(doc), doc.url)) {
+      if (isAssetFamily(family)) continue;
       for (const u of family.urls.slice(0, 5)) itemHosts.add(hostOf(u));
     }
   }
@@ -172,54 +227,88 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
       return false;
     }
   };
-  const scored = documents
-    .map((doc) => {
-      const families = detectItemFamilies(harvest(doc), doc.url);
-      // Item families hosted by the page's own site indicate a real listing
-      // index rather than an article linking out.
-      const own = families.filter((f) => f.signature.startsWith(hostOf(doc.url)));
-      const best = own[0] ?? families[0];
-      const score = best ? best.urls.length * (own.length > 0 ? 2 : 1) * best.variableSegments : 0;
-      let probe = 0;
-      if (score === 0 && looksLikeIndexPath(doc.url)) {
-        // Shallow snippets hide item families entirely. Two independent signals
-        // still justify one probe read: the site is known to host item URLs, or
-        // the search returned this same site repeatedly for the request — which
-        // is what a dominant marketplace for the request looks like.
-        const host = hostOf(doc.url);
-        if (itemHosts.has(host)) probe = 2;
-        else if ((hostHits.get(host) ?? 0) >= 2) probe = 1;
-      }
-      return { doc, score, probe };
-    })
-    .filter((d) => d.score > 0 || d.probe > 0);
 
-  const strong = scored.filter((d) => d.score > 0).sort((a, b) => b.score - a.score);
+  const rows: (SelectionTelemetryRow & { doc: SearchDocument })[] = documents.map((doc) => {
+    const host = hostOf(doc.url);
+    const families = detectItemFamilies(harvest(doc), doc.url).filter((f) => !isAssetFamily(f));
+    const own = families.filter((f) => f.signature.startsWith(host));
+    // Rank each family on its own merit, then keep the strongest — the first
+    // family by raw link count is not necessarily the item family.
+    const ranked = [...own.map((f) => ({ f, own: true })), ...families.filter((f) => !own.includes(f)).map((f) => ({ f, own: false }))]
+      .map((e) => ({ ...e, s: familyScore(e.f, e.own) }))
+      .sort((a, b) => b.s - a.s);
+    const best = ranked[0];
+    const score = best?.s ?? 0;
+    let probe = 0;
+    if (score === 0 && looksLikeIndexPath(doc.url)) {
+      // Shallow snippets hide item families entirely. Two independent signals
+      // still justify one probe read: the site is known to host item URLs, or
+      // the search returned this same site repeatedly for the request — which
+      // is what a dominant marketplace for the request looks like.
+      if (itemHosts.has(host)) probe = 2;
+      else if ((hostHits.get(host) ?? 0) >= 2) probe = 1;
+    }
+    return {
+      doc,
+      host,
+      url: doc.url,
+      signature: best?.f.signature ?? null,
+      itemUrls: best?.f.urls.length ?? 0,
+      ownHost: Boolean(best?.own),
+      textLength: doc.snippet.length,
+      textSignal: doc.snippet.length < 1500 ? ("shallow" as const) : ("deep" as const),
+      score: Number(score.toFixed(2)),
+      probe,
+      probeEligible: probe > 0,
+      selected: false,
+      reason: "",
+    };
+  });
+
+  const eligible = rows.filter((d) => d.score > 0 || d.probe > 0);
+  for (const r of rows) {
+    if (!eligible.includes(r)) r.reason = "no repeating item family and not probe-eligible";
+  }
+
+  const strong = eligible.filter((d) => d.score > 0).sort((a, b) => b.score - a.score);
   // Probes are reserved a slice of the budget. Without it a marketplace whose
   // search snippet is shallow always loses to catalog/spec pages that merely
   // *look* deep, which is exactly how real inventory gets missed.
-  const probes = scored.filter((d) => d.score === 0).sort((a, b) => b.probe - a.probe);
+  const probes = eligible.filter((d) => d.score === 0).sort((a, b) => b.probe - a.probe);
   const probeSlots = probes.length === 0 ? 0 : Math.max(1, Math.floor(max / 3));
 
   const picked: SearchDocument[] = [];
   const perHost = new Map<string, number>();
-  const take = (list: typeof scored, limit: number) => {
+  const take = (list: typeof strong, limit: number, label: string) => {
     for (const pass of [1, 2]) {
       for (const r of list) {
         if (picked.length >= limit) break;
-        if (picked.includes(r.doc)) continue;
-        const host = hostOf(r.doc.url);
-        if ((perHost.get(host) ?? 0) >= pass) continue;
-        perHost.set(host, (perHost.get(host) ?? 0) + 1);
+        if (r.selected) continue;
+        if ((perHost.get(r.host) ?? 0) >= pass) continue;
+        perHost.set(r.host, (perHost.get(r.host) ?? 0) + 1);
+        r.selected = true;
+        r.reason = `${label}: ${r.itemUrls} item URLs (${r.signature ?? "no family"}), score ${r.score}, probe ${r.probe}`;
         picked.push(r.doc);
       }
     }
   };
-  take(probes, probeSlots);
-  take(strong, max);
-  take(probes, max);
-  return picked;
+  take(probes, probeSlots, "selected as reserved probe");
+  take(strong, max, "selected on item-family evidence");
+  take(probes, max, "selected as spare-budget probe");
+
+  for (const r of eligible) {
+    if (!r.selected) {
+      r.reason =
+        picked.length >= max
+          ? `rejected — expansion budget (${max}) exhausted by higher-scoring pages`
+          : "rejected — host already used both expansion slots";
+    }
+  }
+
+  const telemetry = rows.map(({ doc: _doc, ...row }) => row).sort((a, b) => b.score - a.score || b.probe - a.probe);
+  return { picked, telemetry };
 }
+
 
 /** One read of an index page: text for context, links for discovery, HTML for rows. */
 async function readIndexPage(
@@ -272,7 +361,16 @@ export async function expandIndexPages(
     index_prices_joined: 0,
     ambiguous_price_joins: 0,
   };
-  const targets = selectIndexPages(documents, maxPages);
+  const selection = selectIndexPages(documents, maxPages);
+  const targets = selection.picked;
+  for (const row of selection.telemetry) {
+    console.info(
+      `[radar:index:select] ${row.selected ? "SELECTED" : "rejected"} ${row.host} ${row.url} — ` +
+        `family ${row.signature ?? "none"}, items ${row.itemUrls}, ownHost ${row.ownHost}, ` +
+        `text ${row.textSignal}(${row.textLength}), score ${row.score}, probe ${row.probe}` +
+        `${row.probeEligible ? " (probe-eligible)" : ""} :: ${row.reason}`,
+    );
+  }
   if (targets.length === 0) {
     return {
       documents,
@@ -284,6 +382,7 @@ export async function expandIndexPages(
       ambiguousPrices: [],
       indexCards: new Map(),
       telemetry: emptyTelemetry,
+      selection: selection.telemetry,
     };
   }
 
@@ -410,5 +509,6 @@ export async function expandIndexPages(
     ambiguousPrices,
     indexCards,
     telemetry,
+    selection: selection.telemetry,
   };
 }
