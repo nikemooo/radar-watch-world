@@ -1780,6 +1780,8 @@ ${eligible
     attributes_verified: attributesVerified,
     images_found: imagesFound,
     images_persisted: imageByUrl.size,
+    direct_links_verified: directLinksVerified,
+    direct_links_unverified: Math.max(0, linkByUrl.size - directLinksVerified),
     jsonld_found: jsonldFound,
     og_data_found: ogDataFound,
     evidence_merge_count: evidenceMergeCount,
