@@ -519,9 +519,11 @@ export async function runRadarCycle(
       const fetchable = candidates.filter((c) => c.url && c.individual).length;
       const budgetPlan = adaptiveBudget({
         configured: Math.min(
-          Number(radar.max_detail_fetches ?? 8),
-          options.maxDetailFetches ?? Number.MAX_SAFE_INTEGER,
+          // Phase 1 aims for full inventory coverage rather than the first few results.
+          Number(radar.max_detail_fetches ?? 8) * (isBaseline ? 2 : 1),
+          (options.maxDetailFetches ?? Number.MAX_SAFE_INTEGER) * (isBaseline ? 2 : 1),
         ),
+
         frequency: radar.frequency,
         comparableGap: specs.length > 0 ? comparableGap : 0,
         fetchableCandidates: fetchable,
