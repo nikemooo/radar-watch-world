@@ -1043,10 +1043,22 @@ ${documentBlock(allDocs.slice(0, 45))}`,
   let criteriaRejected = 0;
   let criteriaUnverified = 0;
   for (const item of items) {
+    const attributes = {
+      ...(attributesFor(item) ?? asAttributeMap(existing.get(item.fingerprint)?.attributes ?? null) ?? {}),
+    };
+    // Items that never got a detail read can still carry structural geography
+    // (the item URL's own country-code TLD). Text is not consulted here.
+    if (!attributes[COUNTRY_ATTRIBUTE]) {
+      const geoAttribute = countryAttribute(inferMarket({ url: item.url }));
+      if (geoAttribute) {
+        attributes[COUNTRY_ATTRIBUTE] = geoAttribute;
+        geoResolved += 1;
+      }
+    }
     const verdict = evaluateCriteria(
       {
         title: item.title,
-        attributes: attributesFor(item) ?? asAttributeMap(existing.get(item.fingerprint)?.attributes ?? null) ?? {},
+        attributes,
         numericValue: item.numeric_value,
         currency: item.currency,
       },
