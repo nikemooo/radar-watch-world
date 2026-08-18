@@ -215,8 +215,50 @@ export function detectPaginationLinks(links: string[], pageUrl: string): string[
       const v = base.searchParams.get(p);
       if (v && /^\d+$/.test(v)) return Number(v);
     }
+    // A path-style pager states its own page in the URL: `/cars/page/3`.
+    const segments = base.pathname.split("/").filter(Boolean);
+    const last = segments[segments.length - 1] ?? "";
+    const keyword = (segments[segments.length - 2] ?? "").toLowerCase();
+    if (/^\d+$/.test(last) && PAGE_PARAMS.includes(keyword)) return Number(last);
     return 1;
   })();
+
+  const baseSegments = base.pathname.split("/").filter(Boolean);
+  /**
+   * Path-style paging: `/cars/page/2`, `/cars/sida/2` or `/cars/2` — the link
+   * is the page's own path with one extra or one differing numeric segment.
+   * Returns the page number the link points at, or null when the link is a
+   * different section rather than another page of this one.
+   */
+  const pathPageNumber = (u: URL): number | null => {
+    const segments = u.pathname.split("/").filter(Boolean);
+    if (segments.length === baseSegments.length + 2) {
+      const [keyword, number] = segments.slice(-2);
+      if (
+        PAGE_PARAMS.includes((keyword ?? "").toLowerCase()) &&
+        /^\d+$/.test(number ?? "") &&
+        baseSegments.every((s, i) => s === segments[i])
+      ) {
+        return Number(number);
+      }
+    }
+    if (segments.length === baseSegments.length + 1) {
+      const last = segments[segments.length - 1]!;
+      if (/^\d+$/.test(last) && baseSegments.every((s, i) => s === segments[i])) return Number(last);
+    }
+    if (segments.length === baseSegments.length) {
+      const differing = segments.filter((s, i) => s !== baseSegments[i]);
+      if (differing.length === 1 && /^\d+$/.test(differing[0]!)) {
+        const index = segments.findIndex((s, i) => s !== baseSegments[i]);
+        // Only a numeric segment that replaces another numeric segment (or a
+        // page keyword's argument) is a pager — anything else is a sibling.
+        const previous = baseSegments[index]!;
+        const keyword = (segments[index - 1] ?? "").toLowerCase();
+        if (/^\d+$/.test(previous) || PAGE_PARAMS.includes(keyword)) return Number(differing[0]);
+      }
+    }
+    return null;
+  };
 
   const out = new Map<number, string>();
   for (const link of links) {
@@ -226,14 +268,20 @@ export function detectPaginationLinks(links: string[], pageUrl: string): string[
     } catch {
       continue;
     }
-    if (u.host !== base.host || u.pathname !== base.pathname) continue;
-    for (const p of PAGE_PARAMS) {
-      const v = u.searchParams.get(p);
-      if (!v || !/^\d+$/.test(v)) continue;
-      const n = Number(v);
-      if (n <= currentPage) continue;
-      if (!out.has(n)) out.set(n, u.toString().split("#")[0]!);
+    if (u.host !== base.host) continue;
+    if (u.pathname === base.pathname) {
+      for (const p of PAGE_PARAMS) {
+        const v = u.searchParams.get(p);
+        if (!v || !/^\d+$/.test(v)) continue;
+        const n = Number(v);
+        if (n <= currentPage) continue;
+        if (!out.has(n)) out.set(n, u.toString().split("#")[0]!);
+      }
+      continue;
     }
+    const n = pathPageNumber(u);
+    if (n === null || n <= currentPage) continue;
+    if (!out.has(n)) out.set(n, u.toString().split("#")[0]!);
   }
   return [...out.entries()].sort((a, b) => a[0] - b[0]).map(([, url]) => url);
 }
