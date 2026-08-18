@@ -72,7 +72,7 @@ async function readViaExa(urls: string[]): Promise<Map<string, { text: string; l
     const links = (r.extras?.links ?? [])
       .map((l) => absolutize(l, r.url))
       .filter((l): l is string => Boolean(l));
-    out.set(r.url, { text: r.text ?? "", links, title: r.title });
+    out.set(r.url, { text: r.text ?? "", links, ...(r.title ? { title: r.title } : {}) });
   }
   return out;
 }
