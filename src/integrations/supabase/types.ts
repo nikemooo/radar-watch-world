@@ -438,6 +438,7 @@ export type Database = {
           ambiguous_price_joins: number
           attributes_extracted: number
           attributes_missing: number
+          attributes_verified: number
           baseline_findings: number
           baselines_backfilled: number
           baselines_computed: number
@@ -461,10 +462,16 @@ export type Database = {
           discovered_listings: number
           duplicates_removed: number
           error: string | null
+          evidence_merge_count: number
+          extraction_ai_calls: number
+          extraction_attempted: number
+          extraction_sources_used: string[]
           extractions_failed: number
           extractions_ok: number
           finished_at: string | null
           id: string
+          images_found: number
+          images_persisted: number
           incremental_findings: number
           index_cards_used: number
           index_pages_expanded: number
@@ -473,9 +480,11 @@ export type Database = {
           indexes_exhausted: number
           items_found: number
           items_merged: number
+          jsonld_found: number
           matching_listings: number
           monitoring_transition: boolean
           new_items: number
+          og_data_found: number
           pagination_pages_attempted: number
           pagination_pages_blocked: number
           pagination_pages_skipped: number
@@ -505,6 +514,7 @@ export type Database = {
           ambiguous_price_joins?: number
           attributes_extracted?: number
           attributes_missing?: number
+          attributes_verified?: number
           baseline_findings?: number
           baselines_backfilled?: number
           baselines_computed?: number
@@ -528,10 +538,16 @@ export type Database = {
           discovered_listings?: number
           duplicates_removed?: number
           error?: string | null
+          evidence_merge_count?: number
+          extraction_ai_calls?: number
+          extraction_attempted?: number
+          extraction_sources_used?: string[]
           extractions_failed?: number
           extractions_ok?: number
           finished_at?: string | null
           id?: string
+          images_found?: number
+          images_persisted?: number
           incremental_findings?: number
           index_cards_used?: number
           index_pages_expanded?: number
@@ -540,9 +556,11 @@ export type Database = {
           indexes_exhausted?: number
           items_found?: number
           items_merged?: number
+          jsonld_found?: number
           matching_listings?: number
           monitoring_transition?: boolean
           new_items?: number
+          og_data_found?: number
           pagination_pages_attempted?: number
           pagination_pages_blocked?: number
           pagination_pages_skipped?: number
@@ -572,6 +590,7 @@ export type Database = {
           ambiguous_price_joins?: number
           attributes_extracted?: number
           attributes_missing?: number
+          attributes_verified?: number
           baseline_findings?: number
           baselines_backfilled?: number
           baselines_computed?: number
@@ -595,10 +614,16 @@ export type Database = {
           discovered_listings?: number
           duplicates_removed?: number
           error?: string | null
+          evidence_merge_count?: number
+          extraction_ai_calls?: number
+          extraction_attempted?: number
+          extraction_sources_used?: string[]
           extractions_failed?: number
           extractions_ok?: number
           finished_at?: string | null
           id?: string
+          images_found?: number
+          images_persisted?: number
           incremental_findings?: number
           index_cards_used?: number
           index_pages_expanded?: number
@@ -607,9 +632,11 @@ export type Database = {
           indexes_exhausted?: number
           items_found?: number
           items_merged?: number
+          jsonld_found?: number
           matching_listings?: number
           monitoring_transition?: boolean
           new_items?: number
+          og_data_found?: number
           pagination_pages_attempted?: number
           pagination_pages_blocked?: number
           pagination_pages_skipped?: number

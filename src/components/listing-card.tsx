@@ -39,6 +39,8 @@ export interface FindingSnapshot {
   match_reason?: string;
   image?: string | null;
   image_source?: string | null;
+  images?: string[];
+  missing_attributes?: string[];
   criteria?: { label?: string; ok?: boolean | null; reason?: string }[];
   image_evidence?: unknown;
 }
@@ -109,6 +111,7 @@ export function ListingCard({
   const link = finding.primary_url ?? finding.url;
   const market = marketVerdict(finding.baseline);
   const price = money(finding.numeric_value, finding.currency);
+  const image = snapshot.image ?? snapshot.images?.[0] ?? null;
   const status: MatchStatus = verdict?.status ?? snapshot.match_status ?? "unverified";
   const pending = verdict?.pending ?? [];
 
@@ -120,9 +123,9 @@ export function ListingCard({
   return (
     <article className="panel flex h-full flex-col overflow-hidden">
       <div className="relative aspect-[16/10] w-full bg-muted/40">
-        {snapshot.image ? (
+        {image ? (
           <img
-            src={snapshot.image}
+            src={image}
             alt={finding.title}
             loading="lazy"
             className="size-full object-cover"
@@ -163,6 +166,11 @@ export function ListingCard({
                 <li key={r.attribute}>⚠ {r.label}</li>
               ))}
             </ul>
+            {snapshot.missing_attributes?.length ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Saknad information: {snapshot.missing_attributes.slice(0, 5).map((k) => k.replace(/_/g, " ")).join(", ")}
+              </p>
+            ) : null}
           </div>
         )}
 

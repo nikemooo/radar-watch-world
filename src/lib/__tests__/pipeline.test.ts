@@ -12,6 +12,12 @@ import { detectPaginationLinks, extractIndexRowPrices, moneyMatchesIn } from "..
 import { selectIndexPages } from "../search/index-expansion.server";
 import { assignFingerprints } from "../monitoring/temporal";
 import { effectiveVerdict } from "../monitoring/verification";
+import {
+  enrichFromEvidence,
+  mergeAttributeMaps,
+  missingKeys,
+  parseStructured,
+} from "../monitoring/enrichment";
 
 
 const priceSpec = { key: "price", label: "Price", kind: "money" as const };
@@ -236,5 +242,64 @@ describe("effective verification verdict", () => {
       [{ attribute: "color", observation: "svart bil", value: "svart", confidence: "high", image_url: "https://x/1.jpg" }],
     );
     expect(v.status).toBe("unverified");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deterministic enrichment: structured parsing + evidence merging.
+// ---------------------------------------------------------------------------
+describe("structured parsing", () => {
+  const html = `<html><head>
+    <meta property="og:title" content="BMW M340i xDrive 2023">
+    <meta property="og:image" content="https://cdn.x.se/a.jpg">
+    <script type="application/ld+json">{"@type":"Car","name":"BMW M340i xDrive","modelDate":"2023","color":"Svart","offers":{"price":"519000","priceCurrency":"SEK"}}</script>
+    </head><body><table><tr><th>Modellår</th><td>2023</td></tr><tr><th>Färg</th><td>Svart</td></tr></table></body></html>`;
+
+  it("reads OpenGraph, JSON-LD and spec-table fields", () => {
+    const st = parseStructured(html, "https://x.se/annons/1");
+    expect(st.og["title"]).toContain("M340i");
+    expect(JSON.stringify(st.jsonld)).toContain("519000");
+    expect(st.images).toContain("https://cdn.x.se/a.jpg");
+    expect(Object.keys(st.fields).some((k) => k.toLowerCase().includes("färg"))).toBe(true);
+  });
+
+  it("extracts declared attributes from evidence without a model", () => {
+    const st = parseStructured(html, "https://x.se/annons/1");
+    const specs = [
+      { key: "price", label: "Pris", kind: "money" as const },
+      { key: "year", label: "Modellår", kind: "year" as const },
+      { key: "color", label: "Färg", kind: "text" as const },
+    ];
+    const result = enrichFromEvidence(specs, [
+      { url: "https://x.se/annons/1", sourceType: "detail_field", fields: st.fields, text: "" },
+      { url: "https://x.se/annons/1", sourceType: "jsonld", fields: st.jsonld, text: Object.values(st.jsonld).join(" ") },
+    ]);
+    expect(result.attributes["year"]?.value).toBe(2023);
+    expect(result.attributes["color"]?.raw?.toLowerCase()).toContain("svart");
+    expect(result.telemetry.attributesFound).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("evidence merging", () => {
+  const spec = { key: "year", label: "Modellår", kind: "year" as const };
+  const structured = normalizeAttribute(spec, "2023", "structured", "https://x.se/1");
+  const inferred = normalizeAttribute(spec, "2021", "inferred", "https://x.se/1");
+
+  it("never downgrades a stronger value", () => {
+    const { merged } = mergeAttributeMaps({ year: structured }, { year: inferred });
+    expect(merged["year"]?.value).toBe(2023);
+    expect(merged["year"]?.confidence).toBe("structured");
+  });
+
+  it("upgrades an unknown value when real evidence arrives", () => {
+    const unknown = normalizeAttribute(spec, null, "unknown", "https://x.se/1");
+    const { merged, merges } = mergeAttributeMaps({ year: unknown }, { year: structured });
+    expect(merged["year"]?.value).toBe(2023);
+    expect(merges).toBe(1);
+  });
+
+  it("reports which declared attributes are still missing", () => {
+    const specs = [spec, { key: "color", label: "Färg", kind: "text" as const }];
+    expect(missingKeys(specs, { year: structured })).toEqual(["color"]);
   });
 });

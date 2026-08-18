@@ -30,6 +30,12 @@ import {
   type ExtractedDetail,
 } from "./attributes.server";
 import type { AttributeSpec, AttributeValue } from "./normalize";
+import {
+  enrichFromEvidence,
+  mergeAttributeMaps,
+  missingKeys,
+  type EvidenceDoc,
+} from "./enrichment";
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
 import { normalizeAttribute } from "./normalize";
 import {
@@ -520,6 +526,17 @@ export async function runRadarCycle(
   ).length;
   const comparableGap = Math.max(0, minComparables - usableComparablesBefore);
 
+  // Machine-checkable requirements are known before extraction: the enrichment
+  // pass uses them to know which terms it must try hardest to read from the
+  // page (it never assumes them — a term must literally appear in a source).
+  const constraints = radarConstraints({
+    hard_constraints: config.hard_constraints,
+    price_min: config.price_min,
+    price_max: config.price_max,
+    currency: config.currency,
+    attribute_schema: specs,
+  });
+
   let candidates: CandidateItem[] = [];
   let indexPages: string[] = [];
   let selected: CandidateItem[] = [];
@@ -537,7 +554,15 @@ export async function runRadarCycle(
   let unknownPrices = 0;
   let detailFetchBudget = 0;
   let budgetReason = "detail stage not reached";
-  const imageByUrl = new Map<string, { url: string; source: string }>();
+  const imageByUrl = new Map<string, { url: string; source: string; images: string[] }>();
+  let extractionAttempted = 0;
+  let extractionAiCalls = 0;
+  let jsonldFound = 0;
+  let ogDataFound = 0;
+  let imagesFound = 0;
+  let evidenceMergeCount = 0;
+  let attributesVerified = 0;
+  const extractionSourcesUsed = new Set<string>();
   const detailDocs: SearchDocument[] = [];
   const discoveryByUrl = new Map<string, string>();
 
@@ -615,7 +640,15 @@ export async function runRadarCycle(
         // Real listing imagery only — captured from the item's own page, with
         // its provenance. A missing image is left missing; nothing is invented.
         for (const p of fetched.pages) {
-          if (p.image) imageByUrl.set(p.url, { url: p.image, source: p.image_source ?? p.url });
+          const images = (p.images ?? []).filter(Boolean);
+          if (p.image || images.length > 0) {
+            imageByUrl.set(p.url, {
+              url: p.image ?? images[0]!,
+              source: p.image_source ?? p.url,
+              images: Array.from(new Set([p.image, ...images].filter((i): i is string => !!i))).slice(0, 8),
+            });
+            imagesFound += images.length || 1;
+          }
         }
         detailFetchesOk = fetched.pages.length;
         detailFetchesFailed = fetched.failures.length;
@@ -650,27 +683,111 @@ export async function runRadarCycle(
         }
 
         if (specs.length > 0 && fetched.pages.length > 0) {
-          // Detail pages that render their facts client-side come back almost
-          // empty. The card that item was discovered in is real page content
-          // for the same item, joined by exact URL, so it is appended as
-          // clearly-labelled extra evidence rather than left on the floor.
-          const augmented = fetched.pages.map((page) => {
+          // ---------- STRUCTURED EXTRACTION + EVIDENCE MERGING ----------
+          // Every retrieved surface for the same item is read deterministically
+          // first: JSON-LD, OpenGraph/meta, spec tables, page title, page text,
+          // the index card it was discovered in, and the search snippet. Only
+          // what is literally written is used, and the AI pass afterwards is
+          // limited to whatever is still missing (cost control).
+          const snippetByUrl = new Map(research.documents.map((d) => [d.url, d]));
+          const evidenceByUrl = new Map<string, EvidenceDoc[]>();
+          const deterministic = new Map<string, Record<string, AttributeValue>>();
+
+          for (const page of fetched.pages) {
+            extractionAttempted += 1;
+            const docs: EvidenceDoc[] = [];
+            const st = page.structured;
+            if (st) {
+              if (Object.keys(st.jsonld).length > 0) {
+                jsonldFound += 1;
+                docs.push({ url: page.url, sourceType: "jsonld", fields: st.jsonld, text: Object.values(st.jsonld).join(" ") });
+              }
+              if (Object.keys(st.og).length > 0) {
+                ogDataFound += 1;
+                docs.push({
+                  url: page.url,
+                  sourceType: "opengraph",
+                  title: st.og["title"] ?? null,
+                  text: st.og["description"] ?? "",
+                  fields: st.og,
+                });
+              }
+              if (Object.keys(st.meta).length > 0) {
+                docs.push({ url: page.url, sourceType: "meta", text: st.meta["description"] ?? "", fields: st.meta });
+              }
+              if (Object.keys(st.fields).length > 0) {
+                docs.push({ url: page.url, sourceType: "detail_field", fields: st.fields });
+              }
+            }
+            docs.push({ url: page.url, sourceType: "detail_title", title: page.title });
+            docs.push({ url: page.url, sourceType: "detail_text", text: page.text });
             const card = indexCards.get(page.url) ?? indexCards.get(`${page.url}/`);
-            if (!card) return page;
-            indexCardsUsed += 1;
-            return {
-              ...page,
-              text:
-                `${page.text}\n\n[listing card for this item, as printed on ${card.sourceUrl}]\n${card.text}`.slice(
-                  0,
-                  12000,
-                ),
-            };
+            if (card) {
+              indexCardsUsed += 1;
+              docs.push({ url: card.sourceUrl, sourceType: "index_card", title: card.text.slice(0, 200), text: card.text });
+            }
+            const snippet = snippetByUrl.get(page.url);
+            if (snippet) {
+              docs.push({ url: page.url, sourceType: "search_snippet", title: snippet.title, text: snippet.snippet });
+            }
+            evidenceByUrl.set(page.url, docs);
+            const enriched = enrichFromEvidence(specs, docs, constraints);
+            deterministic.set(page.url, enriched.attributes);
+            evidenceMergeCount += enriched.telemetry.mergeCount;
+            for (const src of enriched.telemetry.sourcesUsed) extractionSourcesUsed.add(src);
+          }
+
+          // AI extraction runs ONLY for pages that still miss attributes.
+          const needsAi = fetched.pages.filter(
+            (p) => missingKeys(specs, deterministic.get(p.url) ?? {}).length > 0,
+          );
+          const augmented = needsAi.map((page) => {
+            const card = indexCards.get(page.url) ?? indexCards.get(`${page.url}/`);
+            const structuredText = page.structured
+              ? `\n\n[structured data on this page]\n${Object.entries({
+                  ...page.structured.jsonld,
+                  ...page.structured.og,
+                  ...page.structured.fields,
+                })
+                  .slice(0, 60)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join("\n")}`
+              : "";
+            const cardText = card ? `\n\n[listing card for this item, as printed on ${card.sourceUrl}]\n${card.text}` : "";
+            return { ...page, text: `${page.text}${structuredText}${cardText}`.slice(0, 12000) };
           });
-          const extracted = await extractDetailAttributes(augmented, specs, criteria);
-          details = extracted.details;
-          extractionsOk = extracted.details.length;
-          extractionsFailed = extracted.failures.length;
+
+          let aiDetails: ExtractedDetail[] = [];
+          let aiFailures: { url: string; reason: string }[] = [];
+          if (augmented.length > 0) {
+            extractionAiCalls += 1;
+            const extracted = await extractDetailAttributes(augmented, specs, criteria);
+            aiDetails = extracted.details;
+            aiFailures = extracted.failures;
+          }
+          const aiByUrl = new Map(aiDetails.map((d) => [d.url, d]));
+
+          // Merge: deterministic evidence first, AI only where it fills a gap.
+          details = fetched.pages.map((page) => {
+            const base = deterministic.get(page.url) ?? {};
+            const ai = aiByUrl.get(page.url);
+            const { merged, merges } = mergeAttributeMaps(base, ai?.attributes ?? {});
+            evidenceMergeCount += merges;
+            const extracted = Object.values(merged).filter((a) => a.confidence !== "unknown").length;
+            attributesVerified += Object.values(merged).filter(
+              (a) => a.confidence === "structured" || a.confidence === "stated",
+            ).length;
+            return {
+              url: page.url,
+              title: ai?.title ?? page.title,
+              attributes: merged,
+              availability: ai?.availability ?? null,
+              extracted,
+              missing: specs.length - extracted,
+            } satisfies ExtractedDetail;
+          });
+          extractionsOk = details.filter((d) => d.extracted > 0).length;
+          extractionsFailed = aiFailures.filter((f) => (deterministic.get(f.url) ?? {}) && !details.some((d) => d.url === f.url && d.extracted > 0)).length;
 
           // Index-row price provenance: when a detail page is client-rendered
           // and states no value, the value printed in that item's own card on
@@ -710,6 +827,7 @@ export async function runRadarCycle(
               }
             }
           }
+
           for (const d of details) {
             attributesExtracted += d.extracted;
             attributesMissing += d.missing;
@@ -862,13 +980,6 @@ ${documentBlock(allDocs.slice(0, 45))}`,
   // "probably". Every item gets match / reject / unverified plus the exact
   // reason, and only a confirmed match may ever reach the alert pipeline.
   // ------------------------------------------------------------------
-  const constraints = radarConstraints({
-    hard_constraints: config.hard_constraints,
-    price_min: config.price_min,
-    price_max: config.price_max,
-    currency: config.currency,
-    attribute_schema: specs,
-  });
   const verdicts = new Map<string, MatchVerdict>();
   let criteriaMatched = 0;
   let criteriaRejected = 0;
@@ -1256,9 +1367,24 @@ ${eligible
               imageByUrl.get(item.url)?.source ??
               (prev?.snapshot as { image_source?: string } | null)?.image_source ??
               null,
+            images:
+              imageByUrl.get(item.url)?.images ??
+              (prev?.snapshot as { images?: string[] } | null)?.images ??
+              [],
             match_status: verdicts.get(item.fingerprint)?.status ?? "unverified",
             match_reason: verdicts.get(item.fingerprint)?.reason ?? "no machine-checkable constraints defined",
             criteria: verdicts.get(item.fingerprint)?.outcomes ?? [],
+            // Why this listing is not a confirmed match, attribute by attribute.
+            unverified_reason:
+              (verdicts.get(item.fingerprint)?.outcomes ?? [])
+                .filter((o) => o.status === "unverified")
+                .map((o) => o.constraint.label ?? o.constraint.attribute)
+                .join(", ") || null,
+            missing_attributes: attrs
+              ? Object.values(attrs)
+                  .filter((a) => a.confidence === "unknown")
+                  .map((a) => a.key)
+              : [],
           } as never,
           attributes: (attrs ?? {}) as never,
           primary_url: detail ? item.url : (prev?.primary_url ?? null),
@@ -1370,6 +1496,15 @@ ${eligible
     index_prices_joined: indexPricesApplied,
     ambiguous_price_joins: indexTelemetry.ambiguous_price_joins,
     index_cards_used: indexCardsUsed,
+    extraction_attempted: extractionAttempted,
+    extraction_ai_calls: extractionAiCalls,
+    extraction_sources_used: Array.from(extractionSourcesUsed),
+    attributes_verified: attributesVerified,
+    images_found: imagesFound,
+    images_persisted: imageByUrl.size,
+    jsonld_found: jsonldFound,
+    og_data_found: ogDataFound,
+    evidence_merge_count: evidenceMergeCount,
     criteria_matched: criteriaMatched,
     criteria_rejected: criteriaRejected,
     criteria_unverified: criteriaUnverified,
