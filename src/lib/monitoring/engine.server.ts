@@ -37,6 +37,14 @@ import {
   type EvidenceDoc,
 } from "./enrichment";
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
+import {
+  COUNTRY_ATTRIBUTE,
+  countryAttribute,
+  countryConstraint,
+  inferMarket,
+  requiredMarkets,
+} from "./geo";
+import { buildHistory, hostPriority, type PriorityContext } from "@/lib/search/source-priority";
 import { normalizeAttribute } from "./normalize";
 import {
   buildBaseline,
