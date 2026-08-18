@@ -262,8 +262,9 @@ export function selectIndexPages(
       // still justify one probe read: the site is known to host item URLs, or
       // the search returned this same site repeatedly for the request — which
       // is what a dominant marketplace for the request looks like.
-      if (itemHosts.has(host)) probe = 2;
-      else if ((hostHits.get(host) ?? 0) >= 2) probe = 1;
+      if (itemHosts.has(host)) probe = 2 * priority;
+      else if ((hostHits.get(host) ?? 0) >= 2) probe = 1 * priority;
+      probe = Number(probe.toFixed(3));
     }
     return {
       doc,
