@@ -346,6 +346,15 @@ export async function runRadarCycle(
     };
   }
 
+  // Phase 1 (initial market scan) vs phase 2 (continuous monitoring).
+  const scanPhase: "initial_scan" | "monitoring" = isBaseline ? "initial_scan" : "monitoring";
+  if (isBaseline) {
+    await db
+      .from("radars")
+      .update({ scan_state: "INITIAL_SCAN_RUNNING", initial_scan_started_at: started })
+      .eq("id", radar.id);
+  }
+
   // Every retrieved source is persisted verbatim so alerts stay verifiable.
   const { data: runRow } = await db
     .from("monitor_runs")
@@ -354,6 +363,7 @@ export async function runRadarCycle(
       user_id: radar.user_id,
       status: "running",
       run_type: runType,
+      scan_phase: scanPhase,
       provider: research.provider,
       started_at: started,
       search_requests: research.requests,
@@ -365,6 +375,7 @@ export async function runRadarCycle(
     .select("id")
     .maybeSingle();
   const runId = runRow?.id ?? null;
+
 
   if (research.documents.length > 0) {
     await db.from("research_sources").insert(
