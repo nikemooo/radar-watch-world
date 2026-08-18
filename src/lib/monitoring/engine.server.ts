@@ -557,7 +557,7 @@ export async function runRadarCycle(
         frequency: radar.frequency,
         comparableGap: specs.length > 0 ? comparableGap : 0,
         fetchableCandidates: fetchable,
-        spentCost: research.costEstimate,
+        spentCost: research.costEstimate + indexExpansionCost,
         costCeiling,
         perFetchCost: 0.001,
       });
@@ -713,7 +713,7 @@ Exclusions: ${config.exclusions.join("; ") || "none"}
 Events to monitor: ${config.monitored_events.join("; ") || "any meaningful change"}
 
 Documents:
-${documentBlock(allDocs)}`,
+${documentBlock(allDocs.slice(0, 45))}`,
   });
 
   // Grounding guard: an item may only cite a retrieved document, or a page on
