@@ -8,6 +8,12 @@
  * the platform's waitUntil hook when available, and its outcome is read back
  * from the persisted monitor_run row.
  *
+ * The platform cannot guarantee that a background worker survives a process
+ * restart. Instead of pretending otherwise, every run heartbeats while it
+ * lives (see heartbeat.server.ts) and a lost worker is detected and reaped
+ * (see reaper.server.ts) — so a sweep either runs, completes, or is reported
+ * as interrupted. It can never stay "running" forever.
+ *
  * No monitoring logic lives here — this file only starts the real cycle and
  * reports its persisted truth.
  */
@@ -16,14 +22,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { beginRun, runRadarCycle, type RunOptions, type RunResult } from "./engine.server";
 import { keepRuntimeAlive } from "../runtime-context.server";
+import { startRunHeartbeat } from "./heartbeat.server";
+import { reapStaleRuns, releaseRadar } from "./reaper.server";
+import { phaseLabel } from "./lifecycle";
 
 type Db = SupabaseClient<Database>;
 type RadarRow = Database["public"]["Tables"]["radars"]["Row"];
 
 /** How long the request waits for a fast sweep before handing off to polling. */
 const INLINE_WAIT_MS = 12_000;
-/** A run still "running" after this long is treated as dead (worker cut off). */
-const STALE_RUN_MS = 15 * 60_000;
 
 export type SweepStart =
   | { state: "completed"; result: RunResult; runId: string | null; startedAt: string }
@@ -35,10 +42,16 @@ export type SweepStatus = {
   runType: string | null;
   status: string | null;
   error: string | null;
+  failureReason: string | null;
+  phase: string | null;
+  phaseLabel: string | null;
+  heartbeatAt: string | null;
   itemsFound: number;
   newItems: number;
   alertsCreated: number;
   sourcesRetrieved: number;
+  candidates: number;
+  detailFetches: number;
   startedAt: string | null;
   finishedAt: string | null;
 };
@@ -54,6 +67,7 @@ export async function startRadarSweep(
   // already shows a running sweep instead of the untouched initial state.
   const claim = await beginRun(db, radar);
   const startedAt = claim.startedAt;
+  const tracker = startRunHeartbeat(db, claim.runId);
 
   const sweep = (async () => {
     try {
@@ -61,6 +75,7 @@ export async function startRadarSweep(
         ...options,
         runId: claim.runId,
         startedAt: claim.startedAt,
+        tracker,
       });
     } catch (err) {
       // Without this, a crashed cycle leaves monitor_runs stuck on "running"
@@ -72,20 +87,20 @@ export async function startRadarSweep(
           .update({
             status: "failed",
             error: message.slice(0, 800),
+            failure_reason: "start_failed",
+            failed_at: new Date().toISOString(),
             finished_at: new Date().toISOString(),
           })
           .eq("id", claim.runId);
       }
-      if (!radar.baseline_completed) {
-        // A crashed initial scan must be retried, never presented as inventory.
-        await db
-          .from("radars")
-          .update({ scan_state: "initial_scan_pending" })
-          .eq("id", radar.id);
-      }
+      // Restore the radar's state and release the concurrency lock so the user
+      // can immediately try again.
+      await releaseRadar(db, radar.id, claim.runId);
       console.error(`[radar:sweep] radar ${radar.id} failed — ${message}`);
 
       throw err;
+    } finally {
+      tracker.stop();
     }
   })();
 
@@ -114,10 +129,14 @@ export async function readSweepStatus(
   radarId: string,
   since?: string | undefined,
 ): Promise<SweepStatus> {
+  // Recovery is never left to chance: every status read first closes runs whose
+  // worker has gone quiet, so the UI cannot show an endless "searching".
+  await reapStaleRuns(db, { radarId });
+
   let query = db
     .from("monitor_runs")
     .select(
-      "id, status, run_type, error, items_found, new_items, alerts_created, sources_retrieved, started_at, finished_at",
+      "id, status, run_type, error, failure_reason, current_phase, heartbeat_at, items_found, new_items, alerts_created, sources_retrieved, candidates_discovered, detail_fetches_ok, started_at, finished_at",
     )
     .eq("radar_id", radarId)
     .order("started_at", { ascending: false })
@@ -134,38 +153,22 @@ export async function readSweepStatus(
       runType: null,
       status: null,
       error: null,
+      failureReason: null,
+      phase: null,
+      phaseLabel: null,
+      heartbeatAt: null,
       itemsFound: 0,
       newItems: 0,
       alertsCreated: 0,
       sourcesRetrieved: 0,
+      candidates: 0,
+      detailFetches: 0,
       startedAt: null,
       finishedAt: null,
     };
   }
 
-  let status = run.status;
-  if (status === "running" && Date.now() - new Date(run.started_at).getTime() > STALE_RUN_MS) {
-    status = "failed";
-    await db
-      .from("monitor_runs")
-      .update({
-        status: "failed",
-        error: "Sweep did not finish — the run was interrupted.",
-        finished_at: new Date().toISOString(),
-      })
-      .eq("id", run.id);
-    // Reaping the run is not enough: a radar whose initial scan was cut off
-    // stays pinned on INITIAL_SCAN_RUNNING forever and the UI can never show
-    // anything but "scan running". Release it back to a retryable state.
-    // Nothing else about the radar (config, findings, baseline) is touched.
-    await db
-      .from("radars")
-      .update({ scan_state: "initial_scan_pending" })
-      .eq("id", radarId)
-      .eq("scan_state", "INITIAL_SCAN_RUNNING")
-      .eq("baseline_completed", false);
-  }
-
+  const status = run.status;
   const state: SweepStatus["state"] =
     status === "running"
       ? "running"
@@ -179,10 +182,16 @@ export async function readSweepStatus(
     runType: run.run_type,
     status,
     error: run.error,
+    failureReason: run.failure_reason,
+    phase: run.current_phase,
+    phaseLabel: phaseLabel(run.current_phase),
+    heartbeatAt: run.heartbeat_at,
     itemsFound: run.items_found,
     newItems: run.new_items,
     alertsCreated: run.alerts_created,
     sourcesRetrieved: run.sources_retrieved,
+    candidates: run.candidates_discovered,
+    detailFetches: run.detail_fetches_ok,
     startedAt: run.started_at,
     finishedAt: run.finished_at,
   };
