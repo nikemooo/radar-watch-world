@@ -16,6 +16,7 @@ import { detectItemFamilies, pathSignature, type UrlFamily } from "./url-shape";
 import {
   detectPaginationLinks,
   extractIndexRowPrices,
+  type IndexCard,
   nextPageByParam,
   type IndexPriceHint,
 } from "./index-rows";
@@ -56,6 +57,12 @@ export interface ExpansionResult {
   /** Unambiguous item price read from the card it was discovered in. */
   priceHints: Map<string, IndexPriceHint>;
   ambiguousPrices: { itemUrl: string; values: string[]; sourceUrl: string }[];
+  /**
+   * Verbatim text of the card each item was discovered in. Detail pages that
+   * render their facts client-side leave the index card as the only readable
+   * evidence for that item, so it is carried forward as index-origin context.
+   */
+  indexCards: Map<string, IndexCard>;
   telemetry: ExpansionTelemetry;
 }
 
@@ -253,6 +260,7 @@ export async function expandIndexPages(
       costEstimate: 0,
       priceHints: new Map(),
       ambiguousPrices: [],
+      indexCards: new Map(),
       telemetry: emptyTelemetry,
     };
   }
@@ -262,6 +270,7 @@ export async function expandIndexPages(
   const byUrl = new Map(documents.map((d) => [d.url, d]));
   const priceHints = new Map<string, IndexPriceHint>();
   const ambiguousPrices: ExpansionResult["ambiguousPrices"] = [];
+  const indexCards = new Map<string, IndexCard>();
   const telemetry: ExpansionTelemetry = { ...emptyTelemetry };
   let costEstimate = 0;
   let totalReads = 0;
@@ -304,6 +313,10 @@ export async function expandIndexPages(
       // Row-level prices: only from the page the item card is printed on.
       if (page.html) {
         const rows = extractIndexRowPrices(page.html, pageUrl, new Set(pageItems));
+        for (const [itemUrl, card] of rows.cards) {
+          const prev = indexCards.get(itemUrl);
+          if (!prev || prev.text.length < card.text.length) indexCards.set(itemUrl, card);
+        }
         for (const [itemUrl, hint] of rows.hints) {
           if (priceHints.has(itemUrl)) {
             const prev = priceHints.get(itemUrl)!;
@@ -373,6 +386,7 @@ export async function expandIndexPages(
     costEstimate,
     priceHints,
     ambiguousPrices,
+    indexCards,
     telemetry,
   };
 }
