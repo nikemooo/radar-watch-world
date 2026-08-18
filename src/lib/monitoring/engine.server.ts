@@ -1094,7 +1094,10 @@ export async function runRadarCycle(
   type RunUpdate = Database["public"]["Tables"]["monitor_runs"]["Update"];
   const finishRun = async (patch: RunUpdate) => {
     if (!runId) return;
-    await db.from("monitor_runs").update(patch).eq("id", runId);
+    await db
+      .from("monitor_runs")
+      .update({ ...patch, current_phase: "completed", heartbeat_at: new Date().toISOString() })
+      .eq("id", runId);
   };
 
   if (research.documents.length === 0) {
@@ -1577,6 +1580,7 @@ ${eligible
     }
   }
 
+  await phase("persisting_results");
   // 5. Persist monitoring state — findings are never deleted, only updated.
   const now = new Date().toISOString();
   for (const item of items) {
