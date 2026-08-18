@@ -155,7 +155,9 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
   // page's item family, so a site already known to host item URLs elsewhere in
   // the result set stays eligible for a full re-read instead of being dropped.
   const itemHosts = new Set<string>();
+  const hostHits = new Map<string, number>();
   for (const doc of documents) {
+    hostHits.set(hostOf(doc.url), (hostHits.get(hostOf(doc.url)) ?? 0) + 1);
     for (const family of detectItemFamilies(harvest(doc), doc.url)) {
       for (const u of family.urls.slice(0, 5)) itemHosts.add(hostOf(u));
     }
@@ -178,7 +180,15 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
       const own = families.filter((f) => f.signature.startsWith(hostOf(doc.url)));
       const best = own[0] ?? families[0];
       let score = best ? best.urls.length * (own.length > 0 ? 2 : 1) * best.variableSegments : 0;
-      if (score === 0 && itemHosts.has(hostOf(doc.url)) && looksLikeIndexPath(doc.url)) score = 4;
+      if (score === 0 && looksLikeIndexPath(doc.url)) {
+        // Shallow snippets hide item families entirely. Two independent signals
+        // still justify one probe read: the site is known to host item URLs, or
+        // the search returned this same site repeatedly for the request — which
+        // is what a dominant marketplace for the request looks like.
+        const host = hostOf(doc.url);
+        if (itemHosts.has(host)) score = 4;
+        else if ((hostHits.get(host) ?? 0) >= 2) score = 3;
+      }
       return { doc, score };
     })
     .filter((d) => d.score > 0)
