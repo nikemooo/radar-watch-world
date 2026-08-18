@@ -735,6 +735,9 @@ export async function runRadarCycle(
   let detailFetchBudget = 0;
   let budgetReason = "detail stage not reached";
   const imageByUrl = new Map<string, { url: string; source: string; images: string[] }>();
+  /** Verified direct listing URL per requested candidate URL. */
+  const linkByUrl = new Map<string, ResolvedListingUrl>();
+  let directLinksVerified = 0;
   let extractionAttempted = 0;
   let extractionAiCalls = 0;
   let jsonldFound = 0;
