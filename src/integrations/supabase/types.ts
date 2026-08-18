@@ -408,6 +408,7 @@ export type Database = {
           finished_at: string | null
           id: string
           incremental_findings: number
+          index_cards_used: number
           index_pages_expanded: number
           index_pages_fetched: number
           index_prices_joined: number
@@ -463,6 +464,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           incremental_findings?: number
+          index_cards_used?: number
           index_pages_expanded?: number
           index_pages_fetched?: number
           index_prices_joined?: number
@@ -518,6 +520,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           incremental_findings?: number
+          index_cards_used?: number
           index_pages_expanded?: number
           index_pages_fetched?: number
           index_prices_joined?: number
