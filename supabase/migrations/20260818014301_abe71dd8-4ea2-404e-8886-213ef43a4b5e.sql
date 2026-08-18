@@ -1,0 +1,1 @@
+ALTER TABLE public.monitor_runs ADD COLUMN IF NOT EXISTS index_cards_used integer NOT NULL DEFAULT 0;

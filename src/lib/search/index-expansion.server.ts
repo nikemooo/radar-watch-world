@@ -16,6 +16,7 @@ import { detectItemFamilies, pathSignature, type UrlFamily } from "./url-shape";
 import {
   detectPaginationLinks,
   extractIndexRowPrices,
+  type IndexCard,
   nextPageByParam,
   type IndexPriceHint,
 } from "./index-rows";
@@ -56,6 +57,12 @@ export interface ExpansionResult {
   /** Unambiguous item price read from the card it was discovered in. */
   priceHints: Map<string, IndexPriceHint>;
   ambiguousPrices: { itemUrl: string; values: string[]; sourceUrl: string }[];
+  /**
+   * Verbatim text of the card each item was discovered in. Detail pages that
+   * render their facts client-side leave the index card as the only readable
+   * evidence for that item, so it is carried forward as index-origin context.
+   */
+  indexCards: Map<string, IndexCard>;
   telemetry: ExpansionTelemetry;
 }
 
@@ -148,7 +155,9 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
   // page's item family, so a site already known to host item URLs elsewhere in
   // the result set stays eligible for a full re-read instead of being dropped.
   const itemHosts = new Set<string>();
+  const hostHits = new Map<string, number>();
   for (const doc of documents) {
+    hostHits.set(hostOf(doc.url), (hostHits.get(hostOf(doc.url)) ?? 0) + 1);
     for (const family of detectItemFamilies(harvest(doc), doc.url)) {
       for (const u of family.urls.slice(0, 5)) itemHosts.add(hostOf(u));
     }
@@ -163,32 +172,52 @@ export function selectIndexPages(documents: SearchDocument[], max: number): Sear
       return false;
     }
   };
-  const ranked = documents
+  const scored = documents
     .map((doc) => {
       const families = detectItemFamilies(harvest(doc), doc.url);
       // Item families hosted by the page's own site indicate a real listing
       // index rather than an article linking out.
       const own = families.filter((f) => f.signature.startsWith(hostOf(doc.url)));
       const best = own[0] ?? families[0];
-      let score = best ? best.urls.length * (own.length > 0 ? 2 : 1) * best.variableSegments : 0;
-      if (score === 0 && itemHosts.has(hostOf(doc.url)) && looksLikeIndexPath(doc.url)) score = 4;
-      return { doc, score };
+      const score = best ? best.urls.length * (own.length > 0 ? 2 : 1) * best.variableSegments : 0;
+      let probe = 0;
+      if (score === 0 && looksLikeIndexPath(doc.url)) {
+        // Shallow snippets hide item families entirely. Two independent signals
+        // still justify one probe read: the site is known to host item URLs, or
+        // the search returned this same site repeatedly for the request — which
+        // is what a dominant marketplace for the request looks like.
+        const host = hostOf(doc.url);
+        if (itemHosts.has(host)) probe = 2;
+        else if ((hostHits.get(host) ?? 0) >= 2) probe = 1;
+      }
+      return { doc, score, probe };
     })
-    .filter((d) => d.score > 0)
-    .sort((a, b) => b.score - a.score);
+    .filter((d) => d.score > 0 || d.probe > 0);
+
+  const strong = scored.filter((d) => d.score > 0).sort((a, b) => b.score - a.score);
+  // Probes are reserved a slice of the budget. Without it a marketplace whose
+  // search snippet is shallow always loses to catalog/spec pages that merely
+  // *look* deep, which is exactly how real inventory gets missed.
+  const probes = scored.filter((d) => d.score === 0).sort((a, b) => b.probe - a.probe);
+  const probeSlots = probes.length === 0 ? 0 : Math.max(1, Math.floor(max / 3));
 
   const picked: SearchDocument[] = [];
   const perHost = new Map<string, number>();
-  for (const pass of [1, 2]) {
-    for (const r of ranked) {
-      if (picked.length >= max) break;
-      if (picked.includes(r.doc)) continue;
-      const host = hostOf(r.doc.url);
-      if ((perHost.get(host) ?? 0) >= pass) continue;
-      perHost.set(host, (perHost.get(host) ?? 0) + 1);
-      picked.push(r.doc);
+  const take = (list: typeof scored, limit: number) => {
+    for (const pass of [1, 2]) {
+      for (const r of list) {
+        if (picked.length >= limit) break;
+        if (picked.includes(r.doc)) continue;
+        const host = hostOf(r.doc.url);
+        if ((perHost.get(host) ?? 0) >= pass) continue;
+        perHost.set(host, (perHost.get(host) ?? 0) + 1);
+        picked.push(r.doc);
+      }
     }
-  }
+  };
+  take(probes, probeSlots);
+  take(strong, max);
+  take(probes, max);
   return picked;
 }
 
@@ -253,6 +282,7 @@ export async function expandIndexPages(
       costEstimate: 0,
       priceHints: new Map(),
       ambiguousPrices: [],
+      indexCards: new Map(),
       telemetry: emptyTelemetry,
     };
   }
@@ -262,6 +292,7 @@ export async function expandIndexPages(
   const byUrl = new Map(documents.map((d) => [d.url, d]));
   const priceHints = new Map<string, IndexPriceHint>();
   const ambiguousPrices: ExpansionResult["ambiguousPrices"] = [];
+  const indexCards = new Map<string, IndexCard>();
   const telemetry: ExpansionTelemetry = { ...emptyTelemetry };
   let costEstimate = 0;
   let totalReads = 0;
@@ -304,6 +335,10 @@ export async function expandIndexPages(
       // Row-level prices: only from the page the item card is printed on.
       if (page.html) {
         const rows = extractIndexRowPrices(page.html, pageUrl, new Set(pageItems));
+        for (const [itemUrl, card] of rows.cards) {
+          const prev = indexCards.get(itemUrl);
+          if (!prev || prev.text.length < card.text.length) indexCards.set(itemUrl, card);
+        }
         for (const [itemUrl, hint] of rows.hints) {
           if (priceHints.has(itemUrl)) {
             const prev = priceHints.get(itemUrl)!;
@@ -373,6 +408,7 @@ export async function expandIndexPages(
     costEstimate,
     priceHints,
     ambiguousPrices,
+    indexCards,
     telemetry,
   };
 }
