@@ -252,7 +252,10 @@ export function selectIndexPages(
       .map((e) => ({ ...e, s: familyScore(e.f, e.own) }))
       .sort((a, b) => b.s - a.s);
     const best = ranked[0];
-    const score = best?.s ?? 0;
+    // Learned source priority re-orders equally structural candidates; it can
+    // never create evidence where the page shows none (0 stays 0).
+    const priority = priorityOf(host);
+    const score = (best?.s ?? 0) * priority;
     let probe = 0;
     if (score === 0 && looksLikeIndexPath(doc.url)) {
       // Shallow snippets hide item families entirely. Two independent signals
