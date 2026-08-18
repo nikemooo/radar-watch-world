@@ -43,6 +43,9 @@ export interface FindingSnapshot {
   missing_attributes?: string[];
   criteria?: { label?: string; ok?: boolean | null; reason?: string }[];
   image_evidence?: unknown;
+  /** "direct" when the stored URL provably addresses the advert itself. */
+  link_status?: "direct" | "unverified";
+  canonical_url?: string | null;
 }
 
 export function snapshotOf(value: unknown): FindingSnapshot {
