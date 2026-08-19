@@ -167,7 +167,10 @@ export async function readSweepStatus(
   // continuation (it resumes from its checkpoints, paying nothing twice); only
   // a run that can no longer be resumed is closed as failed. Either way the UI
   // can never show an endless "searching".
-  const resumed = await resumeInterruptedRuns(db, { radarId });
+  // Status polling is also a worker: it carries the run forward by one short
+  // slice, so an open page makes a sweep progress continuously instead of
+  // waiting for the next cron minute.
+  const resumed = await resumeInterruptedRuns(db, { radarId, await: true, sliceMs: 9_000 });
   await reapStaleRuns(db, { radarId });
 
   let query = db
