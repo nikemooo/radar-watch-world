@@ -128,10 +128,22 @@ function Dashboard() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Stat icon={RadarIcon} label="Active radars" value={String(activeRadars)} />
-            <Stat icon={Bell} label="Alerts this week" value={String(data?.weekAlerts.length ?? 0)} />
-            <Stat icon={Sparkles} label="Needs attention" value={String(critical)} />
+            <Stat icon={RadarIcon} label="Active radars" value={String(activeRadars)} to="/radars" />
+            <Stat
+              icon={Bell}
+              label="Alerts this week"
+              value={String(data?.weekAlerts.length ?? 0)}
+              to="/alerts"
+            />
+            <Stat
+              icon={Sparkles}
+              label="Needs attention"
+              value={String(critical)}
+              to="/alerts"
+              search={{ filter: "critical" as const }}
+            />
           </div>
+
 
           <section>
             <div className="flex items-center justify-between">
@@ -167,18 +179,27 @@ function Stat({
   icon: Icon,
   label,
   value,
+  to,
+  search,
 }: {
   icon: typeof Bell;
   label: string;
   value: string;
+  to: "/radars" | "/alerts";
+  search?: { filter: "critical" };
 }) {
   return (
-    <div className="panel p-4">
+    <Link
+      to={to}
+      search={search as never}
+      className="panel block p-4 transition-colors hover:border-primary/50"
+    >
       <div className="flex items-center gap-2 text-muted-foreground">
         <Icon className="size-4" />
         <span className="mono-label">{label}</span>
       </div>
       <p className="mt-3 font-mono text-3xl">{value}</p>
-    </div>
+    </Link>
   );
+
 }

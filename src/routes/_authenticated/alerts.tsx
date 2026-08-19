@@ -8,6 +8,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/_authenticated/alerts")({
+  // The dashboard metrics deep-link straight into a filtered inbox.
+  validateSearch: (search: Record<string, unknown>): { filter?: Filter } => {
+    const raw = search["filter"];
+    return raw === "new" || raw === "saved" || raw === "critical" || raw === "all"
+      ? { filter: raw }
+      : {};
+  },
   head: () => ({
     meta: [
       { title: "Alerts — Radar" },
@@ -23,7 +30,9 @@ type Filter = "all" | "new" | "saved" | "critical";
 
 function Alerts() {
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<Filter>("all");
+  const { filter: initialFilter } = Route.useSearch();
+  const [filter, setFilter] = useState<Filter>(initialFilter ?? "all");
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["alerts", filter],

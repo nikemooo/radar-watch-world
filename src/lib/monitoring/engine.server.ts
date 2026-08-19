@@ -14,6 +14,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
+import { computeNextRunAt } from "./schedule";
 import { chatJson, MODELS } from "../ai/gateway.server";
 import { researchQueries, type SearchDocument } from "../search/providers.server";
 import { planDiscoveryQueries } from "../search/query-planner.server";
@@ -1193,6 +1194,9 @@ export async function runRadarCycle(
       .from("radars")
       .update({
         last_run_at: new Date().toISOString(),
+        // The next recurring sweep is scheduled server-side, so cadence never
+        // depends on anyone having the app open.
+        next_run_at: computeNextRunAt(radar.frequency, new Date(), radar.status),
         ...(isBaseline ? { scan_state: "initial_scan_pending" } : {}),
       })
       .eq("id", radar.id);
@@ -1866,7 +1870,10 @@ ${eligible
   });
 
   type RadarUpdate = Database["public"]["Tables"]["radars"]["Update"];
-  const radarPatch: RadarUpdate = { last_run_at: now };
+  const radarPatch: RadarUpdate = {
+    last_run_at: now,
+    next_run_at: computeNextRunAt(radar.frequency, now, radar.status),
+  };
   if (!failed) {
     radarPatch.last_successful_sweep_at = now;
     // Baseline only counts as complete after a successful sweep.
