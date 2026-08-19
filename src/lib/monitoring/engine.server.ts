@@ -2014,6 +2014,25 @@ ${eligible
               (prev?.snapshot as { canonical_url?: string } | null)?.canonical_url ??
               null,
             requested_url: item.url,
+            // What Radar actually knows about this item, and why: one record
+            // per attribute with status, confidence, sources and conflicts.
+            evidence: (attributeEvidenceByUrl.has(item.url)
+              ? storableEvidence(attributeEvidenceByUrl.get(item.url)!)
+              : ((prev?.snapshot as { evidence?: StoredEvidence[] } | null)?.evidence ?? [])) as never,
+            // Photo observations for the requirements the text never stated.
+            image_evidence: (visualByUrl.get(item.url) ??
+              (prev?.snapshot as { image_evidence?: unknown } | null)?.image_evidence ??
+              []) as never,
+            image_status:
+              imageEvidenceByUrl.get(item.url)?.status ??
+              (imageByUrl.get(item.url) ? "from_listing" : null) ??
+              (prev?.snapshot as { image_status?: string } | null)?.image_status ??
+              null,
+            // Unique identity of the physical item, when the page publishes one.
+            identifiers: (identifiersByUrl.get(item.url) ??
+              (prev?.snapshot as { identifiers?: Identifier[] } | null)?.identifiers ??
+              []) as never,
+
           } as never,
           attributes: (attrs ?? {}) as never,
           primary_url:
