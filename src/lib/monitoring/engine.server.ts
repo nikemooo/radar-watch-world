@@ -16,7 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { computeNextRunAt } from "./schedule";
 import { chatJson, MODELS } from "../ai/gateway.server";
-import { researchQueries, type SearchDocument } from "../search/providers.server";
+import { researchQueries, type ResearchResult, type SearchDocument } from "../search/providers.server";
 import { planDiscoveryQueries } from "../search/query-planner.server";
 import { expandIndexPages } from "../search/index-expansion.server";
 import type { IndexPriceHint } from "../search/index-rows";
@@ -563,9 +563,114 @@ export async function runRadarCycle(
       .join(" | ")}`,
   );
   await phase("searching_sources");
-  const research = await step("research", () =>
-    researchQueries(queries, isBaseline ? 10 : 8, queries.length),
-  );
+
+  // Search one query per checkpoint. Previously the whole 6-8 query batch was
+  // one checkpoint: if the runtime ended after query 7, the persisted run still
+  // said zero sources and a continuation paid for every query again. Each
+  // provider response is now durable and reflected in live telemetry before
+  // the next request starts.
+  const researchParts: ResearchResult[] = [];
+  const seenResearchUrls = new Set<string>();
+  let firstCandidatesPersisted = false;
+  for (let queryIndex = 0; queryIndex < queries.length; queryIndex += 1) {
+    const query = queries[queryIndex];
+    if (!query) continue;
+    const part = await step(`research:${queryIndex}`, () =>
+      researchQueries([query], isBaseline ? 10 : 8, 1),
+    );
+    researchParts.push(part);
+
+    const uniquePartDocs = part.documents.filter((doc) => {
+      if (seenResearchUrls.has(doc.url)) return false;
+      seenResearchUrls.add(doc.url);
+      return true;
+    });
+    const requests = researchParts.reduce((sum, item) => sum + item.requests, 0);
+    const successes = researchParts.reduce((sum, item) => sum + item.successes, 0);
+    const failures = researchParts.reduce((sum, item) => sum + item.failures, 0);
+    const sources = seenResearchUrls.size;
+    const cost = researchParts.reduce((sum, item) => sum + item.costEstimate, 0);
+    await patchRun({
+      provider: part.provider,
+      search_requests: requests,
+      search_successes: successes,
+      search_failures: failures,
+      sources_retrieved: sources,
+      cost_estimate: Number(cost.toFixed(4)),
+      error: researchParts.flatMap((item) => item.errors).join(" | ").slice(0, 800) || null,
+    });
+
+    if (uniquePartDocs.length > 0) {
+      await db.from("research_sources").upsert(
+        uniquePartDocs.map((doc) => ({
+          radar_id: radar.id,
+          user_id: radar.user_id,
+          run_id: runId,
+          provider: part.provider ?? "search",
+          query: doc.query,
+          url: doc.url,
+          title: doc.title,
+          publisher: doc.publisher ?? null,
+          published_at: safeDate(doc.published_at),
+          retrieved_at: doc.retrieved_at,
+          last_seen_at: doc.retrieved_at,
+          snippet: doc.snippet.slice(0, 4000),
+        })),
+        { onConflict: "radar_id,url,retrieved_at", ignoreDuplicates: true },
+      );
+    }
+
+    // Produce visible inventory from the first useful local-market response;
+    // the full candidate pass below still expands indexes and replaces these
+    // placeholders with verified findings.
+    if (!firstCandidatesPersisted && seenResearchUrls.size > 0) {
+      const earlyDocs = researchParts.flatMap((item) => item.documents);
+      const early = await step("early_candidates", () => discoverCandidates(earlyDocs, config.target || radar.raw_request));
+      const now = new Date().toISOString();
+      const provisional = early.candidates
+        .filter((candidate) => candidate.url && candidate.individual)
+        .slice(0, 30)
+        .map((candidate) => ({
+          radar_id: radar.id,
+          user_id: radar.user_id,
+          fingerprint: `provisional:${candidate.url}`,
+          title: candidate.title || String(candidate.url),
+          url: String(candidate.url),
+          snapshot: { match_status: "pending", match_reason: "being checked", images: [] } as never,
+          attributes: {} as never,
+          discovery_url: candidate.discovery_url,
+          detail_status: "not_attempted",
+          origin: isBaseline ? "baseline" : "incremental",
+          last_run_id: runId,
+          first_seen_at: now,
+          last_seen_at: now,
+        }));
+      if (provisional.length > 0) {
+        await db.from("findings").upsert(provisional, { onConflict: "radar_id,fingerprint" });
+        await patchRun({
+          candidates_discovered: provisional.length,
+          persisted_findings: provisional.length,
+          first_useful_result_at: now,
+        });
+        firstCandidatesPersisted = true;
+      }
+    }
+  }
+
+  const research: ResearchResult = {
+    configured: researchParts.some((part) => part.configured),
+    provider: researchParts.find((part) => part.provider)?.provider ?? null,
+    documents: researchParts.flatMap((part) => part.documents).filter((doc, index, all) =>
+      all.findIndex((candidate) => candidate.url === doc.url) === index,
+    ),
+    requests: researchParts.reduce((sum, part) => sum + part.requests, 0),
+    successes: researchParts.reduce((sum, part) => sum + part.successes, 0),
+    failures: researchParts.reduce((sum, part) => sum + part.failures, 0),
+    costEstimate: Number(researchParts.reduce((sum, part) => sum + part.costEstimate, 0).toFixed(4)),
+    rawResults: researchParts.reduce((sum, part) => sum + part.rawResults, 0),
+    duplicatesRemoved: researchParts.reduce((sum, part) => sum + part.duplicatesRemoved, 0),
+    errors: researchParts.flatMap((part) => part.errors),
+  };
 
   if (!research.configured) {
     await patchRun({
@@ -670,12 +775,12 @@ export async function runRadarCycle(
   }
 
   if (research.documents.length > 0) {
-    await db.from("research_sources").insert(
+    await db.from("research_sources").upsert(
       research.documents.map((d) => ({
         radar_id: radar.id,
         user_id: radar.user_id,
         run_id: runId,
-        provider: research.provider!,
+        provider: research.provider ?? "search",
         query: d.query,
         url: d.url,
         title: d.title,
@@ -685,6 +790,7 @@ export async function runRadarCycle(
         last_seen_at: d.retrieved_at,
         snippet: d.snippet.slice(0, 4000),
       })),
+      { onConflict: "radar_id,url,retrieved_at", ignoreDuplicates: true },
     );
   }
 
@@ -727,7 +833,11 @@ export async function runRadarCycle(
 
   // Persisted state is loaded BEFORE the detail stage so the fetch policy can
   // aim the budget at items that actually improve comparable coverage.
-  const { data: existingRows } = await db.from("findings").select("*").eq("radar_id", radar.id);
+  const { data: existingRows } = await db
+    .from("findings")
+    .select("*")
+    .eq("radar_id", radar.id)
+    .not("fingerprint", "like", "provisional:%");
   const existing = new Map((existingRows ?? []).map((f) => [f.fingerprint, f]));
 
   const asObservation = (f: NonNullable<typeof existingRows>[number]): Observation => ({

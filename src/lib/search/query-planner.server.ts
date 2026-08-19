@@ -44,6 +44,29 @@ export interface PlannedQuery {
 
 const normalize = (q: string) => q.trim().replace(/\s+/g, " ").toLowerCase();
 
+function marketSeeds(config: RadarConfig): PlannedQuery[] {
+  const target = String(config.target ?? "").trim();
+  if (!target) return [];
+  const locations = (config.locations ?? []).map(String).filter(Boolean);
+  const location = locations[0]?.trim();
+  if (!location) return [];
+  const sweden = /^(sverige|sweden|se)$/i.test(location);
+  const localTerms = sweden ? "till salu begagnad" : "for sale marketplace";
+  const marketSite = sweden ? "site:.se" : "";
+  return [
+    {
+      query: `${target} ${localTerms} ${location}`.trim(),
+      intent: "index",
+      origin: "configured",
+    },
+    {
+      query: `${marketSite} ${target} ${localTerms}`.trim(),
+      intent: "item",
+      origin: "configured",
+    },
+  ];
+}
+
 /**
  * Expand the radar's configured queries into a diverse discovery set.
  * Falls back to the configured queries if the planner is unavailable.
@@ -100,11 +123,12 @@ Return ${max} queries.`,
     console.warn(`[radar:queries] planner unavailable — ${(err as Error).message}`);
   }
 
-  // Planned queries lead (they are the discovery-oriented ones), configured
-  // queries follow so a radar never loses what the user's interpretation set.
+  // Deterministic local-market seeds lead. They make the first provider call
+  // useful even when the AI planner is slow or proposes broad editorial
+  // queries. Configured user queries follow, then AI-planned breadth.
   const out: PlannedQuery[] = [];
   const seen = new Set<string>();
-  for (const q of [...planned, ...configured]) {
+  for (const q of [...marketSeeds(config), ...configured, ...planned]) {
     const key = normalize(q.query);
     if (seen.has(key)) continue;
     seen.add(key);
