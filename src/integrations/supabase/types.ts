@@ -1104,7 +1104,11 @@ export type Database = {
           created_at: string
           id: string
           key: string
+          phase: string | null
+          radar_id: string | null
           run_id: string
+          schema_version: number
+          updated_at: string
           user_id: string
           value: Json
         }
@@ -1112,7 +1116,11 @@ export type Database = {
           created_at?: string
           id?: string
           key: string
+          phase?: string | null
+          radar_id?: string | null
           run_id: string
+          schema_version?: number
+          updated_at?: string
           user_id: string
           value: Json
         }
@@ -1120,11 +1128,22 @@ export type Database = {
           created_at?: string
           id?: string
           key?: string
+          phase?: string | null
+          radar_id?: string | null
           run_id?: string
+          schema_version?: number
+          updated_at?: string
           user_id?: string
           value?: Json
         }
         Relationships: [
+          {
+            foreignKeyName: "run_checkpoints_radar_id_fkey"
+            columns: ["radar_id"]
+            isOneToOne: false
+            referencedRelation: "radars"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "run_checkpoints_run_id_fkey"
             columns: ["run_id"]
