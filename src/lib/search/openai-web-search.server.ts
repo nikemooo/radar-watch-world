@@ -284,6 +284,7 @@ export async function runOpenAiWebSearchPoc(
     usage: null,
     webSearchCalls: 0,
     webSearchQueries: [],
+    error: null,
   };
 
   const reader = res.body.getReader();
