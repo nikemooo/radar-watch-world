@@ -18,8 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { snapshotOf, attributesOf, type FindingLike } from "@/components/listing-card";
 import type { EffectiveVerdict, UserVerdict } from "@/lib/monitoring/verification";
-import { statusLabel } from "@/lib/monitoring/verification";
 import { cn } from "@/lib/utils";
+import { useI18n, useT, type TranslationKey } from "@/lib/i18n";
 
 export interface VerifyDialogProps {
   findings: FindingLike[];
@@ -31,9 +31,9 @@ export interface VerifyDialogProps {
   onAnswer: (input: { finding: FindingLike; attribute: string; verdict: UserVerdict }) => void;
 }
 
-function money(value: number | null, currency: string | null): string {
-  if (value === null) return "Pris saknas";
-  const rounded = Math.round(value).toLocaleString("sv-SE");
+function money(value: number | null, currency: string | null, locale: string, missing: string): string {
+  if (value === null) return missing;
+  const rounded = Math.round(value).toLocaleString(locale);
   return currency === "SEK" ? `${rounded} kr` : `${rounded}${currency ? ` ${currency}` : ""}`;
 }
 
@@ -46,6 +46,8 @@ export function VerifyDialog({
   verdictOf,
   onAnswer,
 }: VerifyDialogProps) {
+  const t = useT();
+  const { locale } = useI18n();
   const [current, setCurrent] = useState(index);
   useEffect(() => setCurrent(index), [index]);
 
@@ -68,8 +70,8 @@ export function VerifyDialog({
         <DialogHeader>
           <DialogTitle className="text-left">{finding.title}</DialogTitle>
           <DialogDescription className="text-left">
-            {current + 1} av {findings.length} annonser att verifiera ·{" "}
-            {statusLabel[verdict?.status ?? "unverified"]}
+            {t("verify.counter", { index: current + 1, total: findings.length })} ·{" "}
+            {t(`verify.status.${verdict?.status ?? "unverified"}` as TranslationKey)}
           </DialogDescription>
         </DialogHeader>
 
@@ -78,12 +80,12 @@ export function VerifyDialog({
             <img src={snapshot.image} alt={finding.title} className="size-full object-cover" />
           ) : (
             <div className="flex size-full items-center justify-center gap-2 text-sm text-muted-foreground">
-              <ImageOff className="size-4" aria-hidden /> Ingen bild från annonsen
+              <ImageOff className="size-4" aria-hidden /> {t("listing.noImage")}
             </div>
           )}
         </div>
 
-        <p className="text-2xl font-semibold">{money(finding.numeric_value, finding.currency)}</p>
+        <p className="text-2xl font-semibold">{money(finding.numeric_value, finding.currency, locale, t("listing.noPrice"))}</p>
 
         {attributes.length > 0 && (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
@@ -97,7 +99,7 @@ export function VerifyDialog({
         )}
 
         <div className="space-y-4">
-          <p className="text-sm font-medium">Vad behöver verifieras?</p>
+          <p className="text-sm font-medium">{t("verify.whatToVerify")}</p>
           {(verdict?.requirements ?? [])
             .filter((r) => r.autoStatus !== "match")
             .map((r) => (
@@ -106,16 +108,16 @@ export function VerifyDialog({
                 <p className="text-xs text-muted-foreground">{r.autoReason}</p>
                 {r.image && r.image.confidence !== "none" && (
                   <p className="text-xs text-muted-foreground">
-                    Bildanalys: {r.image.observation} ({r.image.confidence === "high" ? "hög" : "låg"}{" "}
-                    confidence)
+                    {t("listing.imageAnalysis")}: {r.image.observation} (
+                    {r.image.confidence === "high" ? t("listing.confidenceHigh") : t("listing.confidenceLow")})
                   </p>
                 )}
                 <div className="flex flex-wrap gap-2">
                   {(
                     [
-                      ["pass", "✓ Uppfyller"],
-                      ["fail", "✕ Uppfyller inte"],
-                      ["unknown", "? Vet inte"],
+                      ["pass", t("verify.pass")],
+                      ["fail", t("verify.fail")],
+                      ["unknown", t("verify.unknown")],
                     ] as [UserVerdict, string][]
                   ).map(([value, label]) => (
                     <Button
@@ -132,13 +134,9 @@ export function VerifyDialog({
                 </div>
                 {r.userVerdict && (
                   <p className="text-xs text-muted-foreground">
-                    Du markerade detta som{" "}
-                    {r.userVerdict === "pass"
-                      ? "uppfyllt"
-                      : r.userVerdict === "fail"
-                        ? "ej uppfyllt"
-                        : "okänt"}
-                    .
+                    {t("verify.youMarked", {
+                      value: t(`verify.value.${r.userVerdict}` as TranslationKey),
+                    })}
                   </p>
                 )}
               </div>
@@ -153,23 +151,23 @@ export function VerifyDialog({
               rel="noreferrer noopener"
               title={
                 snapshot.link_status === "unverified"
-                  ? "Direktlänken till annonsen kunde inte verifieras"
+                  ? t("listing.linkUnverified")
                   : undefined
               }
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm"
             >
-              {snapshot.link_status === "unverified" ? "Öppna källa" : "Öppna annons"}{" "}
+              {snapshot.link_status === "unverified" ? t("verify.openSource") : t("verify.openListing")}{" "}
               <ExternalLink className="size-3.5" aria-hidden />
             </a>
           )}
           <div className="ml-auto flex gap-2">
-            <Button variant="outline" size="icon" aria-label="Föregående" disabled={current === 0} onClick={() => move(-1)}>
+            <Button variant="outline" size="icon" aria-label={t("verify.previous")} disabled={current === 0} onClick={() => move(-1)}>
               <ChevronLeft className="size-4" />
             </Button>
             <Button
               variant="outline"
               size="icon"
-              aria-label="Nästa"
+              aria-label={t("verify.next")}
               disabled={current >= findings.length - 1}
               onClick={() => move(1)}
             >
