@@ -13,7 +13,7 @@
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
 /** Current OpenAI model exposing the hosted `web_search` tool. */
-export const WEB_SEARCH_MODEL = "gpt-5.1";
+export const WEB_SEARCH_MODEL = "gpt-4o-search-preview";
 
 export interface PocCandidate {
   title: string | null;
