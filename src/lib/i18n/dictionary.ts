@@ -205,6 +205,11 @@ export const en = {
   "listing.evidence.sources": "{count} source(s)",
   "listing.identifiers": "Item identity",
   "listing.imageUnavailable": "This listing published no photo",
+  "listing.identity.verified": "Model confirmed",
+  "listing.identity.probable": "Model probable",
+  "listing.identity.conflicted": "Different model",
+  "listing.identity.unknown": "Model not stated",
+
 
   "new.editRequest": "Edit request",
   "new.step": "Step {step} of 2",
