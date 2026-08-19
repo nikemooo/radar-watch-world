@@ -1522,6 +1522,13 @@ ${documentBlock(allDocs.slice(0, 45))}`,
     }
   }
   const items: ExtractedItem[] = extraction.items.filter((i) => {
+    // A shop front page or a filtered result list is a SOURCE, never an item.
+    // Dropping it here is what keeps "12 hittade annonser" honest.
+    const kind = classifyCandidateUrl(i.url, allDocs.map((d) => d.url));
+    if (kind === "aggregator" || kind === "search_page") {
+      console.info(`[radar:gate] item dropped — ${kind} presented as listing: ${i.url}`);
+      return false;
+    }
     if (allDocs.some((d) => d.url === i.url)) return true;
     try {
       return docHosts.has(new URL(i.url).host);
@@ -1529,6 +1536,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
       return false;
     }
   });
+
 
   // Deterministic identity: the model's slug wording drifts between runs.
   const identified = assignFingerprints(items);
