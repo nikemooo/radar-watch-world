@@ -69,12 +69,13 @@ const frequencyChoices: { value: RadarFrequency; label: string; hint: string }[]
   { value: "instant", label: "Every hour", hint: "Fastest available" },
 ];
 
-const sweepProgress = [
-  "Searching the web…",
-  "Checking relevant sources…",
-  "Comparing what we found…",
-  "Evaluating potential matches…",
-];
+/**
+ * Progress text comes from the persisted run row (its current phase), never
+ * from a timer — a fake progress animation cannot tell a working sweep from a
+ * dead one.
+ */
+const INITIAL_SWEEP_LABEL = "Preparing the search…";
+
 
 type Step =
   | "intro"
