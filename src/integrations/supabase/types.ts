@@ -436,6 +436,7 @@ export type Database = {
         Row: {
           alerts_created: number
           ambiguous_price_joins: number
+          attempt: number
           attributes_extracted: number
           attributes_missing: number
           attributes_verified: number
@@ -448,6 +449,7 @@ export type Database = {
           candidates_selected: number
           comparable_coverage: number
           comparable_observations: number
+          continuation_count: number
           cost_ceiling: number
           cost_estimate: number
           criteria_matched: number
@@ -488,6 +490,7 @@ export type Database = {
           items_found: number
           items_merged: number
           jsonld_found: number
+          last_successful_operation: string | null
           listings_removed: number
           matching_listings: number
           monitoring_transition: boolean
@@ -498,6 +501,7 @@ export type Database = {
           pagination_pages_skipped: number
           pagination_pages_succeeded: number
           persisted_findings: number
+          phase_started_at: string | null
           provider: string | null
           radar_id: string
           reverified_findings: number
@@ -513,13 +517,17 @@ export type Database = {
           suppressed_duplicate: number
           suppressed_recency: number
           suppressed_relevance: number
+          termination_reason: string | null
           unknown_prices: number
           usable_comparables: number
           user_id: string
+          worker_finished_at: string | null
+          worker_started_at: string | null
         }
         Insert: {
           alerts_created?: number
           ambiguous_price_joins?: number
+          attempt?: number
           attributes_extracted?: number
           attributes_missing?: number
           attributes_verified?: number
@@ -532,6 +540,7 @@ export type Database = {
           candidates_selected?: number
           comparable_coverage?: number
           comparable_observations?: number
+          continuation_count?: number
           cost_ceiling?: number
           cost_estimate?: number
           criteria_matched?: number
@@ -572,6 +581,7 @@ export type Database = {
           items_found?: number
           items_merged?: number
           jsonld_found?: number
+          last_successful_operation?: string | null
           listings_removed?: number
           matching_listings?: number
           monitoring_transition?: boolean
@@ -582,6 +592,7 @@ export type Database = {
           pagination_pages_skipped?: number
           pagination_pages_succeeded?: number
           persisted_findings?: number
+          phase_started_at?: string | null
           provider?: string | null
           radar_id: string
           reverified_findings?: number
@@ -597,13 +608,17 @@ export type Database = {
           suppressed_duplicate?: number
           suppressed_recency?: number
           suppressed_relevance?: number
+          termination_reason?: string | null
           unknown_prices?: number
           usable_comparables?: number
           user_id: string
+          worker_finished_at?: string | null
+          worker_started_at?: string | null
         }
         Update: {
           alerts_created?: number
           ambiguous_price_joins?: number
+          attempt?: number
           attributes_extracted?: number
           attributes_missing?: number
           attributes_verified?: number
@@ -616,6 +631,7 @@ export type Database = {
           candidates_selected?: number
           comparable_coverage?: number
           comparable_observations?: number
+          continuation_count?: number
           cost_ceiling?: number
           cost_estimate?: number
           criteria_matched?: number
@@ -656,6 +672,7 @@ export type Database = {
           items_found?: number
           items_merged?: number
           jsonld_found?: number
+          last_successful_operation?: string | null
           listings_removed?: number
           matching_listings?: number
           monitoring_transition?: boolean
@@ -666,6 +683,7 @@ export type Database = {
           pagination_pages_skipped?: number
           pagination_pages_succeeded?: number
           persisted_findings?: number
+          phase_started_at?: string | null
           provider?: string | null
           radar_id?: string
           reverified_findings?: number
@@ -681,9 +699,12 @@ export type Database = {
           suppressed_duplicate?: number
           suppressed_recency?: number
           suppressed_relevance?: number
+          termination_reason?: string | null
           unknown_prices?: number
           usable_comparables?: number
           user_id?: string
+          worker_finished_at?: string | null
+          worker_started_at?: string | null
         }
         Relationships: [
           {
@@ -1071,6 +1092,41 @@ export type Database = {
           },
           {
             foreignKeyName: "research_sources_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "monitor_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      run_checkpoints: {
+        Row: {
+          created_at: string
+          id: string
+          key: string
+          run_id: string
+          user_id: string
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key: string
+          run_id: string
+          user_id: string
+          value: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key?: string
+          run_id?: string
+          user_id?: string
+          value?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "run_checkpoints_run_id_fkey"
             columns: ["run_id"]
             isOneToOne: false
             referencedRelation: "monitor_runs"
