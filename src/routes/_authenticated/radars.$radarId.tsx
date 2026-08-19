@@ -474,8 +474,7 @@ function RadarDetail() {
           </div>
         ) : (
           <p className="panel mt-4 p-5 text-sm text-muted-foreground">
-            Inget nytt ännu. Radar hör av sig när en ny annons dyker upp, ett pris ändras eller en annons
-            försvinner.
+            {t("detail.alerts.empty")}
           </p>
         )}
         {data.changes.length > 0 && (
@@ -510,7 +509,7 @@ function RadarDetail() {
             <SelectContent>
               {(Object.keys(frequencyLabel) as RadarFrequency[]).map((key) => (
                 <SelectItem key={key} value={key}>
-                  {frequencyLabel[key]}
+                  {t(`freq.${key}` as never)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -519,13 +518,13 @@ function RadarDetail() {
             value={String(radar.recency_days)}
             onValueChange={(v) => update.mutate({ recency_days: Number(v), recency_source: "user_override" })}
           >
-            <SelectTrigger className="w-44" aria-label="Tidsfönster">
+            <SelectTrigger className="w-44" aria-label={t("detail.timeWindow")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {recencyPresets.map((p) => (
                 <SelectItem key={p.days} value={String(p.days)}>
-                  {p.label}
+                  {t(`recency.${p.days}` as never)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -533,21 +532,21 @@ function RadarDetail() {
         </div>
         <p className="mt-4 text-sm text-muted-foreground">{config.interpretation || radar.raw_request}</p>
         <div className="mt-4 grid gap-5 sm:grid-cols-2">
-          <Facts title="Bevakar" items={config.monitored_events} />
-          <Facts title="Viktigast" items={config.important_criteria} />
-          <Facts title="Sökstrategi" items={config.search_queries} />
-          <Facts title="Utesluter" items={config.exclusions} />
+          <Facts title={t("detail.facts.watching")} items={config.monitored_events} />
+          <Facts title={t("detail.facts.important")} items={config.important_criteria} />
+          <Facts title={t("detail.facts.strategy")} items={config.search_queries} />
+          <Facts title={t("detail.facts.excludes")} items={config.exclusions} />
         </div>
       </details>
 
       <details className="panel p-5">
-        <summary className="cursor-pointer text-sm font-medium">Teknisk information</summary>
+        <summary className="cursor-pointer text-sm font-medium">{t("detail.technical")}</summary>
 
         <div className="mt-4 space-y-4">
           {data.runs.map((entry) => (
             <div key={entry.id} className="space-y-1 border-b border-border pb-3 text-xs text-muted-foreground last:border-0">
               <p className="text-sm text-foreground">
-                {new Date(entry.started_at).toLocaleString("sv-SE")} · {entry.status} · {entry.run_type} ·{" "}
+                {formatDateTime(entry.started_at)} · {entry.status} · {entry.run_type} ·{" "}
                 {entry.items_found} found · {entry.new_items} new · {entry.alerts_created} alerts
               </p>
               <p>
@@ -597,7 +596,7 @@ function RadarDetail() {
                   </a>
                   <span className="ml-2 text-muted-foreground">
                     {s.publisher ?? new URL(s.url).hostname} · retrieved{" "}
-                    {new Date(s.retrieved_at).toLocaleString("sv-SE")}
+                    {formatDateTime(s.retrieved_at)}
                   </span>
                 </li>
               ))}
