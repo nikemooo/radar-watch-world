@@ -1,0 +1,369 @@
+/**
+ * The single place every user-visible string lives.
+ *
+ * English is the base: every key exists here, so a missing translation can
+ * only ever degrade to English, never to a raw key. A new language is added by
+ * dropping one more `Record<TranslationKey, string>` into `dictionaries` — no
+ * component has to change.
+ */
+
+export const en = {
+  // ── generic ────────────────────────────────────────────────────────────
+  "common.cancel": "Cancel",
+  "common.save": "Save",
+  "common.saving": "Saving…",
+  "common.close": "Close",
+  "common.back": "Back",
+  "common.next": "Next",
+  "common.done": "Done",
+  "common.loading": "Loading…",
+  "common.never": "Never",
+  "common.yes": "Yes",
+  "common.no": "No",
+  "common.unknown": "Unknown",
+  "common.viewAll": "View all",
+  "common.signOut": "Sign out",
+  "common.language": "Language",
+  "common.systemLanguage": "System language",
+
+  // ── navigation ─────────────────────────────────────────────────────────
+  "nav.dashboard": "Dashboard",
+  "nav.radars": "My Radars",
+  "nav.alerts": "Alerts",
+  "nav.intelligence": "Intelligence",
+  "nav.billing": "Billing",
+  "nav.settings": "Settings",
+  "nav.admin": "Admin",
+  "nav.createRadar": "Create Radar",
+  "nav.short.dashboard": "Home",
+  "nav.short.radars": "Radars",
+  "nav.short.alerts": "Alerts",
+  "nav.short.intelligence": "Intel",
+  "nav.short.billing": "Billing",
+
+  // ── dashboard ──────────────────────────────────────────────────────────
+  "dashboard.eyebrow": "Situation overview",
+  "dashboard.title": "Dashboard",
+  "dashboard.newRadar": "New radar",
+  "dashboard.empty.title": "Let Radar do the searching.",
+  "dashboard.empty.body": "Tell us what you're looking for and we'll keep watch.",
+  "dashboard.empty.example.car": "Find a black BMW M340i, 2022 or newer, under 600,000 SEK.",
+  "dashboard.empty.example.watch": "Find a Rolex Submariner below market price.",
+  "dashboard.empty.example.news": "Keep me updated on major NVIDIA news and events.",
+  "dashboard.empty.footnote":
+    "Cars, watches, property, investments, travel, products, companies — if it's on the web, Radar can monitor it.",
+  "dashboard.empty.cta": "Create a Radar",
+  "dashboard.stat.activeRadars": "Active radars",
+  "dashboard.stat.alertsThisWeek": "Alerts this week",
+  "dashboard.stat.needsAttention": "Needs attention",
+  "dashboard.latest": "Latest intelligence",
+  "dashboard.noAlerts":
+    "No alerts yet. Radar is watching — you'll be told the moment something meaningful changes.",
+
+  // ── radar list ─────────────────────────────────────────────────────────
+  "radars.eyebrow": "Active watches",
+  "radars.title": "Radars",
+  "radars.empty": "No radars yet.",
+  "radars.createFirst": "Create your first radar",
+  "radars.lastSwept": "last swept {when}",
+  "radars.awaitingFirstSweep": "awaiting first sweep",
+
+  // ── radar detail ───────────────────────────────────────────────────────
+  "detail.allRadars": "All radars",
+  "detail.missing": "This radar no longer exists.",
+  "detail.searchNow": "Search now",
+  "detail.searching": "Searching…",
+  "detail.reverify": "Re-verify",
+  "detail.reverifying": "Verifying…",
+  "detail.editCriteria": "Edit criteria",
+  "detail.pause": "Pause radar",
+  "detail.resume": "Resume radar",
+  "detail.delete": "Delete radar",
+  "detail.status.scanning": "Searching the market",
+  "detail.status.monitoring": "Watching the market",
+  "detail.status.ready": "Ready to search the market",
+  "detail.lastCheck": "Last check {when}",
+  "detail.noCheck": "No check yet",
+  "detail.counts":
+    "{found} found · {match} match · {unverified} need verification · {reject} don't match",
+  "detail.countsChecking": "{pending} being checked",
+  "detail.interrupted.title": "The search was interrupted",
+  "detail.interrupted.body":
+    "The background run ended before it finished. Nothing was lost — you can start the search again.",
+  "detail.interrupted.retry": "Search again",
+  "detail.progress.live":
+    "{sources} sources read · {candidates} listings found · {details} listings read in detail.",
+  "detail.progress.idle": "Finding current listings · reading listing details · comparing prices.",
+  "detail.progress.tail": "It takes a few minutes and continues even if you leave the page.",
+  "detail.progress.resumed":
+    "The search was interrupted and resumed {count} time(s) — already-fetched data is reused, nothing is redone unnecessarily.",
+  "detail.progress.liveResults":
+    "Results appear here as soon as they are saved — you don't have to wait for the search to finish.",
+  "detail.matches.title": "Matches your criteria",
+  "detail.matches.emptyTitle": "No verified matches right now",
+  "detail.matches.emptyBody":
+    "Radar keeps watching the market and tells you when every one of your criteria can be confirmed.",
+  "detail.matches.emptyChecked": "{count} listings were found and checked.",
+  "detail.unverified.title": "Needs verification",
+  "detail.unverified.body":
+    "{count} listings need verification — Radar could not confirm one or more of your criteria.",
+  "detail.unverified.openQueue": "Open verification queue",
+  "detail.pending.title": "Being checked right now",
+  "detail.pending.body":
+    "{count} listings were just found and are being read and checked. They move to the right category automatically.",
+  "detail.rejected.summary": "Don't match ({count}) — show filtered out",
+  "detail.alerts.title": "Latest news",
+  "detail.settings": "Settings",
+  "detail.nextRun": "Next run: {when} (started automatically by the server)",
+  "detail.noNextRun": "No run scheduled — the next sweep is planned automatically when this one finishes.",
+  "detail.toast.started": "The search has started — it continues in the background.",
+  "detail.toast.baselineDone":
+    "The market scan is done — {count} listings found. Radar is now watching the market.",
+  "detail.toast.alerts": "{count} new alert(s).",
+  "detail.toast.noNews": "The check is done — nothing new.",
+  "detail.toast.reverified":
+    "Re-verification done — {match} match, {unverified} need verification, {reject} don't match.",
+  "detail.mustBeSignedIn": "You must be signed in.",
+
+  // ── sweep phases (persisted backend state, never a timer) ──────────────
+  "phase.initializing": "Preparing the search",
+  "phase.query_planning": "Planning the search",
+  "phase.searching_sources": "Searching the market",
+  "phase.expanding_indexes": "Finding current listings",
+  "phase.extracting_candidates": "Finding current listings",
+  "phase.fetching_details": "Reading listing details",
+  "phase.extracting_attributes": "Reading listing details",
+  "phase.analyzing_images": "Looking at the photos",
+  "phase.evaluating_criteria": "Checking against your criteria",
+  "phase.building_comparables": "Comparing with the market",
+  "phase.persisting_results": "Saving the results",
+  "phase.completed": "Done",
+
+  // ── alerts ─────────────────────────────────────────────────────────────
+  "alerts.eyebrow": "Intelligence inbox",
+  "alerts.title": "Alerts",
+  "alerts.filter.all": "All",
+  "alerts.filter.new": "Unread",
+  "alerts.filter.critical": "Needs attention",
+  "alerts.filter.saved": "Saved",
+  "alerts.empty": "Nothing here. Radar only surfaces changes that matter — silence means nothing changed.",
+  "alerts.save": "Save",
+  "alerts.saved": "Saved",
+  "alerts.dismiss": "Dismiss",
+  "alerts.useful": "Useful",
+  "alerts.notUseful": "Not useful",
+  "alerts.sources": "Sources",
+
+  // ── verification ───────────────────────────────────────────────────────
+  "verify.title": "Verify listing",
+  "verify.subtitle": "{index} of {total}",
+  "verify.question": "Does this listing meet: {criterion}?",
+  "verify.confirm": "Yes, it does",
+  "verify.reject": "No, it doesn't",
+  "verify.skip": "Skip",
+  "verify.previous": "Previous",
+  "verify.next": "Next",
+  "verify.openListing": "Open listing",
+  "verify.openSource": "Open source",
+  "verify.status.match": "Match",
+  "verify.status.unverified": "Needs verification",
+  "verify.status.reject": "Doesn't match",
+  "verify.status.pending": "Being checked",
+
+  // ── settings ───────────────────────────────────────────────────────────
+  "settings.eyebrow": "Preferences",
+  "settings.title": "Settings",
+  "settings.profile": "Profile",
+  "settings.displayName": "Display name",
+  "settings.email": "Email",
+  "settings.notifications": "Notifications",
+  "settings.emailAlerts": "Email alerts",
+  "settings.emailAlertsBody": "Receive important findings by email.",
+  "settings.saved": "Settings saved.",
+  "settings.languageBody": "Radar follows your system language by default.",
+
+  // ── billing ────────────────────────────────────────────────────────────
+  "billing.eyebrow": "Plan and usage",
+  "billing.title": "Billing",
+} as const;
+
+export type TranslationKey = keyof typeof en;
+export type Dictionary = Record<TranslationKey, string>;
+
+const sv: Dictionary = {
+  "common.cancel": "Avbryt",
+  "common.save": "Spara",
+  "common.saving": "Sparar…",
+  "common.close": "Stäng",
+  "common.back": "Tillbaka",
+  "common.next": "Nästa",
+  "common.done": "Klart",
+  "common.loading": "Laddar…",
+  "common.never": "Aldrig",
+  "common.yes": "Ja",
+  "common.no": "Nej",
+  "common.unknown": "Okänt",
+  "common.viewAll": "Visa alla",
+  "common.signOut": "Logga ut",
+  "common.language": "Språk",
+  "common.systemLanguage": "Systemspråk",
+
+  "nav.dashboard": "Översikt",
+  "nav.radars": "Mina radars",
+  "nav.alerts": "Larm",
+  "nav.intelligence": "Analyser",
+  "nav.billing": "Betalning",
+  "nav.settings": "Inställningar",
+  "nav.admin": "Admin",
+  "nav.createRadar": "Skapa radar",
+  "nav.short.dashboard": "Hem",
+  "nav.short.radars": "Radars",
+  "nav.short.alerts": "Larm",
+  "nav.short.intelligence": "Analys",
+  "nav.short.billing": "Betalning",
+
+  "dashboard.eyebrow": "Lägesbild",
+  "dashboard.title": "Översikt",
+  "dashboard.newRadar": "Ny radar",
+  "dashboard.empty.title": "Låt Radar göra sökandet.",
+  "dashboard.empty.body": "Berätta vad du letar efter så håller vi utkik.",
+  "dashboard.empty.example.car": "Hitta en svart BMW M340i, 2022 eller nyare, under 600 000 kr.",
+  "dashboard.empty.example.watch": "Hitta en Rolex Submariner under marknadspris.",
+  "dashboard.empty.example.news": "Håll mig uppdaterad om viktiga nyheter kring NVIDIA.",
+  "dashboard.empty.footnote":
+    "Bilar, klockor, bostäder, investeringar, resor, produkter, företag — finns det på webben kan Radar bevaka det.",
+  "dashboard.empty.cta": "Skapa en radar",
+  "dashboard.stat.activeRadars": "Aktiva radars",
+  "dashboard.stat.alertsThisWeek": "Larm denna vecka",
+  "dashboard.stat.needsAttention": "Kräver uppmärksamhet",
+  "dashboard.latest": "Senaste analyser",
+  "dashboard.noAlerts":
+    "Inga larm ännu. Radar bevakar — du hörs så fort något viktigt förändras.",
+
+  "radars.eyebrow": "Aktiva bevakningar",
+  "radars.title": "Radars",
+  "radars.empty": "Inga radars ännu.",
+  "radars.createFirst": "Skapa din första radar",
+  "radars.lastSwept": "senast kontrollerad {when}",
+  "radars.awaitingFirstSweep": "väntar på första sökningen",
+
+  "detail.allRadars": "Alla radars",
+  "detail.missing": "Den här radarn finns inte längre.",
+  "detail.searchNow": "Sök nu",
+  "detail.searching": "Söker…",
+  "detail.reverify": "Verifiera om",
+  "detail.reverifying": "Verifierar…",
+  "detail.editCriteria": "Redigera kriterier",
+  "detail.pause": "Pausa radar",
+  "detail.resume": "Återuppta radar",
+  "detail.delete": "Ta bort radar",
+  "detail.status.scanning": "Söker igenom marknaden",
+  "detail.status.monitoring": "Bevakar marknaden",
+  "detail.status.ready": "Redo att söka marknaden",
+  "detail.lastCheck": "Senaste kontroll {when}",
+  "detail.noCheck": "Ingen kontroll ännu",
+  "detail.counts":
+    "{found} hittade · {match} matchar · {unverified} behöver verifieras · {reject} matchar inte",
+  "detail.countsChecking": "{pending} kontrolleras",
+  "detail.interrupted.title": "Sökningen avbröts",
+  "detail.interrupted.body":
+    "Bakgrundskörningen avslutades innan den blev klar. Inga resultat gick förlorade — du kan starta om sökningen.",
+  "detail.interrupted.retry": "Sök igen",
+  "detail.progress.live":
+    "{sources} källor lästa · {candidates} annonser hittade · {details} annonser lästa i detalj.",
+  "detail.progress.idle": "Hittar aktuella annonser · läser annonsdetaljer · jämför priser.",
+  "detail.progress.tail": "Det tar några minuter och fortsätter även om du lämnar sidan.",
+  "detail.progress.resumed":
+    "Sökningen avbröts och återupptogs {count} gång(er) — redan hämtad data återanvänds, inget görs om i onödan.",
+  "detail.progress.liveResults":
+    "Resultaten visas här så fort de sparats — du behöver inte vänta tills sökningen är klar.",
+  "detail.matches.title": "Matchar dina kriterier",
+  "detail.matches.emptyTitle": "Inga verifierade matchningar just nu",
+  "detail.matches.emptyBody":
+    "Radar fortsätter bevaka marknaden och meddelar dig när alla dina kriterier kan bekräftas.",
+  "detail.matches.emptyChecked": "{count} annonser hittades och kontrollerades.",
+  "detail.unverified.title": "Behöver verifieras",
+  "detail.unverified.body":
+    "{count} annonser behöver verifieras — Radar kunde inte säkert bekräfta ett eller flera av dina kriterier.",
+  "detail.unverified.openQueue": "Öppna verifieringskö",
+  "detail.pending.title": "Kontrolleras just nu",
+  "detail.pending.body":
+    "{count} annonser har precis hittats och läses just nu. De flyttas automatiskt till rätt kategori.",
+  "detail.rejected.summary": "Matchar inte ({count}) — visa bortsorterade",
+  "detail.alerts.title": "Senaste nytt",
+  "detail.settings": "Inställningar",
+  "detail.nextRun": "Nästa körning: {when} (startas automatiskt av servern)",
+  "detail.noNextRun":
+    "Ingen körning schemalagd — nästa sökning planeras automatiskt när den här är klar.",
+  "detail.toast.started": "Sökningen har startat — den fortsätter i bakgrunden.",
+  "detail.toast.baselineDone":
+    "Marknadsskanningen är klar — {count} annonser hittades. Radar bevakar nu marknaden.",
+  "detail.toast.alerts": "{count} nya larm.",
+  "detail.toast.noNews": "Kontrollen är klar — inget nytt.",
+  "detail.toast.reverified":
+    "Omverifiering klar — {match} matchar, {unverified} behöver verifieras, {reject} matchar inte.",
+  "detail.mustBeSignedIn": "Du måste vara inloggad.",
+
+  "phase.initializing": "Förbereder sökningen",
+  "phase.query_planning": "Planerar sökningen",
+  "phase.searching_sources": "Söker igenom marknaden",
+  "phase.expanding_indexes": "Hittar aktuella annonser",
+  "phase.extracting_candidates": "Hittar aktuella annonser",
+  "phase.fetching_details": "Läser annonsdetaljer",
+  "phase.extracting_attributes": "Läser annonsdetaljer",
+  "phase.analyzing_images": "Tittar på bilderna",
+  "phase.evaluating_criteria": "Kontrollerar mot dina kriterier",
+  "phase.building_comparables": "Jämför med marknaden",
+  "phase.persisting_results": "Sparar resultaten",
+  "phase.completed": "Klart",
+
+  "alerts.eyebrow": "Larminkorg",
+  "alerts.title": "Larm",
+  "alerts.filter.all": "Alla",
+  "alerts.filter.new": "Olästa",
+  "alerts.filter.critical": "Kräver uppmärksamhet",
+  "alerts.filter.saved": "Sparade",
+  "alerts.empty":
+    "Inget här. Radar visar bara förändringar som betyder något — tystnad betyder att inget hänt.",
+  "alerts.save": "Spara",
+  "alerts.saved": "Sparad",
+  "alerts.dismiss": "Avfärda",
+  "alerts.useful": "Användbart",
+  "alerts.notUseful": "Inte användbart",
+  "alerts.sources": "Källor",
+
+  "verify.title": "Verifiera annons",
+  "verify.subtitle": "{index} av {total}",
+  "verify.question": "Uppfyller den här annonsen: {criterion}?",
+  "verify.confirm": "Ja, det stämmer",
+  "verify.reject": "Nej, det stämmer inte",
+  "verify.skip": "Hoppa över",
+  "verify.previous": "Föregående",
+  "verify.next": "Nästa",
+  "verify.openListing": "Öppna annons",
+  "verify.openSource": "Öppna källa",
+  "verify.status.match": "Matchar",
+  "verify.status.unverified": "Behöver verifieras",
+  "verify.status.reject": "Matchar inte",
+  "verify.status.pending": "Kontrolleras",
+
+  "settings.eyebrow": "Inställningar",
+  "settings.title": "Inställningar",
+  "settings.profile": "Profil",
+  "settings.displayName": "Visningsnamn",
+  "settings.email": "E-post",
+  "settings.notifications": "Notiser",
+  "settings.emailAlerts": "Larm via e-post",
+  "settings.emailAlertsBody": "Få viktiga fynd skickade till din e-post.",
+  "settings.saved": "Inställningarna sparades.",
+  "settings.languageBody": "Radar följer ditt systemspråk som standard.",
+
+  "billing.eyebrow": "Plan och användning",
+  "billing.title": "Betalning",
+};
+
+export const dictionaries = { en, sv } as const;
+export type Locale = keyof typeof dictionaries;
+export const LOCALES = Object.keys(dictionaries) as Locale[];
+/** Languages written right-to-left — the shell flips direction for these. */
+export const RTL_LOCALES: string[] = ["ar", "he", "fa", "ur"];

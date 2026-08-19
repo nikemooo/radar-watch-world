@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -24,6 +25,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 
 function Dashboard() {
   const navigate = useNavigate();
+  const t = useT();
   const onboardingState = useServerFn(getOnboardingState);
 
   // First-time users go through onboarding once; everyone else stays here.
@@ -84,13 +86,13 @@ function Dashboard() {
     <div className="space-y-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="mono-label">Situation overview</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="mono-label">{t("dashboard.eyebrow")}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{t("dashboard.title")}</h1>
         </div>
         <Button asChild className="gap-2">
           <Link to="/radars/new">
             <Plus className="size-4" />
-            New radar
+            {t("dashboard.newRadar")}
           </Link>
         </Button>
       </header>
@@ -98,15 +100,15 @@ function Dashboard() {
       {empty ? (
         <div className="panel px-5 py-10 text-center sm:px-8 sm:py-14">
           <RadarMark className="mx-auto size-14" />
-          <h2 className="mt-6 text-xl font-semibold tracking-tight">Let Radar do the searching.</h2>
+          <h2 className="mt-6 text-xl font-semibold tracking-tight">{t("dashboard.empty.title")}</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-            Tell us what you're looking for and we'll keep watch.
+            {t("dashboard.empty.body")}
           </p>
           <ul className="mx-auto mt-7 grid max-w-lg gap-2 text-left">
             {[
-              { emoji: "🚗", text: "Find a black BMW M340i, 2022 or newer, under 600,000 SEK." },
-              { emoji: "⌚", text: "Find a Rolex Submariner below market price." },
-              { emoji: "📈", text: "Keep me updated on major NVIDIA news and events." },
+              { emoji: "🚗", text: t("dashboard.empty.example.car") },
+              { emoji: "⌚", text: t("dashboard.empty.example.watch") },
+              { emoji: "📈", text: t("dashboard.empty.example.news") },
             ].map((e) => (
               <li
                 key={e.text}
@@ -118,26 +120,25 @@ function Dashboard() {
             ))}
           </ul>
           <p className="mt-5 text-xs text-muted-foreground">
-            Cars, watches, property, investments, travel, products, companies — if it's on the web,
-            Radar can monitor it.
+            {t("dashboard.empty.footnote")}
           </p>
           <Button asChild className="mt-7 h-12 w-full max-w-xs text-base">
-            <Link to="/radars/new">Create a Radar</Link>
+            <Link to="/radars/new">{t("dashboard.empty.cta")}</Link>
           </Button>
         </div>
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Stat icon={RadarIcon} label="Active radars" value={String(activeRadars)} to="/radars" />
+            <Stat icon={RadarIcon} label={t("dashboard.stat.activeRadars")} value={String(activeRadars)} to="/radars" />
             <Stat
               icon={Bell}
-              label="Alerts this week"
+              label={t("dashboard.stat.alertsThisWeek")}
               value={String(data?.weekAlerts.length ?? 0)}
               to="/alerts"
             />
             <Stat
               icon={Sparkles}
-              label="Needs attention"
+              label={t("dashboard.stat.needsAttention")}
               value={String(critical)}
               to="/alerts"
               search={{ filter: "critical" as const }}
@@ -147,9 +148,9 @@ function Dashboard() {
 
           <section>
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium">Latest intelligence</h2>
+              <h2 className="text-lg font-medium">{t("dashboard.latest")}</h2>
               <Button asChild variant="ghost" size="sm">
-                <Link to="/alerts">View all</Link>
+                <Link to="/alerts">{t("common.viewAll")}</Link>
               </Button>
             </div>
             {data?.alerts.length ? (
@@ -165,7 +166,7 @@ function Dashboard() {
             ) : (
               <div className="panel mt-4 flex items-center gap-3 p-5 text-sm text-muted-foreground">
                 <Activity className="size-4" />
-                No alerts yet. Radar is watching — you'll be told the moment something meaningful changes.
+                {t("dashboard.noAlerts")}
               </div>
             )}
           </section>

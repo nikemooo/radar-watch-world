@@ -18,30 +18,31 @@ import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/radar-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
+import { useT, type TranslationKey } from "@/lib/i18n";
 
 interface NavItem {
   to: NonNullable<LinkProps["to"]>;
-  label: string;
+  label: TranslationKey;
   icon: LucideIcon;
 }
 
 const primaryNav: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/radars", label: "My Radars", icon: RadarIcon },
-  { to: "/alerts", label: "Alerts", icon: Bell },
-  { to: "/intelligence", label: "Intelligence", icon: Newspaper },
-  { to: "/billing", label: "Billing", icon: CreditCard },
+  { to: "/dashboard", label: "nav.dashboard", icon: LayoutDashboard },
+  { to: "/radars", label: "nav.radars", icon: RadarIcon },
+  { to: "/alerts", label: "nav.alerts", icon: Bell },
+  { to: "/intelligence", label: "nav.intelligence", icon: Newspaper },
+  { to: "/billing", label: "nav.billing", icon: CreditCard },
 ];
 
-const secondaryNav: NavItem[] = [{ to: "/settings", label: "Settings", icon: Settings }];
+const secondaryNav: NavItem[] = [{ to: "/settings", label: "nav.settings", icon: Settings }];
 
 // Compact bottom-bar set for phones (labels shortened to fit).
-const mobileNav: (NavItem & { short: string })[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, short: "Home" },
-  { to: "/radars", label: "My Radars", icon: RadarIcon, short: "Radars" },
-  { to: "/alerts", label: "Alerts", icon: Bell, short: "Alerts" },
-  { to: "/intelligence", label: "Intelligence", icon: Newspaper, short: "Intel" },
-  { to: "/billing", label: "Billing", icon: CreditCard, short: "Billing" },
+const mobileNav: (NavItem & { short: TranslationKey })[] = [
+  { to: "/dashboard", label: "nav.dashboard", icon: LayoutDashboard, short: "nav.short.dashboard" },
+  { to: "/radars", label: "nav.radars", icon: RadarIcon, short: "nav.short.radars" },
+  { to: "/alerts", label: "nav.alerts", icon: Bell, short: "nav.short.alerts" },
+  { to: "/intelligence", label: "nav.intelligence", icon: Newspaper, short: "nav.short.intelligence" },
+  { to: "/billing", label: "nav.billing", icon: CreditCard, short: "nav.short.billing" },
 ];
 
 export function useIsAdmin() {
@@ -80,6 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const { data: isAdmin } = useIsAdmin();
   const { data: unread } = useUnreadAlerts();
+  const t = useT();
 
   // Onboarding is a focused, distraction-free flow: no sidebar, no tab bar.
   if (pathname.startsWith("/onboarding")) {
@@ -87,7 +89,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const nav = isAdmin
-    ? [...primaryNav, { to: "/admin", label: "Admin", icon: Shield } satisfies NavItem]
+    ? [...primaryNav, { to: "/admin", label: "nav.admin" as TranslationKey, icon: Shield } satisfies NavItem]
     : primaryNav;
 
   const signOut = async () => {
@@ -107,7 +109,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button asChild className="w-full justify-start gap-2">
             <Link to="/radars/new">
               <Plus className="size-4" />
-              Create Radar
+              {t("nav.createRadar")}
             </Link>
           </Button>
         </div>
@@ -124,7 +126,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
             >
               <LogOut className="size-4" />
-              Sign out
+              {t("common.signOut")}
             </button>
           </div>
         </nav>
@@ -135,18 +137,18 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Wordmark />
         </Link>
         <div className="flex items-center gap-1">
-          <Button asChild variant="ghost" size="icon" aria-label="Create radar">
+          <Button asChild variant="ghost" size="icon" aria-label={t("nav.createRadar")}>
             <Link to="/radars/new">
               <Plus className="size-4" />
             </Link>
           </Button>
-          <Button asChild variant="ghost" size="icon" aria-label="Settings">
+          <Button asChild variant="ghost" size="icon" aria-label={t("nav.settings")}>
             <Link to="/settings">
               <Settings className="size-4" />
             </Link>
           </Button>
           <ThemeToggle />
-          <Button variant="ghost" size="icon" onClick={signOut} aria-label="Sign out">
+          <Button variant="ghost" size="icon" onClick={signOut} aria-label={t("common.signOut")}>
             <LogOut className="size-4" />
           </Button>
         </div>
@@ -173,7 +175,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               )}
             >
               <item.icon className="size-5" />
-              {item.short}
+              {t(item.short)}
               {item.to === "/alerts" && !!unread && (
                 <span className="absolute right-[22%] top-1.5 size-1.5 rounded-full bg-critical" />
               )}
@@ -186,6 +188,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 }
 
 function NavLink({ item, active, badge }: { item: NavItem; active: boolean; badge?: number | undefined }) {
+  const t = useT();
   return (
     <Link
       to={item.to}
@@ -197,7 +200,7 @@ function NavLink({ item, active, badge }: { item: NavItem; active: boolean; badg
       )}
     >
       <item.icon className="size-4" />
-      {item.label}
+      {t(item.label)}
       {!!badge && (
         <span className="ml-auto rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] text-primary">
           {badge}

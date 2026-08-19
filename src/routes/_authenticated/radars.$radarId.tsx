@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/select";
 import { asConfig, frequencyLabel, recencyPresets, type RadarFrequency } from "@/lib/radar-types";
 import { track } from "@/lib/analytics";
+import { useFormatDateTime, useT } from "@/lib/i18n";
+import type { RunPhase } from "@/lib/monitoring/lifecycle";
 import { ListingRail, snapshotOf, type FindingLike } from "@/components/listing-card";
 import { VerifyDialog } from "@/components/verify-dialog";
 import { EditCriteriaDialog } from "@/components/edit-criteria-dialog";
@@ -43,6 +45,8 @@ export const Route = createFileRoute("/_authenticated/radars/$radarId")({
 });
 
 function RadarDetail() {
+  const t = useT();
+  const formatDateTime = useFormatDateTime();
   const { radarId } = Route.useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -131,16 +135,16 @@ function RadarDetail() {
     mutationFn: async () => run({ data: { radarId } }),
     onSuccess: (outcome) => {
       if (outcome.state === "running") {
-        toast.success("Sökningen har startat — den fortsätter i bakgrunden.");
+        toast.success(t("detail.toast.started"));
       } else {
         const r = outcome.result as { alertsCreated?: number; runType?: string; itemsFound?: number };
         const created = r?.alertsCreated ?? 0;
         toast.success(
           r?.runType === "baseline"
-            ? `Marknadsskanningen är klar — ${r.itemsFound ?? 0} annonser hittades. Radar bevakar nu marknaden.`
+            ? t("detail.toast.baselineDone", { count: r.itemsFound ?? 0 })
             : created > 0
-              ? `${created} ny${created > 1 ? "a" : "tt"} larm.`
-              : "Kontrollen är klar — inget nytt.",
+              ? t("detail.toast.alerts", { count: created })
+              : t("detail.toast.noNews"),
         );
 
       }
@@ -182,7 +186,11 @@ function RadarDetail() {
     mutationFn: async () => reverify({ data: { radarId, useImages: true } }),
     onSuccess: (report) => {
       toast.success(
-        `Omverifiering klar — ${report.after.match} matchar, ${report.after.unverified} behöver verifieras, ${report.after.reject} matchar inte.`,
+        t("detail.toast.reverified", {
+          match: report.after.match,
+          unverified: report.after.unverified,
+          reject: report.after.reject,
+        }),
       );
       queryClient.invalidateQueries({ queryKey: ["radar", radarId] });
     },
@@ -193,7 +201,7 @@ function RadarDetail() {
     mutationFn: async (input: { finding: FindingLike; attribute: string; verdict: UserVerdict }) => {
       const { data: session } = await supabase.auth.getUser();
       const userId = session.user?.id;
-      if (!userId) throw new Error("Du måste vara inloggad.");
+      if (!userId) throw new Error(t("detail.mustBeSignedIn"));
       const { error } = await supabase.from("finding_verifications").upsert(
         {
           finding_id: input.finding.id,
@@ -215,7 +223,7 @@ function RadarDetail() {
   if (!data?.radar) {
     return (
       <div className="panel p-10 text-center text-sm text-muted-foreground">
-        Den här radarn finns inte längre.
+        {t("detail.missing")}
       </div>
     );
   }
@@ -234,9 +242,15 @@ function RadarDetail() {
     );
   };
   const statusOf = (f: FindingLike) => verdictOf(f).status;
-  const matched = findings.filter((f) => statusOf(f) === "match");
-  const unverified = findings.filter((f) => statusOf(f) === "unverified");
-  const rejected = findings.filter((f) => statusOf(f) === "reject");
+  // A listing the sweep has just discovered but not yet read is shown as
+  // "being checked" rather than pretending it is an unverified match.
+  const isPending = (f: FindingLike) =>
+    (snapshotOf(f.snapshot) as { match_status?: string }).match_status === "pending";
+  const settled = findings.filter((f) => !isPending(f));
+  const pending = findings.filter(isPending);
+  const matched = settled.filter((f) => statusOf(f) === "match");
+  const unverified = settled.filter((f) => statusOf(f) === "unverified");
+  const rejected = settled.filter((f) => statusOf(f) === "reject");
   const running = sweepStatus?.state === "running";
   const interrupted = sweepStatus?.state === "failed" && !!sweepStatus.failureReason;
   const scanning = running || (radar.scan_state === "INITIAL_SCAN_RUNNING" && !sweepStatus);
@@ -247,18 +261,23 @@ function RadarDetail() {
     setQueueOpen(true);
   };
 
+  // The phase comes from the persisted run row, so the label is real backend
+  // state translated into the user's language — never a timer.
+  const phaseText = sweepStatus?.phase
+    ? t(`phase.${sweepStatus.phase as RunPhase}` as never)
+    : t("detail.status.scanning");
   const statusLine = scanning
-    ? `${sweepStatus?.phaseLabel ?? "Söker igenom marknaden"}…`
+    ? `${phaseText}…`
     : radar.scan_state === "MONITORING"
-      ? "Bevakar marknaden"
-      : "Redo att söka marknaden";
+      ? t("detail.status.monitoring")
+      : t("detail.status.ready");
 
 
   return (
     <div className="space-y-8">
       <Link to="/radars" className="mono-label inline-flex items-center gap-1.5 hover:text-foreground">
         <ArrowLeft className="size-3" />
-        Alla radars
+        {t("detail.allRadars")}
       </Link>
 
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -269,20 +288,25 @@ function RadarDetail() {
               {scanning ? "🔎" : "🟢"} {statusLine}
             </span>
             <span className="text-muted-foreground">
-              {findings.length} hittade · {matched.length} matchar · {unverified.length} behöver verifieras ·{" "}
-              {rejected.length} matchar inte
+              {t("detail.counts", {
+                found: findings.length,
+                match: matched.length,
+                unverified: unverified.length,
+                reject: rejected.length,
+              })}
+              {pending.length > 0 ? ` · ${t("detail.countsChecking", { pending: pending.length })}` : ""}
             </span>
             <span className="text-muted-foreground">
               {radar.last_successful_sweep_at
-                ? `Senaste kontroll ${new Date(radar.last_successful_sweep_at).toLocaleString("sv-SE")}`
-                : "Ingen kontroll ännu"}
+                ? t("detail.lastCheck", { when: formatDateTime(radar.last_successful_sweep_at) })
+                : t("detail.noCheck")}
             </span>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button className="gap-2" onClick={() => sweep.mutate()} disabled={sweep.isPending}>
             {sweep.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-            {sweep.isPending ? "Söker…" : "Sök nu"}
+            {sweep.isPending ? t("detail.searching") : t("detail.searchNow")}
           </Button>
           <Button
             variant="outline"
@@ -291,22 +315,22 @@ function RadarDetail() {
             disabled={recheck.isPending}
           >
             {recheck.isPending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
-            {recheck.isPending ? "Verifierar…" : "Verifiera om"}
+            {recheck.isPending ? t("detail.reverifying") : t("detail.reverify")}
           </Button>
           <Button variant="outline" className="gap-2" onClick={() => setEditOpen(true)}>
             <Pencil className="size-4" />
-            Redigera kriterier
+            {t("detail.editCriteria")}
           </Button>
           <Button
 
             variant="outline"
             size="icon"
-            aria-label={radar.status === "active" ? "Pausa radar" : "Återuppta radar"}
+            aria-label={radar.status === "active" ? t("detail.pause") : t("detail.resume")}
             onClick={() => update.mutate({ status: radar.status === "active" ? "paused" : "active" })}
           >
             {radar.status === "active" ? <Pause className="size-4" /> : <Play className="size-4" />}
           </Button>
-          <Button variant="outline" size="icon" aria-label="Ta bort radar" onClick={() => remove.mutate()}>
+          <Button variant="outline" size="icon" aria-label={t("detail.delete")} onClick={() => remove.mutate()}>
             <Trash2 className="size-4" />
           </Button>
         </div>
@@ -314,53 +338,60 @@ function RadarDetail() {
 
       {interrupted && (
         <section className="panel p-5">
-          <p className="text-sm font-medium">Sökningen avbröts</p>
+          <p className="text-sm font-medium">{t("detail.interrupted.title")}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {sweepStatus?.error ?? "Bakgrundskörningen avslutades innan den blev klar."} Inga resultat gick
-            förlorade — du kan starta om sökningen.
+            {sweepStatus?.error ?? t("detail.interrupted.body")}
           </p>
           <Button className="mt-3 gap-2" onClick={() => sweep.mutate()} disabled={sweep.isPending}>
             <RefreshCw className="size-4" />
-            Sök igen
+            {t("detail.interrupted.retry")}
           </Button>
         </section>
       )}
 
       {scanning && (
         <section className="panel p-5">
-          <p className="text-sm font-medium">{sweepStatus?.phaseLabel ?? "Söker igenom marknaden"}…</p>
+          <p className="text-sm font-medium">{phaseText}…</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {sweepStatus && (sweepStatus.sourcesRetrieved > 0 || sweepStatus.candidates > 0)
-              ? `${sweepStatus.sourcesRetrieved} källor lästa · ${sweepStatus.candidates} annonser hittade · ${sweepStatus.detailFetches} annonser lästa i detalj.`
-              : "Hittar aktuella annonser · läser annonsdetaljer · jämför priser."}{" "}
-            Det tar några minuter och fortsätter även om du lämnar sidan.
+              ? t("detail.progress.live", {
+                  sources: sweepStatus.sourcesRetrieved,
+                  candidates: sweepStatus.candidates,
+                  details: sweepStatus.detailFetches,
+                })
+              : t("detail.progress.idle")}{" "}
+            {t("detail.progress.tail")}
           </p>
           {!!sweepStatus?.continuations && (
             <p className="mt-1 text-xs text-muted-foreground">
-              Sökningen avbröts och återupptogs {sweepStatus.continuations} gång
-              {sweepStatus.continuations === 1 ? "" : "er"} — redan hämtad data används om, inget
-              görs om i onödan.
+              {t("detail.progress.resumed", { count: sweepStatus.continuations })}
             </p>
           )}
-          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
-          </div>
+          <p className="mt-2 text-sm">
+            {t("detail.counts", {
+              found: findings.length,
+              match: matched.length,
+              unverified: unverified.length,
+              reject: rejected.length,
+            })}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("detail.progress.liveResults")}</p>
 
         </section>
       )}
 
       <section>
-        <h2 className="text-lg font-medium">Matchar dina kriterier</h2>
+        <h2 className="text-lg font-medium">{t("detail.matches.title")}</h2>
         {matched.length > 0 ? (
           <div className="mt-4">
             <ListingRail findings={matched} verdictOf={verdictOf} onVerify={openQueue} />
           </div>
         ) : (
           <div className="panel mt-4 p-6 text-sm">
-            <p className="font-medium">Inga verifierade matchningar just nu</p>
+            <p className="font-medium">{t("detail.matches.emptyTitle")}</p>
             <p className="mt-1 text-muted-foreground">
-              Radar fortsätter bevaka marknaden och meddelar dig när alla dina kriterier kan bekräftas.
-              {findings.length > 0 && ` ${findings.length} annonser hittades och kontrollerades.`}
+              {t("detail.matches.emptyBody")}
+              {findings.length > 0 && ` ${t("detail.matches.emptyChecked", { count: findings.length })}`}
             </p>
           </div>
         )}
@@ -371,16 +402,15 @@ function RadarDetail() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-medium">
-                Behöver verifieras{" "}
+                {t("detail.unverified.title")}{" "}
                 <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-sm">{unverified.length}</span>
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                {unverified.length} annonser behöver verifieras — Radar kunde inte säkert bekräfta ett eller
-                flera av dina kriterier.
+                {t("detail.unverified.body", { count: unverified.length })}
               </p>
             </div>
             <Button variant="secondary" onClick={() => openQueue()}>
-              Öppna verifieringskö
+              {t("detail.unverified.openQueue")}
             </Button>
           </div>
           <div className="mt-4">
@@ -414,7 +444,7 @@ function RadarDetail() {
       {rejected.length > 0 && (
         <details className="panel p-5">
           <summary className="cursor-pointer text-sm font-medium">
-            Matchar inte ({rejected.length}) — visa bortsorterade
+            {t("detail.rejected.summary", { count: rejected.length })}
           </summary>
           <ul className="mt-3 divide-y divide-border text-sm">
             {rejected.map((f) => (
@@ -435,7 +465,7 @@ function RadarDetail() {
       )}
 
       <section>
-        <h2 className="text-lg font-medium">Senaste nytt</h2>
+        <h2 className="text-lg font-medium">{t("detail.alerts.title")}</h2>
         {data.alerts.length ? (
           <div className="mt-4 space-y-3">
             {data.alerts.map((alert) => (
@@ -456,7 +486,7 @@ function RadarDetail() {
                 <span className="text-muted-foreground line-through">{c.previous_raw ?? c.previous_value}</span>
                 <span>→ {c.new_raw ?? c.new_value}</span>
                 <span className="mono-label ml-auto">
-                  {new Date(c.changed_at).toLocaleString("sv-SE")}
+                  {formatDateTime(c.changed_at)}
                 </span>
               </li>
             ))}
@@ -465,11 +495,11 @@ function RadarDetail() {
       </section>
 
       <details className="panel p-5">
-        <summary className="cursor-pointer text-sm font-medium">Inställningar</summary>
+        <summary className="cursor-pointer text-sm font-medium">{t("detail.settings")}</summary>
         <p className="mt-3 text-xs text-muted-foreground">
           {radar.next_run_at
-            ? `Nästa körning: ${new Date(radar.next_run_at).toLocaleString("sv-SE")} (startas automatiskt av servern)`
-            : "Ingen körning schemalagd — nästa sweep planeras automatiskt när den här körningen är klar."}
+            ? t("detail.nextRun", { when: formatDateTime(radar.next_run_at) })
+            : t("detail.noNextRun")}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
 
