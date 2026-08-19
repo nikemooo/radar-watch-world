@@ -1226,6 +1226,30 @@ export async function runRadarCycle(
             deterministic.set(page.url, enriched.attributes);
             evidenceMergeCount += enriched.telemetry.mergeCount;
             for (const src of enriched.telemetry.sourcesUsed) extractionSourcesUsed.add(src);
+
+            // Per-surface evidence: read each source on its own so agreement
+            // and contradiction between them stays observable.
+            const perAttribute = collectAttributeEvidence(specs, docs);
+            attributeEvidenceByUrl.set(page.url, perAttribute);
+            for (const e of Object.values(perAttribute)) {
+              if (e.status === "conflicted") {
+                evidenceConflicts += 1;
+                console.info(`[radar:evidence] ${page.url} — ${e.explanation}`);
+              }
+            }
+
+            // Generic identity: VIN, registration, reference, serial, GTIN…
+            const identifiers = mergeIdentifiers([
+              detectIdentifiers({ url: page.url, fields: st?.fields, text: undefined }),
+              detectIdentifiers({ url: page.url, fields: st?.jsonld, text: undefined }),
+              detectIdentifiers({ url: page.url, text: `${page.title ?? ""}\n${page.text.slice(0, 8000)}` }),
+            ]);
+            const presentable = presentableIdentifiers(identifiers);
+            if (presentable.length > 0) {
+              identifiersByUrl.set(page.url, presentable);
+              identifiersFound += presentable.length;
+            }
+
           }
 
           // AI extraction runs ONLY for pages that still miss attributes.
