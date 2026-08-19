@@ -27,6 +27,7 @@ import { Route as AuthenticatedRadarsRadarIdRouteImport } from './routes/_authen
 import { Route as AuthenticatedRadarsNewRouteImport } from './routes/_authenticated/radars.new'
 import { Route as ApiPublicMonitoringProbeRouteImport } from './routes/api/public/monitoring/probe'
 import { Route as ApiPublicMonitoringReapRouteImport } from './routes/api/public/monitoring/reap'
+import { Route as ApiPublicMonitoringResumeRouteImport } from './routes/api/public/monitoring/resume'
 import { Route as ApiPublicPaymentsWebhookRouteImport } from './routes/api/public/payments/webhook'
 
 const IndexRoute = IndexRouteImport.update({
@@ -122,6 +123,12 @@ const ApiPublicMonitoringReapRoute = ApiPublicMonitoringReapRouteImport.update({
   path: '/api/public/monitoring/reap',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicMonitoringResumeRoute =
+  ApiPublicMonitoringResumeRouteImport.update({
+    id: '/api/public/monitoring/resume',
+    path: '/api/public/monitoring/resume',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPaymentsWebhookRoute =
   ApiPublicPaymentsWebhookRouteImport.update({
     id: '/api/public/payments/webhook',
@@ -147,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/radars/': typeof AuthenticatedRadarsIndexRoute
   '/api/public/monitoring/probe': typeof ApiPublicMonitoringProbeRoute
   '/api/public/monitoring/reap': typeof ApiPublicMonitoringReapRoute
+  '/api/public/monitoring/resume': typeof ApiPublicMonitoringResumeRoute
   '/api/public/payments/webhook': typeof ApiPublicPaymentsWebhookRoute
 }
 export interface FileRoutesByTo {
@@ -167,6 +175,7 @@ export interface FileRoutesByTo {
   '/radars': typeof AuthenticatedRadarsIndexRoute
   '/api/public/monitoring/probe': typeof ApiPublicMonitoringProbeRoute
   '/api/public/monitoring/reap': typeof ApiPublicMonitoringReapRoute
+  '/api/public/monitoring/resume': typeof ApiPublicMonitoringResumeRoute
   '/api/public/payments/webhook': typeof ApiPublicPaymentsWebhookRoute
 }
 export interface FileRoutesById {
@@ -189,6 +198,7 @@ export interface FileRoutesById {
   '/_authenticated/radars/': typeof AuthenticatedRadarsIndexRoute
   '/api/public/monitoring/probe': typeof ApiPublicMonitoringProbeRoute
   '/api/public/monitoring/reap': typeof ApiPublicMonitoringReapRoute
+  '/api/public/monitoring/resume': typeof ApiPublicMonitoringResumeRoute
   '/api/public/payments/webhook': typeof ApiPublicPaymentsWebhookRoute
 }
 export interface FileRouteTypes {
@@ -211,6 +221,7 @@ export interface FileRouteTypes {
     | '/radars/'
     | '/api/public/monitoring/probe'
     | '/api/public/monitoring/reap'
+    | '/api/public/monitoring/resume'
     | '/api/public/payments/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -231,6 +242,7 @@ export interface FileRouteTypes {
     | '/radars'
     | '/api/public/monitoring/probe'
     | '/api/public/monitoring/reap'
+    | '/api/public/monitoring/resume'
     | '/api/public/payments/webhook'
   id:
     | '__root__'
@@ -252,6 +264,7 @@ export interface FileRouteTypes {
     | '/_authenticated/radars/'
     | '/api/public/monitoring/probe'
     | '/api/public/monitoring/reap'
+    | '/api/public/monitoring/resume'
     | '/api/public/payments/webhook'
   fileRoutesById: FileRoutesById
 }
@@ -263,6 +276,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   ApiPublicMonitoringProbeRoute: typeof ApiPublicMonitoringProbeRoute
   ApiPublicMonitoringReapRoute: typeof ApiPublicMonitoringReapRoute
+  ApiPublicMonitoringResumeRoute: typeof ApiPublicMonitoringResumeRoute
   ApiPublicPaymentsWebhookRoute: typeof ApiPublicPaymentsWebhookRoute
 }
 
@@ -394,6 +408,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicMonitoringReapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/monitoring/resume': {
+      id: '/api/public/monitoring/resume'
+      path: '/api/public/monitoring/resume'
+      fullPath: '/api/public/monitoring/resume'
+      preLoaderRoute: typeof ApiPublicMonitoringResumeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/payments/webhook': {
       id: '/api/public/payments/webhook'
       path: '/api/public/payments/webhook'
@@ -451,6 +472,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   ApiPublicMonitoringProbeRoute: ApiPublicMonitoringProbeRoute,
   ApiPublicMonitoringReapRoute: ApiPublicMonitoringReapRoute,
+  ApiPublicMonitoringResumeRoute: ApiPublicMonitoringResumeRoute,
   ApiPublicPaymentsWebhookRoute: ApiPublicPaymentsWebhookRoute,
 }
 export const routeTree = rootRouteImport
