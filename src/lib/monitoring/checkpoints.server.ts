@@ -80,7 +80,7 @@ export function createCheckpointStore(
     get resumedSteps() {
       return resumed;
     },
-    async step<T>(key, fn) {
+    async step<T>(key: string, fn: () => Promise<T>): Promise<T> {
       await load();
       if (cache.has(key)) {
         resumed += 1;
@@ -102,7 +102,7 @@ export function createCheckpointStore(
       }
       return value;
     },
-    async read<T>(key) {
+    async read<T>(key: string): Promise<T | undefined> {
       await load();
       return cache.has(key) ? (cache.get(key) as T) : undefined;
     },
