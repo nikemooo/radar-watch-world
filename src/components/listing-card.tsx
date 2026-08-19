@@ -111,6 +111,14 @@ const statusTone: Record<MatchStatus, string> = {
 
 const statusIcon: Record<MatchStatus, string> = { match: "✓", unverified: "⚠", reject: "✕" };
 
+/** Evidence status is about knowledge, not about matching the criteria. */
+const evidenceIcon: Record<StoredEvidence["status"], string> = {
+  verified: "✓",
+  probable: "~",
+  conflicted: "⚠",
+  unknown: "–",
+};
+
 export function ListingCard({
   finding,
   verdict,
@@ -131,6 +139,8 @@ export function ListingCard({
   const market = marketVerdict(finding.baseline, t, locale);
   const price = money(finding.numeric_value, finding.currency, locale);
   const image = snapshot.image ?? snapshot.images?.[0] ?? null;
+  const evidence = storedEvidenceOf(snapshot.evidence);
+  const identifiers = snapshot.identifiers ?? [];
   const status: MatchStatus = verdict?.status ?? snapshot.match_status ?? "unverified";
   const pending = verdict?.pending ?? [];
 
