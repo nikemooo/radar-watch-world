@@ -55,6 +55,9 @@ import {
   type StoredEvidence,
 } from "./evidence";
 import { detectIdentifiers, mergeIdentifiers, presentableIdentifiers, type Identifier } from "./identifiers";
+import type { IdentitySource } from "./identity";
+import { dedupeListings } from "./dedupe";
+
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
 import { classifyCandidateUrl, gateCandidates, marketAllowed } from "./candidate-gate";
 import { SweepPaused } from "./slice";
@@ -964,6 +967,9 @@ export async function runRadarCycle(
   const attributeEvidenceByUrl = new Map<string, Record<string, AttributeEvidence>>();
   const identifiersByUrl = new Map<string, Identifier[]>();
   const imageEvidenceByUrl = new Map<string, ImageEvidence>();
+  /** Every retrieved surface per item URL, used for canonical identity resolution. */
+  const identitySourcesByUrl = new Map<string, IdentitySource[]>();
+
   let structuredPricesApplied = 0;
   let evidenceConflicts = 0;
   let visualObservations = 0;
@@ -1258,6 +1264,20 @@ export async function runRadarCycle(
               docs.push({ url: page.url, sourceType: "search_snippet", title: snippet.title, text: snippet.snippet });
             }
             evidenceByUrl.set(page.url, docs);
+            // Identity is resolved over EVERY surface, so a structured field on
+            // one page and a title on another can jointly prove the product.
+            identitySourcesByUrl.set(
+              page.url,
+              docs.map((d) => ({
+                sourceType: d.sourceType,
+                url: d.url,
+                text: [d.title ?? "", d.text ?? "", Object.entries(d.fields ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n")]
+                  .filter(Boolean)
+                  .join("\n")
+                  .slice(0, 20000),
+              })),
+            );
+
             const enriched = enrichFromEvidence(specs, docs, constraints);
             // Geography is derived from explicit evidence only (host ccTLD,
             // stated address country, or the country written on the page).
@@ -1571,6 +1591,19 @@ ${documentBlock(allDocs.slice(0, 45))}`,
   items.length = 0;
   items.push(...byIdentity.values());
 
+  // Listing-level deduplication: the same advert reached through a slugged URL,
+  // an id-only URL, an AMP mirror or a re-slug is ONE result, not four.
+  const listingDedupe = dedupeListings(
+    items.map((item) => ({ ...item, identifiers: identifiersByUrl.get(item.url) ?? [] })),
+  );
+  for (const gone of listingDedupe.removed) {
+    console.info(`[radar:dedupe] ${gone.rule} — ${gone.url} is the same listing as ${gone.duplicateOf}`);
+  }
+  const listingDuplicatesRemoved = listingDedupe.removed.length;
+  items.length = 0;
+  items.push(...listingDedupe.kept.map(({ identifiers: _identifiers, ...item }) => item as ExtractedItem));
+
+
   // Attribute enrichment: a detail page is the primary source for its item.
   const attributesFor = (item: ExtractedItem): Record<string, AttributeValue> | null =>
     detailByUrl.get(item.url)?.attributes ?? null;
@@ -1611,15 +1644,26 @@ ${documentBlock(allDocs.slice(0, 45))}`,
         geoResolvedUrls.add(item.url);
       }
     }
+    // Identity evidence: every retrieved surface for this item, plus the item's
+    // own extracted wording as a last-resort surface.
+    const identitySources: IdentitySource[] = [
+      ...(identitySourcesByUrl.get(item.url) ?? []),
+      { sourceType: "extracted_item", url: item.url, text: `${item.title}\n${item.summary ?? ""}` },
+      ...Object.values(attributes)
+        .filter((a) => a.raw && (a.confidence === "stated" || a.confidence === "structured"))
+        .map((a) => ({ sourceType: "detail_field", url: a.source_url, text: `${a.key}: ${a.raw}` })),
+    ];
     const verdict = evaluateCriteria(
       {
         title: item.title,
         attributes,
         numericValue: item.numeric_value,
         currency: item.currency,
+        identitySources,
       },
       constraints,
     );
+
     verdicts.set(item.fingerprint, verdict);
     if (verdict.status === "match") criteriaMatched += 1;
     else if (verdict.status === "reject") criteriaRejected += 1;
@@ -2089,6 +2133,15 @@ ${eligible
             identifiers: (identifiersByUrl.get(item.url) ??
               (prev?.snapshot as { identifiers?: Identifier[] } | null)?.identifiers ??
               []) as never,
+            // Canonical product identity: what the accumulated evidence says the
+            // item IS, independent of whether every other criterion is proven.
+            identity: ((verdicts.get(item.fingerprint)?.outcomes ?? [])
+              .map((o) => o.identity)
+              .filter(Boolean)[0] ??
+              (prev?.snapshot as { identity?: unknown } | null)?.identity ??
+              null) as never,
+
+
 
           } as never,
           attributes: (attrs ?? {}) as never,
@@ -2173,7 +2226,7 @@ ${eligible
     matching_listings: criteriaMatched,
     discovered_listings: items.length,
     persisted_findings: items.length,
-    duplicates_removed: research.duplicatesRemoved,
+    duplicates_removed: research.duplicatesRemoved + listingDuplicatesRemoved,
     blocked_pages: detailFetchesFailed,
     monitoring_transition: isBaseline && !failed,
     items_found: items.length,
@@ -2278,7 +2331,8 @@ ${eligible
     searchRequests: research.requests,
     searchFailures: research.failures,
     costEstimate: Number((research.costEstimate + detailCostEstimate + indexExpansionCost).toFixed(4)),
-    duplicatesRemoved: research.duplicatesRemoved,
+    duplicatesRemoved: research.duplicatesRemoved + listingDuplicatesRemoved,
+
     baselineFindings,
     incrementalFindings,
     suppressedBaseline,

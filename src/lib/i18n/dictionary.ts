@@ -205,6 +205,11 @@ export const en = {
   "listing.evidence.sources": "{count} source(s)",
   "listing.identifiers": "Item identity",
   "listing.imageUnavailable": "This listing published no photo",
+  "listing.identity.verified": "Model confirmed",
+  "listing.identity.probable": "Model probable",
+  "listing.identity.conflicted": "Different model",
+  "listing.identity.unknown": "Model not stated",
+
 
   "new.editRequest": "Edit request",
   "new.step": "Step {step} of 2",
@@ -500,6 +505,11 @@ const sv: Dictionary = {
   "listing.evidence.sources": "{count} källa/källor",
   "listing.identifiers": "Objektets identitet",
   "listing.imageUnavailable": "Annonsen har ingen publicerad bild",
+  "listing.identity.verified": "Modell bekräftad",
+  "listing.identity.probable": "Trolig modell",
+  "listing.identity.conflicted": "Annan modell",
+  "listing.identity.unknown": "Modell anges inte",
+
 
   "listing.seen": "Först sedd {first} · senast sedd {last} · {detail}",
   "listing.detailRead": "annonssida läst",

@@ -197,7 +197,25 @@ export function parseStructured(html: string, pageUrl: string): StructuredSignal
     }
     if (images.length >= 12) break;
   }
+  // Legacy and preload hints some marketplaces still emit.
+  for (const m of html.matchAll(/<link\b[^>]*>/gi)) {
+    const tag = m[0];
+    const rel = tag.match(/\brel\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase() ?? "";
+    if (!/image_src/.test(rel) && !(/preload/.test(rel) && /\bas\s*=\s*["']image["']/i.test(tag))) continue;
+    pushImage(tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1] ?? tag.match(/\bimagesrcset\s*=\s*["']([^"']+)["']/i)?.[1]);
+  }
+  // Responsive galleries render through <picture><source srcset>.
+  for (const m of html.matchAll(/<source\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (/\btype\s*=\s*["']video/i.test(tag)) continue;
+    pushImage(
+      tag.match(/\bsrcset\s*=\s*["']([^"']+)["']/i)?.[1] ??
+        tag.match(/\bdata-srcset\s*=\s*["']([^"']+)["']/i)?.[1],
+    );
+    if (images.length >= 12) break;
+  }
   for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
+
     const tag = m[0];
     const src =
       tag.match(/\bsrcset\s*=\s*["']([^"']+)["']/i)?.[1] ??
