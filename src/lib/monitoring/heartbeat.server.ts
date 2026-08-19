@@ -28,7 +28,8 @@ export function startRunHeartbeat(db: Db, runId: string | null): RunTracker {
   const write = async (patch: RunUpdate) => {
     if (!runId || stopped) return;
     try {
-      await db.from("monitor_runs").update(patch).eq("id", runId);
+      const { error } = await db.from("monitor_runs").update(patch).eq("id", runId);
+      if (error) throw new Error(error.message);
     } catch (err) {
       // A missed heartbeat must never kill the sweep; the reaper's stale
       // threshold is several beats wide precisely for this case.

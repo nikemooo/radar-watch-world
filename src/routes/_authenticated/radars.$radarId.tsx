@@ -61,7 +61,7 @@ function RadarDetail() {
   // The persisted run row is the single source of truth for "is a sweep alive?".
   // Reading it also triggers server-side recovery of runs whose worker died,
   // so the page can never show an endless "Söker igenom marknaden…".
-  const { data: sweepStatus } = useQuery({
+  const { data: sweepStatus, error: sweepStatusError } = useQuery({
     queryKey: ["sweep-status", radarId],
     queryFn: () => fetchSweepStatus({ data: { radarId } }),
     refetchInterval: (query) => (query.state.data?.state === "running" ? 5000 : false),
@@ -74,13 +74,7 @@ function RadarDetail() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["radar", radarId],
-    refetchInterval: (query) => {
-      const state = query.state.data;
-      const running =
-        state?.runs?.some((entry) => entry.status === "running") ||
-        state?.radar?.scan_state === "INITIAL_SCAN_RUNNING";
-      return running ? 4000 : false;
-    },
+    refetchInterval: sweepStatus?.state === "running" ? 4000 : false,
 
     queryFn: async () => {
       const [radar, alerts, runs, decisions, findings, changes, verifications] = await Promise.all([
@@ -252,8 +246,12 @@ function RadarDetail() {
   const unverified = settled.filter((f) => statusOf(f) === "unverified");
   const rejected = settled.filter((f) => statusOf(f) === "reject");
   const running = sweepStatus?.state === "running";
-  const interrupted = sweepStatus?.state === "failed" && !!sweepStatus.failureReason;
-  const scanning = running || (radar.scan_state === "INITIAL_SCAN_RUNNING" && !sweepStatus);
+  const latestRun = data.runs[0];
+  const interrupted =
+    (sweepStatus?.state === "failed" && !!sweepStatus.failureReason) ||
+    latestRun?.status === "failed" ||
+    !!sweepStatusError;
+  const scanning = running;
 
   const openQueue = (finding?: FindingLike) => {
     const index = finding ? Math.max(unverified.findIndex((f) => f.id === finding.id), 0) : 0;
@@ -340,7 +338,9 @@ function RadarDetail() {
         <section className="panel p-5">
           <p className="text-sm font-medium">{t("detail.interrupted.title")}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {sweepStatus?.error ?? t("detail.interrupted.body")}
+            {sweepStatus?.error ??
+              (latestRun?.error as string | null | undefined) ??
+              (sweepStatusError instanceof Error ? sweepStatusError.message : t("detail.interrupted.body"))}
           </p>
           <Button className="mt-3 gap-2" onClick={() => sweep.mutate()} disabled={sweep.isPending}>
             <RefreshCw className="size-4" />
