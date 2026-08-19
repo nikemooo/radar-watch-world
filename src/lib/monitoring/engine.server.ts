@@ -873,6 +873,8 @@ export async function runRadarCycle(
           first_seen_at: new Date().toISOString(),
           last_seen_at: new Date().toISOString(),
         }));
+      // Clear placeholders left behind by an interrupted earlier sweep.
+      await db.from("findings").delete().eq("radar_id", radar.id).like("fingerprint", "provisional:%");
       if (provisional.length > 0) {
         await db.from("findings").upsert(provisional, { onConflict: "radar_id,fingerprint" });
       }
