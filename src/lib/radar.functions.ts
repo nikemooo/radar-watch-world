@@ -71,7 +71,36 @@ export const createRadar = createServerFn({ method: "POST" })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
-    return { id: radar.id, scheduledStartAt: scheduledAt };
+
+    // "Start now" must genuinely start. The first sweep is claimed here, on the
+    // server, so the radar page shows a running scan the moment it opens —
+    // the user never has to press "Sök nu" to get their first result.
+    let started = false;
+    if (!wantsSchedule && data.start !== "manual") {
+      try {
+        const { startRadarSweep } = await import("./monitoring/sweep.server");
+        const { data: full } = await context.supabase
+          .from("radars")
+          .select("*")
+          .eq("id", radar.id)
+          .single();
+        if (full) {
+          const { remainingAlerts } = await import("./billing/entitlements.server");
+          await startRadarSweep(context.supabase, full, {
+            alertBudget: remainingAlerts(e),
+            maxDetailFetches: e.isInternal ? undefined : e.plan.max_detail_fetches,
+            priority: e.isInternal || e.plan.priority_processing,
+            // Claim and hand off immediately: creation must not block on a sweep.
+            inlineWaitMs: 0,
+          });
+          started = true;
+        }
+      } catch (err) {
+        // A failed auto-start is recoverable by the user; creation still succeeded.
+        console.warn(`[radar:create] auto-start failed — ${(err as Error).message}`);
+      }
+    }
+    return { id: radar.id, scheduledStartAt: scheduledAt, started };
   });
 
 /**

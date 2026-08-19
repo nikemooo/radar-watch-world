@@ -68,7 +68,7 @@ export type SweepStatus = {
 export async function startRadarSweep(
   db: Db,
   radar: RadarRow,
-  options: RunOptions = {},
+  options: RunOptions & { inlineWaitMs?: number } = {},
 ): Promise<SweepStart> {
   // The run row (and, for a first sweep, the radar's running scan state) is
   // written synchronously BEFORE the cycle starts. Only then can the caller
@@ -122,7 +122,7 @@ export async function startRadarSweep(
   const raced = await Promise.race([
     sweep.then((result) => ({ done: true as const, result })).catch(() => ({ done: false as const })),
     new Promise<{ done: false }>((resolve) =>
-      setTimeout(() => resolve({ done: false as const }), INLINE_WAIT_MS),
+      setTimeout(() => resolve({ done: false as const }), options.inlineWaitMs ?? INLINE_WAIT_MS),
     ),
   ]);
 
