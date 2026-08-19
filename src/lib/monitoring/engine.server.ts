@@ -371,7 +371,14 @@ export type RunOptions = {
   continuation?: boolean | undefined;
   /** Override the checkpoint store (tests). */
   checkpoints?: CheckpointStore | undefined;
+  /**
+   * Wall-clock time (ms epoch) after which this invocation stops between two
+   * checkpointed steps and throws SweepPaused. The run remains claimed and is
+   * carried forward by the next scheduler tick or UI poll.
+   */
+  deadlineAt?: number | undefined;
 };
+
 
 export type RunClaim = {
   runId: string | null;
