@@ -172,12 +172,23 @@ interface SseAccumulator {
   usage: Record<string, unknown> | null;
   webSearchCalls: number;
   webSearchQueries: string[];
+  error: { type: string; message: string; code: string | null } | null;
 }
 
 function handleEvent(acc: SseAccumulator, event: Record<string, unknown>) {
   const type = String(event["type"] ?? "");
   if (type === "response.output_text.delta" && typeof event["delta"] === "string") {
     acc.text += event["delta"];
+  }
+  if (type === "error") {
+    const err = event["error"] as Record<string, unknown> | undefined;
+    if (err) {
+      acc.error = {
+        type: String(err["type"] ?? "unknown"),
+        message: String(err["message"] ?? ""),
+        code: err["code"] ? String(err["code"]) : null,
+      };
+    }
   }
   if (type === "response.created" || type === "response.completed") {
     const response = event["response"] as Record<string, unknown> | undefined;
