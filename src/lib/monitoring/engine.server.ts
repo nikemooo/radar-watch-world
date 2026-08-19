@@ -1072,14 +1072,24 @@ export async function runRadarCycle(
         // its provenance. A missing image is left missing; nothing is invented.
         for (const p of fetched.pages) {
           const images = (p.images ?? []).filter(Boolean);
-          if (p.image || images.length > 0) {
+          const evidence = imageEvidence({
+            pageUrl: p.url,
+            primary: p.image,
+            images,
+            sourceUrl: p.image_source ?? p.url,
+          });
+          imageEvidenceByUrl.set(p.url, evidence);
+          if (evidence.status === "from_listing") {
             imageByUrl.set(p.url, {
-              url: p.image ?? images[0]!,
-              source: p.image_source ?? p.url,
-              images: Array.from(new Set([p.image, ...images].filter((i): i is string => !!i))).slice(0, 8),
+              url: evidence.primary!,
+              source: evidence.sourceUrl ?? p.url,
+              images: evidence.images,
             });
-            imagesFound += images.length || 1;
+            imagesFound += evidence.images.length;
+          } else {
+            console.info(`[radar:image] ${p.url} — no listing image published (shown as unavailable)`);
           }
+
           // Direct listing URL: canonical > served URL > requested URL, and
           // only ever labelled "direct" when the URL addresses one item.
           const link = resolveListingUrl({
