@@ -1264,6 +1264,20 @@ export async function runRadarCycle(
               docs.push({ url: page.url, sourceType: "search_snippet", title: snippet.title, text: snippet.snippet });
             }
             evidenceByUrl.set(page.url, docs);
+            // Identity is resolved over EVERY surface, so a structured field on
+            // one page and a title on another can jointly prove the product.
+            identitySourcesByUrl.set(
+              page.url,
+              docs.map((d) => ({
+                sourceType: d.sourceType,
+                url: d.url,
+                text: [d.title ?? "", d.text ?? "", Object.entries(d.fields ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n")]
+                  .filter(Boolean)
+                  .join("\n")
+                  .slice(0, 20000),
+              })),
+            );
+
             const enriched = enrichFromEvidence(specs, docs, constraints);
             // Geography is derived from explicit evidence only (host ccTLD,
             // stated address country, or the country written on the page).
