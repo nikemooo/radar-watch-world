@@ -57,6 +57,8 @@ import {
 import { detectIdentifiers, mergeIdentifiers, presentableIdentifiers, type Identifier } from "./identifiers";
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
 import { classifyCandidateUrl, gateCandidates, marketAllowed } from "./candidate-gate";
+import { SweepPaused } from "./slice";
+
 
 import {
   COUNTRY_ATTRIBUTE,
