@@ -12,7 +12,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { staleVerdict, type FailureReason } from "./lifecycle";
+import { runVerdict, type FailureReason } from "./lifecycle";
 
 type Db = SupabaseClient<Database>;
 
@@ -42,7 +42,7 @@ export async function reapStaleRuns(
   const now = options.now ?? Date.now();
   let query = db
     .from("monitor_runs")
-    .select("id, radar_id, status, started_at, heartbeat_at, current_phase")
+    .select("id, radar_id, status, started_at, heartbeat_at, current_phase, attempt")
     .eq("status", "running")
     .order("started_at", { ascending: false })
     .limit(200);
@@ -57,8 +57,11 @@ export async function reapStaleRuns(
 
   const reaped: ReapedRun[] = [];
   for (const run of data ?? []) {
-    const verdict = staleVerdict(run, now);
-    if (!verdict.stale) continue;
+    // A quiet run is not automatically a dead run: it may simply be waiting
+    // for its next continuation. Only a run that can no longer be resumed
+    // (attempts spent, or past the absolute ceiling) is reaped.
+    const verdict = runVerdict(run, now);
+    if (verdict.state !== "dead") continue;
 
     const finishedAt = new Date(now).toISOString();
     // Conditional on status so a worker that woke up in the meantime wins.
@@ -68,8 +71,10 @@ export async function reapStaleRuns(
         status: "failed",
         error: REASON_MESSAGE[verdict.reason],
         failure_reason: verdict.reason,
+        termination_reason: verdict.reason,
         failed_at: finishedAt,
         finished_at: finishedAt,
+        worker_finished_at: finishedAt,
       })
       .eq("id", run.id)
       .eq("status", "running")

@@ -32,9 +32,32 @@ export function describeRuntimeContext(): Record<string, unknown> {
   };
 }
 
+/**
+ * Ask the runtime to keep the invocation alive until `promise` settles.
+ *
+ * This is a compatibility hook, never the architecture: no runtime promises
+ * minutes of background work after a response, so long jobs must also be
+ * resumable (see monitoring/continuation.server.ts). What waitUntil buys is
+ * that work already in flight is not cut off mid-call.
+ */
 export function keepRuntimeAlive(promise: Promise<unknown>): boolean {
-  const context = runtimeContext.getStore();
-  if (!context?.waitUntil) return false;
-  context.waitUntil(promise);
-  return true;
+  const waitUntil = resolveWaitUntil();
+  if (!waitUntil) return false;
+  try {
+    waitUntil(promise);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveWaitUntil(): ((promise: Promise<unknown>) => void) | null {
+  const store = runtimeContext.getStore();
+  if (store?.waitUntil) return store.waitUntil.bind(store);
+  // Some adapters expose the execution context globally instead of passing it
+  // down; use it rather than silently detaching the work.
+  const global = globalThis as { __cfCtx?: RuntimeExecutionContext };
+  const fallback = global.__cfCtx;
+  if (fallback?.waitUntil) return fallback.waitUntil.bind(fallback);
+  return null;
 }
