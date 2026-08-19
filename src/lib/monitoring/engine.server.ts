@@ -1240,8 +1240,9 @@ export async function runRadarCycle(
 
             // Generic identity: VIN, registration, reference, serial, GTIN…
             const identifiers = mergeIdentifiers([
-              detectIdentifiers({ url: page.url, fields: st?.fields, text: undefined }),
-              detectIdentifiers({ url: page.url, fields: st?.jsonld, text: undefined }),
+              detectIdentifiers({ url: page.url, fields: st?.fields ?? {} }),
+              detectIdentifiers({ url: page.url, fields: st?.jsonld ?? {} }),
+
               detectIdentifiers({ url: page.url, text: `${page.title ?? ""}\n${page.text.slice(0, 8000)}` }),
             ]);
             const presentable = presentableIdentifiers(identifiers);
