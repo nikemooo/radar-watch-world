@@ -2133,6 +2133,15 @@ ${eligible
             identifiers: (identifiersByUrl.get(item.url) ??
               (prev?.snapshot as { identifiers?: Identifier[] } | null)?.identifiers ??
               []) as never,
+            // Canonical product identity: what the accumulated evidence says the
+            // item IS, independent of whether every other criterion is proven.
+            identity: ((verdicts.get(item.fingerprint)?.outcomes ?? [])
+              .map((o) => o.identity)
+              .filter(Boolean)[0] ??
+              (prev?.snapshot as { identity?: unknown } | null)?.identity ??
+              null) as never,
+
+
 
           } as never,
           attributes: (attrs ?? {}) as never,
