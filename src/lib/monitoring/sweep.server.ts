@@ -90,6 +90,15 @@ export async function startRadarSweep(
       // Without this, a crashed cycle leaves monitor_runs stuck on "running"
       // forever and the UI can never tell success from failure.
       const message = err instanceof Error ? err.message : String(err);
+      const checkpointFailure = err instanceof Error && err.name === "CheckpointWriteError";
+      if (checkpointFailure) {
+        // A run whose progress cannot be persisted is NOT resumable. Saying so
+        // out loud is the whole point: a silent warning is what made sweeps
+        // restart from query planning forever.
+        console.error(
+          JSON.stringify({ event: "run_not_resumable", run_id: claim.runId, radar_id: radar.id, error: message }),
+        );
+      }
       if (claim.runId) {
         await db
           .from("monitor_runs")
@@ -97,8 +106,10 @@ export async function startRadarSweep(
             status: "failed",
             error: message.slice(0, 800),
             failure_reason: "start_failed",
+            termination_reason: checkpointFailure ? "checkpoint_write_failed" : "worker_error",
             failed_at: new Date().toISOString(),
             finished_at: new Date().toISOString(),
+            worker_finished_at: new Date().toISOString(),
           })
           .eq("id", claim.runId);
       }
@@ -106,6 +117,7 @@ export async function startRadarSweep(
       // can immediately try again.
       await releaseRadar(db, radar.id, claim.runId);
       console.error(`[radar:sweep] radar ${radar.id} failed — ${message}`);
+
 
       throw err;
     } finally {
