@@ -48,6 +48,13 @@ export interface FindingSnapshot {
   image_evidence?: unknown;
   evidence?: StoredEvidence[];
   identifiers?: { type: string; value: string; confidence: string }[];
+  /** Canonical product identity resolved from all retrieved surfaces. */
+  identity?: {
+    status: "verified" | "probable" | "conflicted" | "unknown";
+    canonical: string;
+    explanation: string;
+  } | null;
+
   /** "direct" when the stored URL provably addresses the advert itself. */
   link_status?: "direct" | "unverified";
   canonical_url?: string | null;
