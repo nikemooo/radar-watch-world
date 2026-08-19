@@ -26,12 +26,14 @@ import { startRunHeartbeat } from "./heartbeat.server";
 import { reapStaleRuns, releaseRadar } from "./reaper.server";
 import { resumeInterruptedRuns } from "./continuation.server";
 import { phaseLabel } from "./lifecycle";
+import { deadlineFromNow, isSweepPaused, UI_SLICE_MS } from "./slice";
 
 type Db = SupabaseClient<Database>;
 type RadarRow = Database["public"]["Tables"]["radars"]["Row"];
 
-/** How long the request waits for a fast sweep before handing off to polling. */
-const INLINE_WAIT_MS = 12_000;
+/** Extra grace over the slice deadline before the request stops waiting. */
+const HARD_CAP_MS = 12_000;
+
 
 export type SweepStart =
   | { state: "completed"; result: RunResult; runId: string | null; startedAt: string }
