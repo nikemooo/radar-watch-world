@@ -494,16 +494,22 @@ export async function runRadarCycle(
     await phase(name);
   };
   /**
-   * Run one expensive step exactly once per run. On resume the persisted
-   * result is returned instead of calling the provider again, and every
-   * completed step is recorded so a diagnosis can see how far the run got.
+   * Run one expensive step exactly once per run.
+   *
+   * The contract is strict: `last_successful_operation` is written only AFTER
+   * the checkpoint is durably stored, so the run row can never claim progress
+   * the checkpoint table cannot back up. A failed checkpoint write throws and
+   * the whole sweep fails honestly (lock released, radar restored) instead of
+   * pretending to be resumable.
    */
   const step = <T,>(key: string, fn: () => Promise<T>): Promise<T> =>
-    checkpoints.step(key, async () => {
-      const value = await fn();
-      await patchRun({ last_successful_operation: key });
-      return value;
-    });
+    checkpoints
+      .step(key, fn, { phase: currentPhase })
+      .then(async (value) => {
+        await patchRun({ last_successful_operation: key });
+        return value;
+      });
+
 
   const patchRun = async (patch: Database["public"]["Tables"]["monitor_runs"]["Update"]) => {
     if (!runId) return;
