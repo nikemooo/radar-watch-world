@@ -165,7 +165,9 @@ export function ListingCard({
         ) : (
           <div className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground">
             <ImageOff className="size-5" aria-hidden />
-            <span className="text-xs">{t("listing.noImage")}</span>
+            <span className="text-xs">
+              {snapshot.image_status === "unavailable" ? t("listing.imageUnavailable") : t("listing.noImage")}
+            </span>
           </div>
         )}
         <span
