@@ -964,6 +964,9 @@ export async function runRadarCycle(
   const attributeEvidenceByUrl = new Map<string, Record<string, AttributeEvidence>>();
   const identifiersByUrl = new Map<string, Identifier[]>();
   const imageEvidenceByUrl = new Map<string, ImageEvidence>();
+  /** Every retrieved surface per item URL, used for canonical identity resolution. */
+  const identitySourcesByUrl = new Map<string, IdentitySource[]>();
+
   let structuredPricesApplied = 0;
   let evidenceConflicts = 0;
   let visualObservations = 0;
