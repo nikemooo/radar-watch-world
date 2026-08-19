@@ -36,7 +36,7 @@ export function isSweepPaused(err: unknown): err is SweepPaused {
 export const UI_SLICE_MS = 18_000;
 
 /** Slice length for the server-driven scheduler tick (no user waiting). */
-export const TICK_SLICE_MS = 50_000;
+export const TICK_SLICE_MS = 30_000;
 
 export function deadlineFromNow(ms: number): number {
   return Date.now() + ms;
