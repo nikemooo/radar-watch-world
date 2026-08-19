@@ -128,10 +128,22 @@ function Dashboard() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Stat icon={RadarIcon} label="Active radars" value={String(activeRadars)} />
-            <Stat icon={Bell} label="Alerts this week" value={String(data?.weekAlerts.length ?? 0)} />
-            <Stat icon={Sparkles} label="Needs attention" value={String(critical)} />
+            <Stat icon={RadarIcon} label="Active radars" value={String(activeRadars)} to="/radars" />
+            <Stat
+              icon={Bell}
+              label="Alerts this week"
+              value={String(data?.weekAlerts.length ?? 0)}
+              to="/alerts"
+            />
+            <Stat
+              icon={Sparkles}
+              label="Needs attention"
+              value={String(critical)}
+              to="/alerts"
+              search={{ filter: "critical" as const }}
+            />
           </div>
+
 
           <section>
             <div className="flex items-center justify-between">
