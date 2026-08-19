@@ -10,6 +10,7 @@ import { useState } from "react";
 import { ChevronDown, ExternalLink, ImageOff } from "lucide-react";
 import { asBaseline, BaselinePanel } from "@/components/baseline-panel";
 import { isFactual, type AttributeValue } from "@/lib/monitoring/normalize";
+import { storedEvidenceOf, type StoredEvidence } from "@/lib/monitoring/evidence";
 import { statusLabel, type EffectiveVerdict } from "@/lib/monitoring/verification";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -41,13 +42,17 @@ export interface FindingSnapshot {
   image?: string | null;
   image_source?: string | null;
   images?: string[];
+  image_status?: "from_listing" | "unavailable" | null;
   missing_attributes?: string[];
   criteria?: { label?: string; ok?: boolean | null; reason?: string }[];
   image_evidence?: unknown;
+  evidence?: StoredEvidence[];
+  identifiers?: { type: string; value: string; confidence: string }[];
   /** "direct" when the stored URL provably addresses the advert itself. */
   link_status?: "direct" | "unverified";
   canonical_url?: string | null;
 }
+
 
 export function snapshotOf(value: unknown): FindingSnapshot {
   return value && typeof value === "object" ? (value as FindingSnapshot) : {};
@@ -106,6 +111,14 @@ const statusTone: Record<MatchStatus, string> = {
 
 const statusIcon: Record<MatchStatus, string> = { match: "✓", unverified: "⚠", reject: "✕" };
 
+/** Evidence status is about knowledge, not about matching the criteria. */
+const evidenceIcon: Record<StoredEvidence["status"], string> = {
+  verified: "✓",
+  probable: "~",
+  conflicted: "⚠",
+  unknown: "–",
+};
+
 export function ListingCard({
   finding,
   verdict,
@@ -126,6 +139,8 @@ export function ListingCard({
   const market = marketVerdict(finding.baseline, t, locale);
   const price = money(finding.numeric_value, finding.currency, locale);
   const image = snapshot.image ?? snapshot.images?.[0] ?? null;
+  const evidence = storedEvidenceOf(snapshot.evidence);
+  const identifiers = snapshot.identifiers ?? [];
   const status: MatchStatus = verdict?.status ?? snapshot.match_status ?? "unverified";
   const pending = verdict?.pending ?? [];
 
@@ -150,7 +165,9 @@ export function ListingCard({
         ) : (
           <div className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground">
             <ImageOff className="size-5" aria-hidden />
-            <span className="text-xs">{t("listing.noImage")}</span>
+            <span className="text-xs">
+              {snapshot.image_status === "unavailable" ? t("listing.imageUnavailable") : t("listing.noImage")}
+            </span>
           </div>
         )}
         <span
@@ -271,7 +288,38 @@ export function ListingCard({
             ) : (
               snapshot.match_reason && <p className="text-sm text-muted-foreground">{snapshot.match_reason}</p>
             )}
+            {evidence.length > 0 && (
+              <div className="space-y-1">
+                <p className="mono-label">{t("listing.whatWeKnow")}</p>
+                <ul className="space-y-1 text-sm">
+                  {evidence.map((e) => (
+                    <li key={e.attribute} className="flex gap-2">
+                      <span aria-hidden>{evidenceIcon[e.status]}</span>
+                      <span className={e.status === "unknown" ? "text-muted-foreground" : ""}>
+                        <span className="mono-label">{e.attribute.replace(/_/g, " ")}</span>{" "}
+                        {e.raw ?? "—"}{" "}
+                        <span className="text-muted-foreground">
+                          · {t(`listing.evidence.${e.status}` as TranslationKey)}
+                          {e.status !== "unknown" &&
+                            ` · ${t("listing.evidence.sources", { count: e.sources.length })}`}
+                        </span>
+                        {e.conflict && (
+                          <span className="block text-xs text-critical">{e.explanation}</span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {identifiers.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("listing.identifiers")}:{" "}
+                    {identifiers.map((i) => `${i.type.toUpperCase()} ${i.value}`).join(" · ")}
+                  </p>
+                )}
+              </div>
+            )}
             {attributes.length > 0 && (
+
               <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
                 {attributes.map((a) => (
                   <div key={a.key} className="flex gap-2">

@@ -44,7 +44,19 @@ import {
   missingKeys,
   type EvidenceDoc,
 } from "./enrichment";
+import {
+  applyVisualEvidence,
+  collectAttributeEvidence,
+  imageEvidence,
+  storableEvidence,
+  structuredPrice,
+  type AttributeEvidence,
+  type ImageEvidence,
+  type StoredEvidence,
+} from "./evidence";
+import { detectIdentifiers, mergeIdentifiers, presentableIdentifiers, type Identifier } from "./identifiers";
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
+
 import {
   COUNTRY_ATTRIBUTE,
   countryAttribute,
@@ -925,6 +937,15 @@ export async function runRadarCycle(
   let detailFetchBudget = 0;
   let budgetReason = "detail stage not reached";
   const imageByUrl = new Map<string, { url: string; source: string; images: string[] }>();
+  /** Per-item evidence: what is known, how strongly, and from which surface. */
+  const attributeEvidenceByUrl = new Map<string, Record<string, AttributeEvidence>>();
+  const identifiersByUrl = new Map<string, Identifier[]>();
+  const imageEvidenceByUrl = new Map<string, ImageEvidence>();
+  let structuredPricesApplied = 0;
+  let evidenceConflicts = 0;
+  let visualObservations = 0;
+  let identifiersFound = 0;
+
   /** Verified direct listing URL per requested candidate URL. */
   const linkByUrl = new Map<string, ResolvedListingUrl>();
   let directLinksVerified = 0;
@@ -1051,14 +1072,24 @@ export async function runRadarCycle(
         // its provenance. A missing image is left missing; nothing is invented.
         for (const p of fetched.pages) {
           const images = (p.images ?? []).filter(Boolean);
-          if (p.image || images.length > 0) {
+          const evidence = imageEvidence({
+            pageUrl: p.url,
+            primary: p.image,
+            images,
+            sourceUrl: p.image_source ?? p.url,
+          });
+          imageEvidenceByUrl.set(p.url, evidence);
+          if (evidence.status === "from_listing") {
             imageByUrl.set(p.url, {
-              url: p.image ?? images[0]!,
-              source: p.image_source ?? p.url,
-              images: Array.from(new Set([p.image, ...images].filter((i): i is string => !!i))).slice(0, 8),
+              url: evidence.primary!,
+              source: evidence.sourceUrl ?? p.url,
+              images: evidence.images,
             });
-            imagesFound += images.length || 1;
+            imagesFound += evidence.images.length;
+          } else {
+            console.info(`[radar:image] ${p.url} — no listing image published (shown as unavailable)`);
           }
+
           // Direct listing URL: canonical > served URL > requested URL, and
           // only ever labelled "direct" when the URL addresses one item.
           const link = resolveListingUrl({
@@ -1195,6 +1226,31 @@ export async function runRadarCycle(
             deterministic.set(page.url, enriched.attributes);
             evidenceMergeCount += enriched.telemetry.mergeCount;
             for (const src of enriched.telemetry.sourcesUsed) extractionSourcesUsed.add(src);
+
+            // Per-surface evidence: read each source on its own so agreement
+            // and contradiction between them stays observable.
+            const perAttribute = collectAttributeEvidence(specs, docs);
+            attributeEvidenceByUrl.set(page.url, perAttribute);
+            for (const e of Object.values(perAttribute)) {
+              if (e.status === "conflicted") {
+                evidenceConflicts += 1;
+                console.info(`[radar:evidence] ${page.url} — ${e.explanation}`);
+              }
+            }
+
+            // Generic identity: VIN, registration, reference, serial, GTIN…
+            const identifiers = mergeIdentifiers([
+              detectIdentifiers({ url: page.url, fields: st?.fields ?? {} }),
+              detectIdentifiers({ url: page.url, fields: st?.jsonld ?? {} }),
+
+              detectIdentifiers({ url: page.url, text: `${page.title ?? ""}\n${page.text.slice(0, 8000)}` }),
+            ]);
+            const presentable = presentableIdentifiers(identifiers);
+            if (presentable.length > 0) {
+              identifiersByUrl.set(page.url, presentable);
+              identifiersFound += presentable.length;
+            }
+
           }
 
           // AI extraction runs ONLY for pages that still miss attributes.
@@ -1263,13 +1319,34 @@ export async function runRadarCycle(
           // price — otherwise the value stays unknown.
           const valueSpec = valueKey ? specs.find((s) => s.key === valueKey) : undefined;
           if (valueSpec) {
+            const structuredByUrl = new Map(fetched.pages.map((p) => [p.url, p.structured]));
             for (const d of details) {
               const current = d.attributes[valueSpec.key];
               if (current?.raw) {
                 console.info(`[radar:price] ${d.url} — price from detail page (${current.raw})`);
                 continue;
               }
+              // Structured commerce metadata states a price far more often than
+              // the prose does on client-rendered marketplaces.
+              const st = structuredByUrl.get(d.url);
+              const fromStructured = st
+                ? structuredPrice({ ...st.jsonld, ...st.og, ...st.meta, ...st.fields })
+                : null;
+              if (fromStructured) {
+                d.attributes[valueSpec.key] = normalizeAttribute(
+                  valueSpec,
+                  fromStructured.raw,
+                  "structured",
+                  d.url,
+                );
+                structuredPricesApplied += 1;
+                d.extracted += 1;
+                d.missing = Math.max(0, d.missing - 1);
+                console.info(`[radar:price] ${d.url} — price from structured metadata (${fromStructured.raw})`);
+                continue;
+              }
               const hint = indexPriceHints.get(d.url) ?? indexPriceHints.get(`${d.url}/`);
+
               if (hint && hint.value !== null) {
                 d.attributes[valueSpec.key] = {
                   ...normalizeAttribute(valueSpec, hint.raw, "structured", hint.sourceUrl),
@@ -1499,6 +1576,49 @@ ${documentBlock(allDocs.slice(0, 45))}`,
       `[radar:geo] market established for ${items.filter((i) => geoResolvedUrls.has(i.url)).length}/${items.length} item(s) from explicit evidence`,
     );
   }
+
+  // ------------------------------------------------------------------
+  // 2c. Visual evidence for what the text never stated.
+  // Only for items that are still unverified, only for the attributes that
+  // actually block them, only when the listing published its own photo, and
+  // only within a small budget. A photo is evidence, never proof: it can fill
+  // a gap or contradict the text, but it never changes the machine verdict.
+  // ------------------------------------------------------------------
+  const visualByUrl = new Map<string, { attribute: string; observation: string; value: string | null; confidence: "high" | "low" | "none"; image_url: string }[]>();
+  const visualTargets = items
+    .filter((item) => {
+      const verdict = verdicts.get(item.fingerprint);
+      if (!verdict || verdict.status !== "unverified") return false;
+      if (!imageByUrl.get(item.url)?.url) return false;
+      return verdict.outcomes.some((o) => o.status === "unverified" && specs.some((s) => s.key === o.constraint.attribute));
+    })
+    .slice(0, 6);
+
+  if (visualTargets.length > 0) {
+    await phase("analyzing_images");
+    try {
+      const { readImageEvidence } = await import("./reverify.server");
+      for (const item of visualTargets) {
+        const image = imageByUrl.get(item.url)!.url;
+        const wanted = (verdicts.get(item.fingerprint)?.outcomes ?? [])
+          .filter((o) => o.status === "unverified")
+          .map((o) => specs.find((s) => s.key === o.constraint.attribute))
+          .filter((s): s is AttributeSpec => !!s);
+        if (wanted.length === 0) continue;
+        const observations = await step(`visual:${item.url}`, () => readImageEvidence(image, wanted));
+        const useful = observations.filter((o) => o.confidence !== "none");
+        if (useful.length === 0) continue;
+        visualByUrl.set(item.url, observations);
+        visualObservations += useful.length;
+        const current = attributeEvidenceByUrl.get(item.url);
+        if (current) attributeEvidenceByUrl.set(item.url, applyVisualEvidence(current, specs, observations));
+      }
+    } catch (err) {
+      console.warn(`[radar:evidence] visual pass skipped — ${(err as Error).message}`);
+    }
+  }
+
+
 
   const docByUrl = new Map(allDocs.map((d) => [d.url, d]));
   const temporalOf = (item: ExtractedItem): TemporalFacts => {
@@ -1894,6 +2014,25 @@ ${eligible
               (prev?.snapshot as { canonical_url?: string } | null)?.canonical_url ??
               null,
             requested_url: item.url,
+            // What Radar actually knows about this item, and why: one record
+            // per attribute with status, confidence, sources and conflicts.
+            evidence: (attributeEvidenceByUrl.has(item.url)
+              ? storableEvidence(attributeEvidenceByUrl.get(item.url)!)
+              : ((prev?.snapshot as { evidence?: StoredEvidence[] } | null)?.evidence ?? [])) as never,
+            // Photo observations for the requirements the text never stated.
+            image_evidence: (visualByUrl.get(item.url) ??
+              (prev?.snapshot as { image_evidence?: unknown } | null)?.image_evidence ??
+              []) as never,
+            image_status:
+              imageEvidenceByUrl.get(item.url)?.status ??
+              (imageByUrl.get(item.url) ? "from_listing" : null) ??
+              (prev?.snapshot as { image_status?: string } | null)?.image_status ??
+              null,
+            // Unique identity of the physical item, when the page publishes one.
+            identifiers: (identifiersByUrl.get(item.url) ??
+              (prev?.snapshot as { identifiers?: Identifier[] } | null)?.identifiers ??
+              []) as never,
+
           } as never,
           attributes: (attrs ?? {}) as never,
           primary_url:
@@ -2027,6 +2166,11 @@ ${eligible
     jsonld_found: jsonldFound,
     og_data_found: ogDataFound,
     evidence_merge_count: evidenceMergeCount,
+    evidence_conflicts: evidenceConflicts,
+    structured_prices_joined: structuredPricesApplied,
+    visual_observations: visualObservations,
+    identifiers_found: identifiersFound,
+
     criteria_matched: criteriaMatched,
     criteria_rejected: criteriaRejected,
     criteria_unverified: criteriaUnverified,

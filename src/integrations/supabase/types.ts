@@ -467,6 +467,7 @@ export type Database = {
           discovered_listings: number
           duplicates_removed: number
           error: string | null
+          evidence_conflicts: number
           evidence_merge_count: number
           extraction_ai_calls: number
           extraction_attempted: number
@@ -479,6 +480,7 @@ export type Database = {
           first_useful_result_at: string | null
           heartbeat_at: string | null
           id: string
+          identifiers_found: number
           images_found: number
           images_persisted: number
           incremental_findings: number
@@ -513,6 +515,7 @@ export type Database = {
           sources_retrieved: number
           started_at: string
           status: string
+          structured_prices_joined: number
           suppressed_baseline: number
           suppressed_duplicate: number
           suppressed_recency: number
@@ -521,6 +524,7 @@ export type Database = {
           unknown_prices: number
           usable_comparables: number
           user_id: string
+          visual_observations: number
           worker_finished_at: string | null
           worker_started_at: string | null
         }
@@ -558,6 +562,7 @@ export type Database = {
           discovered_listings?: number
           duplicates_removed?: number
           error?: string | null
+          evidence_conflicts?: number
           evidence_merge_count?: number
           extraction_ai_calls?: number
           extraction_attempted?: number
@@ -570,6 +575,7 @@ export type Database = {
           first_useful_result_at?: string | null
           heartbeat_at?: string | null
           id?: string
+          identifiers_found?: number
           images_found?: number
           images_persisted?: number
           incremental_findings?: number
@@ -604,6 +610,7 @@ export type Database = {
           sources_retrieved?: number
           started_at?: string
           status?: string
+          structured_prices_joined?: number
           suppressed_baseline?: number
           suppressed_duplicate?: number
           suppressed_recency?: number
@@ -612,6 +619,7 @@ export type Database = {
           unknown_prices?: number
           usable_comparables?: number
           user_id: string
+          visual_observations?: number
           worker_finished_at?: string | null
           worker_started_at?: string | null
         }
@@ -649,6 +657,7 @@ export type Database = {
           discovered_listings?: number
           duplicates_removed?: number
           error?: string | null
+          evidence_conflicts?: number
           evidence_merge_count?: number
           extraction_ai_calls?: number
           extraction_attempted?: number
@@ -661,6 +670,7 @@ export type Database = {
           first_useful_result_at?: string | null
           heartbeat_at?: string | null
           id?: string
+          identifiers_found?: number
           images_found?: number
           images_persisted?: number
           incremental_findings?: number
@@ -695,6 +705,7 @@ export type Database = {
           sources_retrieved?: number
           started_at?: string
           status?: string
+          structured_prices_joined?: number
           suppressed_baseline?: number
           suppressed_duplicate?: number
           suppressed_recency?: number
@@ -703,6 +714,7 @@ export type Database = {
           unknown_prices?: number
           usable_comparables?: number
           user_id?: string
+          visual_observations?: number
           worker_finished_at?: string | null
           worker_started_at?: string | null
         }
