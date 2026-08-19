@@ -202,7 +202,13 @@ describe("beginRun", () => {
     const first = await beginRun(db, store["radars"]![0] as any);
     // Simulate a worker/server death: no heartbeat for longer than the window.
     const stale = iso(Date.now() - HEARTBEAT_STALE_MS - 60_000);
-    Object.assign(store["monitor_runs"]![0]!, { started_at: stale, heartbeat_at: stale });
+    // Quiet AND out of continuations: the run can no longer be resumed, so a
+    // fresh run is allowed to take over.
+    Object.assign(store["monitor_runs"]![0]!, {
+      started_at: stale,
+      heartbeat_at: stale,
+      attempt: MAX_RUN_ATTEMPTS,
+    });
 
     const second = await beginRun(db, { ...RADAR } as any);
     expect(second.runId).not.toBe(first.runId);
@@ -226,6 +232,7 @@ describe("reaper", () => {
       status: "running",
       started_at: stale,
       heartbeat_at: stale,
+      attempt: MAX_RUN_ATTEMPTS,
       current_phase: "searching_sources",
     });
     store["radars"]![0]!["scan_state"] = "INITIAL_SCAN_RUNNING";
@@ -255,6 +262,7 @@ describe("reaper", () => {
       status: "running",
       started_at: stale,
       heartbeat_at: stale,
+      attempt: MAX_RUN_ATTEMPTS,
       current_phase: "fetching_details",
     });
 
@@ -274,6 +282,7 @@ describe("reaper", () => {
         status: "running",
         started_at: stale,
         heartbeat_at: stale,
+        attempt: MAX_RUN_ATTEMPTS,
         current_phase: "searching_sources",
       },
       {
@@ -294,6 +303,23 @@ describe("reaper", () => {
     expect(store["radars"]![1]!["active_run_id"]).toBe("run-live");
   });
 
+  it("does not reap a quiet run that can still be resumed", async () => {
+    const { reapStaleRuns } = await import("../monitoring/reaper.server");
+    const quiet = iso(Date.now() - HEARTBEAT_STALE_MS - 60_000);
+    store["monitor_runs"]!.push({
+      id: "run-quiet",
+      radar_id: "radar-1",
+      user_id: "user-1",
+      status: "running",
+      started_at: quiet,
+      heartbeat_at: quiet,
+      attempt: 1,
+      current_phase: "fetching_details",
+    });
+    expect(await reapStaleRuns(fakeDb(store))).toHaveLength(0);
+    expect(store["monitor_runs"]!.find((r) => r["id"] === "run-quiet")!["status"]).toBe("running");
+  });
+
   it("is idempotent — an already-failed run is not reaped twice", async () => {
     const { reapStaleRuns } = await import("../monitoring/reaper.server");
     const stale = iso(Date.now() - HEARTBEAT_STALE_MS - 60_000);
@@ -304,6 +330,7 @@ describe("reaper", () => {
       status: "running",
       started_at: stale,
       heartbeat_at: stale,
+      attempt: MAX_RUN_ATTEMPTS,
       current_phase: "query_planning",
     });
     const db = fakeDb(store);
