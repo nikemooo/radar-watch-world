@@ -466,7 +466,13 @@ function RadarDetail() {
 
       <details className="panel p-5">
         <summary className="cursor-pointer text-sm font-medium">Inställningar</summary>
+        <p className="mt-3 text-xs text-muted-foreground">
+          {radar.next_run_at
+            ? `Nästa körning: ${new Date(radar.next_run_at).toLocaleString("sv-SE")} (startas automatiskt av servern)`
+            : "Ingen körning schemalagd — nästa sweep planeras automatiskt när den här körningen är klar."}
+        </p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
+
           <Select value={radar.frequency} onValueChange={(frequency) => update.mutate({ frequency })}>
             <SelectTrigger className="w-44">
               <SelectValue />
