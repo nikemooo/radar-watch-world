@@ -108,7 +108,7 @@ const imageSchema = {
  * The prompt forbids guessing: anything not clearly visible must come back as
  * confidence "none".
  */
-async function readImageEvidence(
+export async function readImageEvidence(
   imageUrl: string,
   attributes: { key: string; label: string }[],
 ): Promise<ImageObservation[]> {
