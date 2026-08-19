@@ -85,8 +85,16 @@ export async function startRadarSweep(
         runId: claim.runId,
         startedAt: claim.startedAt,
         tracker,
+        // Bounded slice: the work happens inside THIS request instead of in a
+        // background task the runtime may kill. Whatever is not finished when
+        // the slice ends is resumed from its checkpoint by the next tick/poll.
+        deadlineAt: options.deadlineAt ?? deadlineFromNow(options.inlineWaitMs ?? UI_SLICE_MS),
       });
     } catch (err) {
+      if (isSweepPaused(err)) {
+        console.info(`[radar:sweep] radar ${radar.id} paused — ${(err as Error).message}`);
+        throw err;
+      }
       // Without this, a crashed cycle leaves monitor_runs stuck on "running"
       // forever and the UI can never tell success from failure.
       const message = err instanceof Error ? err.message : String(err);
@@ -134,13 +142,14 @@ export async function startRadarSweep(
   const raced = await Promise.race([
     sweep.then((result) => ({ done: true as const, result })).catch(() => ({ done: false as const })),
     new Promise<{ done: false }>((resolve) =>
-      setTimeout(() => resolve({ done: false as const }), options.inlineWaitMs ?? INLINE_WAIT_MS),
+      setTimeout(() => resolve({ done: false as const }), (options.inlineWaitMs ?? UI_SLICE_MS) + HARD_CAP_MS),
     ),
   ]);
 
   if (raced.done)
     return { state: "completed", result: raced.result, runId: claim.runId, startedAt };
   return { state: "running", startedAt, runId: claim.runId };
+
 }
 
 
