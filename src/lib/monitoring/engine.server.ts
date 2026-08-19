@@ -26,10 +26,10 @@ import type { RunPhase } from "./lifecycle";
 import { reapStaleRuns, releaseRadar } from "./reaper.server";
 import { createCheckpointStore, type CheckpointStore } from "./checkpoints.server";
 
-import { discoverCandidates, type CandidateItem } from "./candidates.server";
+import { discoverCandidates, harvestLinks, type CandidateItem } from "./candidates.server";
 import { fetchDetailPages } from "../search/detail-fetch.server";
 import { resolveListingUrl, type ResolvedListingUrl } from "../search/listing-url";
-import { looksLikeItemUrl } from "../search/url-shape";
+import { detectItemFamilies, looksLikeItemUrl } from "../search/url-shape";
 import {
   asAttributeMap,
   diffAttributes,
@@ -624,10 +624,31 @@ export async function runRadarCycle(
     // the full candidate pass below still expands indexes and replaces these
     // placeholders with verified findings.
     if (!firstCandidatesPersisted && seenResearchUrls.size > 0) {
+      // Do not put another AI call between the first provider response and the
+      // first visible inventory. Repeating URL families are deterministic
+      // evidence of item pages and direct result URLs are accepted only when
+      // their path has an item shape. The richer AI discovery still runs later.
       const earlyDocs = researchParts.flatMap((item) => item.documents);
-      const early = await step("early_candidates", () => discoverCandidates(earlyDocs, config.target || radar.raw_request));
+      const earlyCandidates: CandidateItem[] = [];
+      for (const doc of earlyDocs) {
+        const familyUrls = detectItemFamilies(harvestLinks(doc), doc.url)
+          .flatMap((family) => family.urls)
+          .slice(0, 30);
+        const urls = familyUrls.length > 0 ? familyUrls : looksLikeItemUrl(doc.url) ? [doc.url] : [];
+        for (const url of urls) {
+          earlyCandidates.push({
+            title: url === doc.url ? doc.title : doc.title || url,
+            url,
+            discovery_url: doc.url,
+            individual: true,
+            likelihood: familyUrls.includes(url) ? 0.9 : 0.7,
+            relevance: 0.5,
+            clue: null,
+          });
+        }
+      }
       const now = new Date().toISOString();
-      const provisional = early.candidates
+      const provisional = earlyCandidates
         .filter((candidate) => candidate.url && candidate.individual)
         .slice(0, 30)
         .map((candidate) => ({
