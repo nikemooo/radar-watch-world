@@ -310,6 +310,25 @@ export async function runOpenAiWebSearchPoc(
     }
   }
 
+  if (acc.error) {
+    return {
+      ok: false,
+      configured: true,
+      error: `OpenAI Responses API error (${acc.error.type}${acc.error.code ? ` / ${acc.error.code}` : ""}): ${acc.error.message}`,
+      result: null,
+      telemetry: {
+        model: WEB_SEARCH_MODEL,
+        response_id: acc.responseId,
+        web_search_calls: acc.webSearchCalls,
+        web_search_queries: acc.webSearchQueries,
+        execution_ms: Date.now() - started,
+        usage: acc.usage,
+        raw_text_length: acc.text.length,
+        parse_error: null,
+      },
+    };
+  }
+
   const telemetry: PocTelemetry = {
     model: WEB_SEARCH_MODEL,
     response_id: acc.responseId,
