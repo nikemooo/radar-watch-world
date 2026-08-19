@@ -22,6 +22,7 @@ import { Route as AuthenticatedIntelligenceRouteImport } from './routes/_authent
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as AuthenticatedAdminSearchLoopRouteImport } from './routes/_authenticated/admin_.search-loop'
 import { Route as AuthenticatedAdminSearchTestRouteImport } from './routes/_authenticated/admin_.search-test'
 import { Route as AuthenticatedRadarsIndexRouteImport } from './routes/_authenticated/radars.index'
 import { Route as AuthenticatedRadarsRadarIdRouteImport } from './routes/_authenticated/radars.$radarId'
@@ -99,6 +100,12 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/callback',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthenticatedAdminSearchLoopRoute =
+  AuthenticatedAdminSearchLoopRouteImport.update({
+    id: '/admin_/search-loop',
+    path: '/admin/search-loop',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAdminSearchTestRoute =
   AuthenticatedAdminSearchTestRouteImport.update({
     id: '/admin_/search-test',
@@ -174,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/admin/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/admin/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
@@ -199,6 +207,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/admin/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/admin/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
@@ -226,6 +235,7 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/_authenticated/admin_/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/_authenticated/admin_/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/_authenticated/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/_authenticated/radars/new': typeof AuthenticatedRadarsNewRoute
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/settings'
     | '/auth/callback'
+    | '/admin/search-loop'
     | '/admin/search-test'
     | '/radars/$radarId'
     | '/radars/new'
@@ -278,6 +289,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/settings'
     | '/auth/callback'
+    | '/admin/search-loop'
     | '/admin/search-test'
     | '/radars/$radarId'
     | '/radars/new'
@@ -304,6 +316,7 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/settings'
     | '/auth/callback'
+    | '/_authenticated/admin_/search-loop'
     | '/_authenticated/admin_/search-test'
     | '/_authenticated/radars/$radarId'
     | '/_authenticated/radars/new'
@@ -425,6 +438,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_authenticated/admin_/search-loop': {
+      id: '/_authenticated/admin_/search-loop'
+      path: '/admin/search-loop'
+      fullPath: '/admin/search-loop'
+      preLoaderRoute: typeof AuthenticatedAdminSearchLoopRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/admin_/search-test': {
       id: '/_authenticated/admin_/search-test'
       path: '/admin/search-test'
@@ -513,6 +533,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedIntelligenceRoute: typeof AuthenticatedIntelligenceRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedAdminSearchLoopRoute: typeof AuthenticatedAdminSearchLoopRoute
   AuthenticatedAdminSearchTestRoute: typeof AuthenticatedAdminSearchTestRoute
   AuthenticatedRadarsRadarIdRoute: typeof AuthenticatedRadarsRadarIdRoute
   AuthenticatedRadarsNewRoute: typeof AuthenticatedRadarsNewRoute
@@ -527,6 +548,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIntelligenceRoute: AuthenticatedIntelligenceRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedAdminSearchLoopRoute: AuthenticatedAdminSearchLoopRoute,
   AuthenticatedAdminSearchTestRoute: AuthenticatedAdminSearchTestRoute,
   AuthenticatedRadarsRadarIdRoute: AuthenticatedRadarsRadarIdRoute,
   AuthenticatedRadarsNewRoute: AuthenticatedRadarsNewRoute,
