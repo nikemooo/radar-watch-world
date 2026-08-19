@@ -276,7 +276,38 @@ export function ListingCard({
             ) : (
               snapshot.match_reason && <p className="text-sm text-muted-foreground">{snapshot.match_reason}</p>
             )}
+            {evidence.length > 0 && (
+              <div className="space-y-1">
+                <p className="mono-label">{t("listing.whatWeKnow")}</p>
+                <ul className="space-y-1 text-sm">
+                  {evidence.map((e) => (
+                    <li key={e.attribute} className="flex gap-2">
+                      <span aria-hidden>{evidenceIcon[e.status]}</span>
+                      <span className={e.status === "unknown" ? "text-muted-foreground" : ""}>
+                        <span className="mono-label">{e.attribute.replace(/_/g, " ")}</span>{" "}
+                        {e.raw ?? "—"}{" "}
+                        <span className="text-muted-foreground">
+                          · {t(`listing.evidence.${e.status}` as TranslationKey)}
+                          {e.status !== "unknown" &&
+                            ` · ${t("listing.evidence.sources", { count: e.sources.length })}`}
+                        </span>
+                        {e.conflict && (
+                          <span className="block text-xs text-critical">{e.explanation}</span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {identifiers.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("listing.identifiers")}:{" "}
+                    {identifiers.map((i) => `${i.type.toUpperCase()} ${i.value}`).join(" · ")}
+                  </p>
+                )}
+              </div>
+            )}
             {attributes.length > 0 && (
+
               <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
                 {attributes.map((a) => (
                   <div key={a.key} className="flex gap-2">
