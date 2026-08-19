@@ -10,6 +10,7 @@ import { useState } from "react";
 import { ChevronDown, ExternalLink, ImageOff } from "lucide-react";
 import { asBaseline, BaselinePanel } from "@/components/baseline-panel";
 import { isFactual, type AttributeValue } from "@/lib/monitoring/normalize";
+import { storedEvidenceOf, type StoredEvidence } from "@/lib/monitoring/evidence";
 import { statusLabel, type EffectiveVerdict } from "@/lib/monitoring/verification";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
