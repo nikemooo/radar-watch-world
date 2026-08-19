@@ -9,6 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   HEARTBEAT_STALE_MS,
+  MAX_RUN_ATTEMPTS,
   isStaleRun,
   phaseLabel,
   staleVerdict,
