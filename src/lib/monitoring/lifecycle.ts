@@ -105,8 +105,13 @@ export function phaseLabel(phase: string | null | undefined): string {
  * continuations is never mistaken for a lost worker.
  * ------------------------------------------------------------------ */
 
-/** Quiet for this long ⇒ the invocation is gone; a continuation takes over. */
-export const RESUME_AFTER_MS = 45_000;
+/**
+ * Quiet for this long ⇒ the invocation is gone (or paused on its slice
+ * deadline); a continuation takes over. Sweeps run as short slices, so this
+ * must be short — waiting a minute between slices would make a three-minute
+ * sweep take half an hour.
+ */
+export const RESUME_AFTER_MS = 8_000;
 
 /** How many worker invocations one run may consume before we give up. */
 /**
@@ -116,7 +121,8 @@ export const RESUME_AFTER_MS = 45_000;
  * run that makes no progress, not to limit how many invocations a healthy
  * sweep may use — that job belongs to STALL_MS below.
  */
-export const MAX_RUN_ATTEMPTS = 40;
+export const MAX_RUN_ATTEMPTS = 200;
+
 
 /**
  * A quiet run that has not changed phase for this long is not progressing.
