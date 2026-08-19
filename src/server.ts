@@ -47,7 +47,14 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
-    const executionContext = (ctx && typeof ctx === "object" ? ctx : {}) as RuntimeExecutionContext;
+    // The platform's execution context carries waitUntil on its prototype and
+    // is bound to this invocation — pass the object itself (never a spread
+    // copy) so background work can actually be registered.
+    const raw = ctx as RuntimeExecutionContext | null | undefined;
+    const executionContext: RuntimeExecutionContext =
+      raw && typeof raw.waitUntil === "function"
+        ? { waitUntil: (promise) => raw.waitUntil!(promise) }
+        : {};
     return runWithRuntimeContext(executionContext, async () => {
       try {
         const handler = await getServerEntry();

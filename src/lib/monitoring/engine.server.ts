@@ -23,6 +23,7 @@ import { asConfig, type RadarConfig } from "../radar-types";
 import { startRunHeartbeat, type RunTracker } from "./heartbeat.server";
 import type { RunPhase } from "./lifecycle";
 import { reapStaleRuns, releaseRadar } from "./reaper.server";
+import { createCheckpointStore, type CheckpointStore } from "./checkpoints.server";
 
 import { discoverCandidates, type CandidateItem } from "./candidates.server";
 import { fetchDetailPages } from "../search/detail-fetch.server";
@@ -348,6 +349,14 @@ export type RunOptions = {
   startedAt?: string | undefined;
   /** Heartbeat/phase writer owned by the caller (see startRadarSweep). */
   tracker?: RunTracker | undefined;
+  /**
+   * True when this invocation continues an already-claimed run. The cycle then
+   * replays only the steps that never completed — every checkpointed step is
+   * served from persisted state, so no provider is billed twice.
+   */
+  continuation?: boolean | undefined;
+  /** Override the checkpoint store (tests). */
+  checkpoints?: CheckpointStore | undefined;
 };
 
 export type RunClaim = {
@@ -471,8 +480,12 @@ export async function runRadarCycle(
   const scanPhase = claim.scanPhase;
   const ownsTracker = !options.tracker;
   const tracker: RunTracker = options.tracker ?? startRunHeartbeat(db, runId);
+  // Resumability: expensive steps are checkpointed under this run id, so a
+  // continuation after a lost worker replays nothing it already paid for.
+  const checkpoints: CheckpointStore =
+    options.checkpoints ?? createCheckpointStore(db, runId, radar.user_id);
   const phase = (name: RunPhase, patch?: Database["public"]["Tables"]["monitor_runs"]["Update"]) =>
-    tracker.phase(name, patch);
+    tracker.phase(name, { phase_started_at: new Date().toISOString(), ...patch });
   const seenPhases = new Set<string>();
   /** Phase transition from inside a loop: written once, not per item. */
   const phaseOnce = async (name: RunPhase) => {
@@ -480,6 +493,18 @@ export async function runRadarCycle(
     seenPhases.add(name);
     await phase(name);
   };
+  /**
+   * Run one expensive step exactly once per run. On resume the persisted
+   * result is returned instead of calling the provider again, and every
+   * completed step is recorded so a diagnosis can see how far the run got.
+   */
+  const step = <T,>(key: string, fn: () => Promise<T>): Promise<T> =>
+    checkpoints.step(key, async () => {
+      const value = await fn();
+      await patchRun({ last_successful_operation: key });
+      return value;
+    });
+
   const patchRun = async (patch: Database["public"]["Tables"]["monitor_runs"]["Update"]) => {
     if (!runId) return;
     await db
@@ -489,6 +514,18 @@ export async function runRadarCycle(
   };
 
   try {
+    if (runId) {
+      await db
+        .from("monitor_runs")
+        .update({
+          worker_started_at: new Date().toISOString(),
+          heartbeat_at: new Date().toISOString(),
+          ...(options.continuation
+            ? {}
+            : { continuation_count: 0, attempt: 1, worker_finished_at: null }),
+        })
+        .eq("id", runId);
+    }
     return await runCycleBody();
   } finally {
     if (ownsTracker) tracker.stop();
@@ -505,7 +542,9 @@ export async function runRadarCycle(
   // configuration into several short, market-shaped queries (generic — it has
   // no per-category or per-site knowledge).
   await phase("query_planning");
-  const plannedQueries = await planDiscoveryQueries(config, radar.raw_request, isBaseline ? 8 : 6);
+  const plannedQueries = await step("query_planning", () =>
+    planDiscoveryQueries(config, radar.raw_request, isBaseline ? 8 : 6),
+  );
   const queries = plannedQueries.map((q) => q.query);
   console.info(
     `[radar:queries] ${radar.id} planned ${queries.length}: ${plannedQueries
@@ -513,7 +552,9 @@ export async function runRadarCycle(
       .join(" | ")}`,
   );
   await phase("searching_sources");
-  const research = await researchQueries(queries, isBaseline ? 10 : 8, queries.length);
+  const research = await step("research", () =>
+    researchQueries(queries, isBaseline ? 10 : 8, queries.length),
+  );
 
   if (!research.configured) {
     await patchRun({
@@ -592,11 +633,13 @@ export async function runRadarCycle(
   };
   try {
     await phase("expanding_indexes");
-    const expansion = await expandIndexPages(
-      research.documents,
-      isBaseline ? 14 : 8,
-      (isBaseline ? 14 : 8) * 3,
-      priorityOf,
+    const expansion = await step("index_expansion", () =>
+      expandIndexPages(
+        research.documents,
+        isBaseline ? 14 : 8,
+        (isBaseline ? 14 : 8) * 3,
+        priorityOf,
+      ),
     );
     research.documents = expansion.documents;
     indexExpansionCost = expansion.costEstimate;
@@ -643,7 +686,9 @@ export async function runRadarCycle(
   if (specs.length === 0) {
     // Radars created before the attribute layer keep working: infer once, persist.
     try {
-      specs = await inferAttributeSchema(`${radar.name}\n${radar.raw_request}`);
+      specs = await step("attribute_schema", () =>
+        inferAttributeSchema(`${radar.name}\n${radar.raw_request}`),
+      );
       if (specs.length > 0) {
         await db
           .from("radars")
@@ -754,7 +799,9 @@ export async function runRadarCycle(
   if (research.documents.length > 0) {
     try {
       await phase("extracting_candidates");
-      const discovery = await discoverCandidates(research.documents, criteria);
+      const discovery = await step("candidates", () =>
+        discoverCandidates(research.documents, criteria),
+      );
       candidates = discovery.candidates;
       indexPages = discovery.indexPages;
       // Adaptive budget + priority: fetch what is most likely to yield stated,
@@ -823,7 +870,9 @@ export async function runRadarCycle(
 
       if (selected.length > 0) {
         await phase("fetching_details");
-        const fetched = await fetchDetailPages(selected.map((c) => c.url!));
+        const fetched = await step("detail_pages", () =>
+          fetchDetailPages(selected.map((c) => c.url!)),
+        );
         // Real listing imagery only — captured from the item's own page, with
         // its provenance. A missing image is left missing; nothing is invented.
         for (const p of fetched.pages) {
@@ -999,7 +1048,9 @@ export async function runRadarCycle(
           if (augmented.length > 0) {
             extractionAiCalls += 1;
             await phaseOnce("extracting_attributes");
-            const extracted = await extractDetailAttributes(augmented, specs, criteria);
+            const extracted = await step("ai_extraction", () =>
+              extractDetailAttributes(augmented, specs, criteria),
+            );
             aiDetails = extracted.details;
             aiFailures = extracted.failures;
           }
@@ -1110,7 +1161,13 @@ export async function runRadarCycle(
     if (!runId) return;
     await db
       .from("monitor_runs")
-      .update({ ...patch, current_phase: "completed", heartbeat_at: new Date().toISOString() })
+      .update({
+        ...patch,
+        current_phase: "completed",
+        heartbeat_at: new Date().toISOString(),
+        worker_finished_at: new Date().toISOString(),
+        termination_reason: patch.status === "completed" || patch.status === "ok" ? "completed" : "finished_with_error",
+      })
       .eq("id", runId);
   };
 
