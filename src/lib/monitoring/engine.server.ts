@@ -56,7 +56,7 @@ import {
 } from "./evidence";
 import { detectIdentifiers, mergeIdentifiers, presentableIdentifiers, type Identifier } from "./identifiers";
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
-import { gateCandidates, marketAllowed } from "./candidate-gate";
+import { classifyCandidateUrl, gateCandidates, marketAllowed } from "./candidate-gate";
 
 import {
   COUNTRY_ATTRIBUTE,
@@ -1524,7 +1524,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
   const items: ExtractedItem[] = extraction.items.filter((i) => {
     // A shop front page or a filtered result list is a SOURCE, never an item.
     // Dropping it here is what keeps "12 hittade annonser" honest.
-    const kind = classifyCandidateUrl(i.url, allDocs.map((d) => d.url));
+    const kind = classifyCandidateUrl(i.url);
     if (kind === "aggregator" || kind === "search_page") {
       console.info(`[radar:gate] item dropped — ${kind} presented as listing: ${i.url}`);
       return false;
