@@ -13,6 +13,7 @@ import { isFactual, type AttributeValue } from "@/lib/monitoring/normalize";
 import { statusLabel, type EffectiveVerdict } from "@/lib/monitoring/verification";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useI18n, useT, type TranslateVars, type TranslationKey } from "@/lib/i18n";
 
 export interface FindingLike {
   id: string;
@@ -59,9 +60,9 @@ export function attributesOf(value: unknown): AttributeValue[] {
   );
 }
 
-function money(value: number | null, currency: string | null): string | null {
+function money(value: number | null, currency: string | null, locale = "en"): string | null {
   if (value === null) return null;
-  const rounded = Math.round(value).toLocaleString("sv-SE");
+  const rounded = Math.round(value).toLocaleString(locale);
   return currency === "SEK" ? `${rounded} kr` : `${rounded}${currency ? ` ${currency}` : ""}`;
 }
 
@@ -75,7 +76,11 @@ function host(url: string | null): string | null {
 }
 
 /** One short market verdict — only when a real baseline was computed. */
-function marketVerdict(baseline: unknown) {
+function marketVerdict(
+  baseline: unknown,
+  t: (key: TranslationKey, vars?: TranslateVars) => string,
+  locale: string,
+) {
   const b = asBaseline(baseline);
   if (!b || b.status !== "computed" || !b.stats) return null;
   const pct = b.differencePct ?? 0;
@@ -84,9 +89,11 @@ function marketVerdict(baseline: unknown) {
     tone,
     label:
       tone === "around"
-        ? "Marknadspris"
-        : `${Math.abs(pct).toFixed(0)} % ${tone === "under" ? "under" : "över"} marknad`,
-    median: money(b.stats.median, b.currency),
+        ? t("listing.marketPrice")
+        : t(tone === "under" ? "listing.underMarket" : "listing.overMarket", {
+            pct: Math.abs(pct).toFixed(0),
+          }),
+    median: money(b.stats.median, b.currency, locale),
     count: b.stats.count,
   };
 }
@@ -109,13 +116,15 @@ export function ListingCard({
   onVerify?: ((finding: FindingLike) => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
+  const { locale } = useI18n();
   const snapshot = snapshotOf(finding.snapshot);
   const attributes = attributesOf(finding.attributes);
   const link = finding.primary_url ?? finding.url;
   // Only claim "Öppna annons" when the pipeline proved the URL is the advert.
   const directLink = snapshot.link_status ? snapshot.link_status === "direct" : !!finding.primary_url;
-  const market = marketVerdict(finding.baseline);
-  const price = money(finding.numeric_value, finding.currency);
+  const market = marketVerdict(finding.baseline, t, locale);
+  const price = money(finding.numeric_value, finding.currency, locale);
   const image = snapshot.image ?? snapshot.images?.[0] ?? null;
   const status: MatchStatus = verdict?.status ?? snapshot.match_status ?? "unverified";
   const pending = verdict?.pending ?? [];
@@ -141,7 +150,7 @@ export function ListingCard({
         ) : (
           <div className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground">
             <ImageOff className="size-5" aria-hidden />
-            <span className="text-xs">Ingen bild från annonsen</span>
+            <span className="text-xs">{t("listing.noImage")}</span>
           </div>
         )}
         <span
@@ -150,14 +159,14 @@ export function ListingCard({
             statusTone[status],
           )}
         >
-          {statusIcon[status]} {statusLabel[status]}
+          {statusIcon[status]} {t(`verify.status.${status}` as TranslationKey)}
         </span>
       </div>
 
       <div className="flex flex-1 flex-col space-y-3 p-4">
         <div>
           <h3 className="text-base font-medium leading-snug">{finding.title}</h3>
-          <p className="mt-1 text-2xl font-semibold tracking-tight">{price ?? "Pris saknas"}</p>
+          <p className="mt-1 text-2xl font-semibold tracking-tight">{price ?? t("listing.noPrice")}</p>
           {meta.length > 0 && (
             <p className="mt-1 text-sm text-muted-foreground">{meta.join(" · ")}</p>
           )}
@@ -165,7 +174,7 @@ export function ListingCard({
 
         {status === "unverified" && pending.length > 0 && (
           <div className="rounded-md bg-muted/50 p-3 text-sm">
-            <p className="font-medium">Kunde inte verifieras</p>
+            <p className="font-medium">{t("listing.notVerified")}</p>
             <ul className="mt-1 space-y-0.5 text-muted-foreground">
               {pending.slice(0, 4).map((r) => (
                 <li key={r.attribute}>⚠ {r.label}</li>
@@ -173,7 +182,9 @@ export function ListingCard({
             </ul>
             {snapshot.missing_attributes?.length ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                Saknad information: {snapshot.missing_attributes.slice(0, 5).map((k) => k.replace(/_/g, " ")).join(", ")}
+                {t("listing.missingInfo", {
+                  fields: snapshot.missing_attributes.slice(0, 5).map((k) => k.replace(/_/g, " ")).join(", "),
+                })}
               </p>
             ) : null}
           </div>
@@ -198,11 +209,11 @@ export function ListingCard({
               {market.label}
             </span>
             <span className="text-muted-foreground">
-              Marknadsvärde ~{market.median} · {market.count} jämförbara
+              {t("listing.marketValue", { median: market.median ?? "", count: market.count })}
             </span>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">Marknadsvärde kan inte beräknas ännu</p>
+          <p className="text-sm text-muted-foreground">{t("listing.noMarketValue")}</p>
         )}
 
         <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-2 pt-1">
@@ -211,19 +222,19 @@ export function ListingCard({
               href={link}
               target="_blank"
               rel="noreferrer noopener"
-              title={directLink ? undefined : "Direktlänken till annonsen kunde inte verifieras"}
+              title={directLink ? undefined : t("listing.linkUnverified")}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted/60"
             >
-              {directLink ? "Öppna annons" : "Öppna källa"}
+              {directLink ? t("verify.openListing") : t("verify.openSource")}
               <ExternalLink className="size-3.5" aria-hidden />
             </a>
           )}
           {onVerify && status !== "match" && (
             <Button size="sm" variant="secondary" onClick={() => onVerify(finding)}>
-              Verifiera
+              {t("listing.verify")}
             </Button>
           )}
-          <span className="mono-label truncate">{host(link) ?? "okänd källa"}</span>
+          <span className="mono-label truncate">{host(link) ?? t("listing.unknownSource")}</span>
 
           <button
             type="button"
@@ -231,7 +242,7 @@ export function ListingCard({
             className="ml-auto inline-flex shrink-0 items-center gap-1 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground"
             aria-expanded={open}
           >
-            {open ? "Visa mindre" : "Visa mer"}
+            {open ? t("listing.showLess") : t("listing.showMore")}
             <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
           </button>
         </div>
@@ -245,9 +256,13 @@ export function ListingCard({
                     <span>{statusIcon[r.status]}</span>
                     <span className={r.status === "match" ? "" : "text-muted-foreground"}>
                       {r.label}
-                      {r.source === "user" && " — verifierad av dig"}
+                      {r.source === "user" && t("listing.verifiedByYou")}
                       {r.image && r.image.confidence !== "none" && (
-                        <> · bildanalys: {r.image.observation} ({r.image.confidence === "high" ? "hög" : "låg"} confidence)</>
+                        <>
+                          {" "}
+                          · {t("listing.imageAnalysis")}: {r.image.observation} (
+                          {r.image.confidence === "high" ? t("listing.confidenceHigh") : t("listing.confidenceLow")})
+                        </>
                       )}
                     </span>
                   </li>
@@ -263,7 +278,7 @@ export function ListingCard({
                     <dt className="mono-label">{a.key.replace(/_/g, " ")}</dt>
                     <dd className={isFactual(a) ? "" : "italic text-muted-foreground"}>
                       {a.raw}
-                      {!isFactual(a) && " (tolkad)"}
+                      {!isFactual(a) && t("listing.interpreted")}
                     </dd>
                   </div>
                 ))}
@@ -271,10 +286,15 @@ export function ListingCard({
             )}
             <BaselinePanel baseline={finding.baseline} />
             <p className="mono-label">
-              Först sedd {new Date(finding.first_seen_at).toLocaleDateString("sv-SE")} · senast sedd{" "}
-              {new Date(finding.last_seen_at).toLocaleDateString("sv-SE")} ·{" "}
-              {finding.detail_status === "fetched" ? "annonssida läst" : "endast listningsdata"}
-              {snapshot.image_source ? " · bild från annonsen" : ""}
+              {t("listing.seen", {
+                first: new Date(finding.first_seen_at).toLocaleDateString(locale),
+                last: new Date(finding.last_seen_at).toLocaleDateString(locale),
+                detail:
+                  finding.detail_status === "fetched"
+                    ? t("listing.detailRead")
+                    : t("listing.detailListingOnly"),
+              })}
+              {snapshot.image_source ? t("listing.imageFromListing") : ""}
             </p>
           </div>
         )}
