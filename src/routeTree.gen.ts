@@ -22,10 +22,12 @@ import { Route as AuthenticatedIntelligenceRouteImport } from './routes/_authent
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as AuthenticatedAdminSearchLoopRouteImport } from './routes/_authenticated/admin_.search-loop'
 import { Route as AuthenticatedAdminSearchTestRouteImport } from './routes/_authenticated/admin_.search-test'
 import { Route as AuthenticatedRadarsIndexRouteImport } from './routes/_authenticated/radars.index'
 import { Route as AuthenticatedRadarsRadarIdRouteImport } from './routes/_authenticated/radars.$radarId'
 import { Route as AuthenticatedRadarsNewRouteImport } from './routes/_authenticated/radars.new'
+import { Route as ApiTestOpenaiSearchLoopRouteImport } from './routes/api/test/openai-search-loop'
 import { Route as ApiTestOpenaiWebSearchRouteImport } from './routes/api/test/openai-web-search'
 import { Route as ApiPublicMonitoringProbeRouteImport } from './routes/api/public/monitoring/probe'
 import { Route as ApiPublicMonitoringReapRouteImport } from './routes/api/public/monitoring/reap'
@@ -98,6 +100,12 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/callback',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthenticatedAdminSearchLoopRoute =
+  AuthenticatedAdminSearchLoopRouteImport.update({
+    id: '/admin_/search-loop',
+    path: '/admin/search-loop',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAdminSearchTestRoute =
   AuthenticatedAdminSearchTestRouteImport.update({
     id: '/admin_/search-test',
@@ -120,6 +128,11 @@ const AuthenticatedRadarsNewRoute = AuthenticatedRadarsNewRouteImport.update({
   id: '/radars/new',
   path: '/radars/new',
   getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const ApiTestOpenaiSearchLoopRoute = ApiTestOpenaiSearchLoopRouteImport.update({
+  id: '/api/test/openai-search-loop',
+  path: '/api/test/openai-search-loop',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiTestOpenaiWebSearchRoute = ApiTestOpenaiWebSearchRouteImport.update({
   id: '/api/test/openai-web-search',
@@ -168,9 +181,11 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/admin/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/admin/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
+  '/api/test/openai-search-loop': typeof ApiTestOpenaiSearchLoopRoute
   '/api/test/openai-web-search': typeof ApiTestOpenaiWebSearchRoute
   '/radars/': typeof AuthenticatedRadarsIndexRoute
   '/api/public/monitoring/probe': typeof ApiPublicMonitoringProbeRoute
@@ -192,9 +207,11 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/admin/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/admin/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
+  '/api/test/openai-search-loop': typeof ApiTestOpenaiSearchLoopRoute
   '/api/test/openai-web-search': typeof ApiTestOpenaiWebSearchRoute
   '/radars': typeof AuthenticatedRadarsIndexRoute
   '/api/public/monitoring/probe': typeof ApiPublicMonitoringProbeRoute
@@ -218,9 +235,11 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/_authenticated/admin_/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/_authenticated/admin_/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/_authenticated/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/_authenticated/radars/new': typeof AuthenticatedRadarsNewRoute
+  '/api/test/openai-search-loop': typeof ApiTestOpenaiSearchLoopRoute
   '/api/test/openai-web-search': typeof ApiTestOpenaiWebSearchRoute
   '/_authenticated/radars/': typeof AuthenticatedRadarsIndexRoute
   '/api/public/monitoring/probe': typeof ApiPublicMonitoringProbeRoute
@@ -244,9 +263,11 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/settings'
     | '/auth/callback'
+    | '/admin/search-loop'
     | '/admin/search-test'
     | '/radars/$radarId'
     | '/radars/new'
+    | '/api/test/openai-search-loop'
     | '/api/test/openai-web-search'
     | '/radars/'
     | '/api/public/monitoring/probe'
@@ -268,9 +289,11 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/settings'
     | '/auth/callback'
+    | '/admin/search-loop'
     | '/admin/search-test'
     | '/radars/$radarId'
     | '/radars/new'
+    | '/api/test/openai-search-loop'
     | '/api/test/openai-web-search'
     | '/radars'
     | '/api/public/monitoring/probe'
@@ -293,9 +316,11 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/settings'
     | '/auth/callback'
+    | '/_authenticated/admin_/search-loop'
     | '/_authenticated/admin_/search-test'
     | '/_authenticated/radars/$radarId'
     | '/_authenticated/radars/new'
+    | '/api/test/openai-search-loop'
     | '/api/test/openai-web-search'
     | '/_authenticated/radars/'
     | '/api/public/monitoring/probe'
@@ -311,6 +336,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren
   PricingRoute: typeof PricingRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  ApiTestOpenaiSearchLoopRoute: typeof ApiTestOpenaiSearchLoopRoute
   ApiTestOpenaiWebSearchRoute: typeof ApiTestOpenaiWebSearchRoute
   ApiPublicMonitoringProbeRoute: typeof ApiPublicMonitoringProbeRoute
   ApiPublicMonitoringReapRoute: typeof ApiPublicMonitoringReapRoute
@@ -412,6 +438,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_authenticated/admin_/search-loop': {
+      id: '/_authenticated/admin_/search-loop'
+      path: '/admin/search-loop'
+      fullPath: '/admin/search-loop'
+      preLoaderRoute: typeof AuthenticatedAdminSearchLoopRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/admin_/search-test': {
       id: '/_authenticated/admin_/search-test'
       path: '/admin/search-test'
@@ -439,6 +472,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/radars/new'
       preLoaderRoute: typeof AuthenticatedRadarsNewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/api/test/openai-search-loop': {
+      id: '/api/test/openai-search-loop'
+      path: '/api/test/openai-search-loop'
+      fullPath: '/api/test/openai-search-loop'
+      preLoaderRoute: typeof ApiTestOpenaiSearchLoopRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/test/openai-web-search': {
       id: '/api/test/openai-web-search'
@@ -493,6 +533,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedIntelligenceRoute: typeof AuthenticatedIntelligenceRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedAdminSearchLoopRoute: typeof AuthenticatedAdminSearchLoopRoute
   AuthenticatedAdminSearchTestRoute: typeof AuthenticatedAdminSearchTestRoute
   AuthenticatedRadarsRadarIdRoute: typeof AuthenticatedRadarsRadarIdRoute
   AuthenticatedRadarsNewRoute: typeof AuthenticatedRadarsNewRoute
@@ -507,6 +548,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIntelligenceRoute: AuthenticatedIntelligenceRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedAdminSearchLoopRoute: AuthenticatedAdminSearchLoopRoute,
   AuthenticatedAdminSearchTestRoute: AuthenticatedAdminSearchTestRoute,
   AuthenticatedRadarsRadarIdRoute: AuthenticatedRadarsRadarIdRoute,
   AuthenticatedRadarsNewRoute: AuthenticatedRadarsNewRoute,
@@ -532,6 +574,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRouteWithChildren,
   PricingRoute: PricingRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  ApiTestOpenaiSearchLoopRoute: ApiTestOpenaiSearchLoopRoute,
   ApiTestOpenaiWebSearchRoute: ApiTestOpenaiWebSearchRoute,
   ApiPublicMonitoringProbeRoute: ApiPublicMonitoringProbeRoute,
   ApiPublicMonitoringReapRoute: ApiPublicMonitoringReapRoute,
