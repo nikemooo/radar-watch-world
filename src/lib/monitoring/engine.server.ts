@@ -2217,7 +2217,7 @@ ${eligible
     matching_listings: criteriaMatched,
     discovered_listings: items.length,
     persisted_findings: items.length,
-    duplicates_removed: research.duplicatesRemoved,
+    duplicates_removed: research.duplicatesRemoved + listingDuplicatesRemoved,
     blocked_pages: detailFetchesFailed,
     monitoring_transition: isBaseline && !failed,
     items_found: items.length,
