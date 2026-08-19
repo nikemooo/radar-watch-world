@@ -194,7 +194,24 @@ export function ListingCard({
           {meta.length > 0 && (
             <p className="mt-1 text-sm text-muted-foreground">{meta.join(" · ")}</p>
           )}
+          {snapshot.identity && (
+            <p
+              className={`mt-1 text-xs ${
+                snapshot.identity.status === "conflicted"
+                  ? "text-critical"
+                  : snapshot.identity.status === "verified"
+                    ? "text-muted-foreground"
+                    : "text-muted-foreground"
+              }`}
+              title={snapshot.identity.explanation}
+            >
+              {evidenceIcon[snapshot.identity.status]}{" "}
+              {t(`listing.identity.${snapshot.identity.status}` as TranslationKey)} ·{" "}
+              {snapshot.identity.canonical}
+            </p>
+          )}
         </div>
+
 
         {status === "unverified" && pending.length > 0 && (
           <div className="rounded-md bg-muted/50 p-3 text-sm">
