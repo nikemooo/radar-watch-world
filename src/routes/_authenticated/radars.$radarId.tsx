@@ -335,9 +335,17 @@ function RadarDetail() {
               : "Hittar aktuella annonser · läser annonsdetaljer · jämför priser."}{" "}
             Det tar några minuter och fortsätter även om du lämnar sidan.
           </p>
+          {!!sweepStatus?.continuations && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Sökningen avbröts och återupptogs {sweepStatus.continuations} gång
+              {sweepStatus.continuations === 1 ? "" : "er"} — redan hämtad data används om, inget
+              görs om i onödan.
+            </p>
+          )}
           <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted">
             <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
           </div>
+
         </section>
       )}
 
