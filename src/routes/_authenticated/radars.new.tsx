@@ -106,8 +106,9 @@ function NewRadar() {
       });
       await track("radar_created", { category, frequency });
       if (start === "now") {
-        // Kick the first sweep off immediately; it continues in the background.
-        startSweep({ data: { radarId: created.id } }).catch(() => undefined);
+        // The server already claimed the first sweep during creation. Only ask
+        // for one here if that did not happen, so we never start it twice.
+        if (!created.started) startSweep({ data: { radarId: created.id } }).catch(() => undefined);
         toast.success("Radarn är skapad — första sökningen startar nu.");
       } else if (start === "scheduled") {
         toast.success(
