@@ -18,7 +18,6 @@ import {
 import {
   asConfig,
   frequencyLabel,
-  radarModeDescription,
   radarModeLabel,
   recencyPresets,
   type RadarConfig,
