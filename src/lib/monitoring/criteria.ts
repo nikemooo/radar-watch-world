@@ -14,6 +14,7 @@
  *  - nothing here ever says "probably".
  */
 import type { AttributeValue } from "./normalize";
+import { parseIdentity, resolveIdentity, type IdentityResolution, type IdentitySource } from "./identity";
 
 export type ConstraintOp = "lte" | "lt" | "gte" | "gt" | "eq" | "neq" | "includes" | "excludes";
 
@@ -40,6 +41,11 @@ export interface CriterionOutcome {
   /** Exact reason, e.g. "price = 714 800 SEK >= 600 000 SEK". */
   reason: string;
   observedRaw: string | null;
+  /**
+   * For identity-style text requirements: what the accumulated evidence says
+   * about the product identity, independent of the machine verdict.
+   */
+  identity?: IdentityResolution;
 }
 
 export interface MatchVerdict {
@@ -55,7 +61,13 @@ export interface MatchSubject {
   /** Normalized item value when the value attribute lives outside `attributes`. */
   numericValue: number | null;
   currency: string | null;
+  /**
+   * Every surface Radar retrieved for this item. Text requirements fall back to
+   * identity resolution over these instead of a single literal field match.
+   */
+  identitySources?: IdentitySource[];
 }
+
 
 const OP_TEXT: Record<ConstraintOp, string> = {
   lte: "<=",
