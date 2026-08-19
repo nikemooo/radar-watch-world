@@ -20,6 +20,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { runVerdict } from "./lifecycle";
 import { keepRuntimeAlive } from "../runtime-context.server";
+import { isSweepPaused, UI_SLICE_MS } from "./slice";
+
 
 type Db = SupabaseClient<Database>;
 type RadarRow = Database["public"]["Tables"]["radars"]["Row"];
