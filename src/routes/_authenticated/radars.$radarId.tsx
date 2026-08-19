@@ -419,6 +419,21 @@ function RadarDetail() {
         </section>
       )}
 
+      {pending.length > 0 && (
+        <section>
+          <h2 className="text-lg font-medium">
+            {t("detail.pending.title")}{" "}
+            <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-sm">{pending.length}</span>
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("detail.pending.body", { count: pending.length })}
+          </p>
+          <div className="mt-4">
+            <ListingRail findings={pending} verdictOf={verdictOf} onVerify={openQueue} />
+          </div>
+        </section>
+      )}
+
       <EditCriteriaDialog
         open={editOpen}
         onOpenChange={setEditOpen}
