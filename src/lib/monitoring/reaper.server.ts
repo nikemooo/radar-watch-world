@@ -119,5 +119,6 @@ export async function releaseRadar(db: Db, radarId: string, runId?: string | nul
   let update = db.from("radars").update(patch).eq("id", radarId);
   // Only clear the lock we own — a newer run must keep its claim.
   if (runId) update = update.or(`active_run_id.eq.${runId},active_run_id.is.null`);
-  await update;
+  const { error } = await update;
+  if (error) throw new Error(`Could not release radar ${radarId}: ${error.message}`);
 }

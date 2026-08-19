@@ -430,9 +430,10 @@ export async function beginRun(db: Db, radar: RadarRow): Promise<RunClaim> {
       .limit(1);
     const existing = open?.[0];
     if (existing) throw new ActiveRunError(existing.id, existing.started_at);
-    // Lock held but no run row (a torn start): release and retry once.
-    await releaseRadar(db, radar.id);
-    throw new ActiveRunError(runId, startedAt);
+    // Never release an unknown owner's lock or report a run id that was not
+    // persisted. A genuinely torn claim is recovered by the stale-run path;
+    // a concurrent start gets a truthful conflict instead of corrupting it.
+    throw new Error("A sweep is being claimed. Please check its status again.");
   }
 
   const { error } = await db.from("monitor_runs").insert({
