@@ -2166,6 +2166,11 @@ ${eligible
     jsonld_found: jsonldFound,
     og_data_found: ogDataFound,
     evidence_merge_count: evidenceMergeCount,
+    evidence_conflicts: evidenceConflicts,
+    structured_prices_joined: structuredPricesApplied,
+    visual_observations: visualObservations,
+    identifiers_found: identifiersFound,
+
     criteria_matched: criteriaMatched,
     criteria_rejected: criteriaRejected,
     criteria_unverified: criteriaUnverified,
