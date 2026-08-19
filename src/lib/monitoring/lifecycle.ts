@@ -88,3 +88,52 @@ export const PHASE_LABELS: Record<RunPhase, string> = {
 export function phaseLabel(phase: string | null | undefined): string {
   return PHASE_LABELS[(phase ?? "initializing") as RunPhase] ?? "Söker igenom marknaden";
 }
+
+/* ------------------------------------------------------------------ *
+ * Continuation rules
+ *
+ * A sweep is not owned by a single worker invocation. When the runtime
+ * stops the worker (response sent, deploy, restart, network failure) the
+ * run stays claimed and a later invocation resumes it from its persisted
+ * checkpoints. Silence therefore has three meanings, not two:
+ *
+ *   alive   — heartbeating; leave it completely alone.
+ *   resume  — quiet, but resumable: continue the SAME run.
+ *   dead    — resumable no longer (attempts spent or absolute ceiling).
+ *
+ * Only "dead" may be reaped, so a legitimate wait between two
+ * continuations is never mistaken for a lost worker.
+ * ------------------------------------------------------------------ */
+
+/** Quiet for this long ⇒ the invocation is gone; a continuation takes over. */
+export const RESUME_AFTER_MS = 45_000;
+
+/** How many worker invocations one run may consume before we give up. */
+export const MAX_RUN_ATTEMPTS = 6;
+
+export type ContinuableRun = LifecycleRun & {
+  attempt?: number | null;
+};
+
+export type RunVerdict =
+  | { state: "alive" }
+  | { state: "resume"; attempt: number }
+  | { state: "dead"; reason: FailureReason };
+
+export function runVerdict(run: ContinuableRun, now: number = Date.now()): RunVerdict {
+  if (run.status !== "running") return { state: "alive" };
+  const started = new Date(run.started_at).getTime();
+  const attempt = run.attempt ?? 1;
+
+  if (Number.isFinite(started) && now - started > MAX_RUN_MS) {
+    return { state: "dead", reason: "run_timeout" };
+  }
+
+  const beat = run.heartbeat_at ? new Date(run.heartbeat_at).getTime() : null;
+  const quietSince = beat !== null && Number.isFinite(beat) ? beat : started;
+  const quietFor = now - quietSince;
+  if (quietFor < RESUME_AFTER_MS) return { state: "alive" };
+
+  if (attempt < MAX_RUN_ATTEMPTS) return { state: "resume", attempt };
+  return { state: "dead", reason: beat === null ? "worker_lost" : "heartbeat_timeout" };
+}
