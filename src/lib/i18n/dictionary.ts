@@ -505,6 +505,11 @@ const sv: Dictionary = {
   "listing.evidence.sources": "{count} källa/källor",
   "listing.identifiers": "Objektets identitet",
   "listing.imageUnavailable": "Annonsen har ingen publicerad bild",
+  "listing.identity.verified": "Modell bekräftad",
+  "listing.identity.probable": "Trolig modell",
+  "listing.identity.conflicted": "Annan modell",
+  "listing.identity.unknown": "Modell anges inte",
+
 
   "listing.seen": "Först sedd {first} · senast sedd {last} · {detail}",
   "listing.detailRead": "annonssida läst",
