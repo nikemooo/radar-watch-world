@@ -483,9 +483,12 @@ export async function runRadarCycle(
   // Resumability: expensive steps are checkpointed under this run id, so a
   // continuation after a lost worker replays nothing it already paid for.
   const checkpoints: CheckpointStore =
-    options.checkpoints ?? createCheckpointStore(db, runId, radar.user_id);
-  const phase = (name: RunPhase, patch?: Database["public"]["Tables"]["monitor_runs"]["Update"]) =>
-    tracker.phase(name, { phase_started_at: new Date().toISOString(), ...patch });
+    options.checkpoints ?? createCheckpointStore(db, runId, radar.user_id, radar.id);
+  let currentPhase: RunPhase = "initializing";
+  const phase = (name: RunPhase, patch?: Database["public"]["Tables"]["monitor_runs"]["Update"]) => {
+    currentPhase = name;
+    return tracker.phase(name, { phase_started_at: new Date().toISOString(), ...patch });
+  };
   const seenPhases = new Set<string>();
   /** Phase transition from inside a loop: written once, not per item. */
   const phaseOnce = async (name: RunPhase) => {
@@ -493,17 +496,24 @@ export async function runRadarCycle(
     seenPhases.add(name);
     await phase(name);
   };
+
   /**
-   * Run one expensive step exactly once per run. On resume the persisted
-   * result is returned instead of calling the provider again, and every
-   * completed step is recorded so a diagnosis can see how far the run got.
+   * Run one expensive step exactly once per run.
+   *
+   * The contract is strict: `last_successful_operation` is written only AFTER
+   * the checkpoint is durably stored, so the run row can never claim progress
+   * the checkpoint table cannot back up. A failed checkpoint write throws and
+   * the whole sweep fails honestly (lock released, radar restored) instead of
+   * pretending to be resumable.
    */
   const step = <T,>(key: string, fn: () => Promise<T>): Promise<T> =>
-    checkpoints.step(key, async () => {
-      const value = await fn();
-      await patchRun({ last_successful_operation: key });
-      return value;
-    });
+    checkpoints
+      .step(key, fn, { phase: currentPhase })
+      .then(async (value) => {
+        await patchRun({ last_successful_operation: key });
+        return value;
+      });
+
 
   const patchRun = async (patch: Database["public"]["Tables"]["monitor_runs"]["Update"]) => {
     if (!runId) return;
