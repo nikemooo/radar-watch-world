@@ -28,6 +28,7 @@ import {
   type RadarConfig,
   type RadarFrequency,
 } from "@/lib/radar-types";
+import { useT, type TranslationKey } from "@/lib/i18n";
 
 const lines = (items: string[]) => items.join("\n");
 const parseLines = (value: string) =>
@@ -60,6 +61,7 @@ export function EditCriteriaDialog({
   config: RadarConfig;
   onSaved: () => void;
 }) {
+  const t = useT();
   const save = useServerFn(updateRadarCriteria);
   const [name, setName] = useState(initialName);
   const [frequency, setFrequency] = useState<RadarFrequency>(initialFrequency);
@@ -87,11 +89,11 @@ export function EditCriteriaDialog({
       await save({
         data: { radarId, name, frequency, recency_days: recencyDays, config: next },
       });
-      toast.success("Kriterierna är uppdaterade. Historiken är kvar.");
+      toast.success(t("edit.saved"));
       onOpenChange(false);
       onSaved();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Kunde inte spara kriterierna.");
+      toast.error(error instanceof Error ? error.message : t("edit.failed"));
     } finally {
       setBusy(false);
     }
@@ -101,21 +103,21 @@ export function EditCriteriaDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Redigera kriterier</DialogTitle>
+          <DialogTitle>{t("edit.title")}</DialogTitle>
           <DialogDescription>
-            Ändringarna gäller från nästa sökning. Tidigare annonser och observationer sparas.
+            {t("edit.description")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="edit-name">Namn</Label>
+            <Label htmlFor="edit-name">{t("edit.name")}</Label>
             <Input id="edit-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Kontrollfrekvens</Label>
+              <Label>{t("edit.frequency")}</Label>
               <Select value={frequency} onValueChange={(v) => setFrequency(v as RadarFrequency)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -123,14 +125,14 @@ export function EditCriteriaDialog({
                 <SelectContent>
                   {(Object.keys(frequencyLabel) as RadarFrequency[]).map((key) => (
                     <SelectItem key={key} value={key}>
-                      {frequencyLabel[key]}
+                      {t(`freq.${key}` as TranslationKey)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Hur färsk måste informationen vara?</Label>
+              <Label>{t("edit.recency")}</Label>
               <Select value={String(recencyDays)} onValueChange={(v) => setRecencyDays(Number(v))}>
                 <SelectTrigger>
                   <SelectValue />
@@ -138,7 +140,7 @@ export function EditCriteriaDialog({
                 <SelectContent>
                   {recencyPresets.map((p) => (
                     <SelectItem key={p.days} value={String(p.days)}>
-                      {p.label}
+                      {t(`recency.${p.days}` as TranslationKey)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -148,7 +150,7 @@ export function EditCriteriaDialog({
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <Label htmlFor="edit-min">Lägsta pris</Label>
+              <Label htmlFor="edit-min">{t("edit.priceMin")}</Label>
               <Input
                 id="edit-min"
                 inputMode="numeric"
@@ -157,7 +159,7 @@ export function EditCriteriaDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-max">Högsta pris</Label>
+              <Label htmlFor="edit-max">{t("edit.priceMax")}</Label>
               <Input
                 id="edit-max"
                 inputMode="numeric"
@@ -166,7 +168,7 @@ export function EditCriteriaDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-currency">Valuta</Label>
+              <Label htmlFor="edit-currency">{t("edit.currency")}</Label>
               <Input
                 id="edit-currency"
                 value={currency}
@@ -177,19 +179,19 @@ export function EditCriteriaDialog({
 
           <Field
             id="edit-locations"
-            label="Marknad / plats (en per rad)"
+            label={t("edit.locations")}
             value={locations}
             onChange={setLocations}
           />
           <Field
             id="edit-criteria"
-            label="Viktigaste kraven (en per rad)"
+            label={t("edit.criteria")}
             value={criteria}
             onChange={setCriteria}
           />
           <Field
             id="edit-exclusions"
-            label="Uteslut (en per rad)"
+            label={t("edit.exclusions")}
             value={exclusions}
             onChange={setExclusions}
           />
@@ -197,11 +199,11 @@ export function EditCriteriaDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-            Avbryt
+            {t("edit.cancel")}
           </Button>
           <Button onClick={submit} disabled={busy} className="gap-2">
             {busy && <Loader2 className="size-4 animate-spin" />}
-            Spara kriterier
+            {t("edit.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

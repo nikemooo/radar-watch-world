@@ -28,6 +28,7 @@ import {
 } from "@/lib/radar-types";
 import { monitoringWindowLabel, type MonitoringWindow } from "@/lib/monitoring/temporal";
 import { track } from "@/lib/analytics";
+import { useFormatDateTime, useT, type TranslationKey } from "@/lib/i18n";
 
 
 export const Route = createFileRoute("/_authenticated/radars/new")({
@@ -51,6 +52,8 @@ const suggestions = [
 
 function NewRadar() {
   const navigate = useNavigate();
+  const t = useT();
+  const formatDateTime = useFormatDateTime();
   const interpret = useServerFn(interpretRadarRequest);
   const createRadarFn = useServerFn(createRadar);
   const startSweep = useServerFn(runRadarNow);
@@ -80,7 +83,7 @@ function NewRadar() {
       if (result.recency_days) setRecencyDays(result.recency_days);
       setStep("confirm");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not interpret that request.");
+      toast.error(error instanceof Error ? error.message : t("new.interpretFailed"));
     } finally {
       setBusy(false);
     }
@@ -109,17 +112,15 @@ function NewRadar() {
         // The server already claimed the first sweep during creation. Only ask
         // for one here if that did not happen, so we never start it twice.
         if (!created.started) startSweep({ data: { radarId: created.id } }).catch(() => undefined);
-        toast.success("Radarn är skapad — första sökningen startar nu.");
+        toast.success(t("new.createdNow"));
       } else if (start === "scheduled") {
-        toast.success(
-          `Radarn är skapad — första sökningen startar ${new Date(scheduledAt).toLocaleString("sv-SE")}.`,
-        );
+        toast.success(t("new.createdScheduled", { time: formatDateTime(scheduledAt) }));
       } else {
-        toast.success("Radarn är skapad. Starta sökningen när du vill med “Sök nu”.");
+        toast.success(t("new.createdManual"));
       }
       navigate({ to: "/radars/$radarId", params: { radarId: created.id } });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create radar.");
+      toast.error(error instanceof Error ? error.message : t("new.createFailed"));
     } finally {
       setBusy(false);
     }
@@ -135,12 +136,12 @@ function NewRadar() {
             onClick={() => setStep("describe")}
           >
             <ArrowLeft className="size-3" />
-            Edit request
+            {t("new.editRequest")}
           </button>
         )}
-        <p className="mono-label">Step {step === "describe" ? "1" : "2"} of 2</p>
+        <p className="mono-label">{t("new.step", { step: step === "describe" ? 1 : 2 })}</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-          {step === "describe" ? "What should Radar watch?" : "Confirm the watch"}
+          {step === "describe" ? t("new.titleDescribe") : t("new.titleConfirm")}
         </h1>
       </header>
 
@@ -150,7 +151,7 @@ function NewRadar() {
             value={request}
             onChange={(e) => setRequest(e.target.value)}
             rows={4}
-            placeholder="Describe it the way you'd tell a person…"
+            placeholder={t("new.placeholder")}
             className="resize-none text-base"
           />
           <div className="flex flex-wrap gap-2">
@@ -166,7 +167,7 @@ function NewRadar() {
           </div>
           <Button onClick={analyze} disabled={busy || request.trim().length < 8} className="w-full gap-2">
             {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            {busy ? "Interpreting…" : "Interpret request"}
+            {busy ? t("new.interpreting") : t("new.interpret")}
           </Button>
         </div>
       ) : (
@@ -176,11 +177,11 @@ function NewRadar() {
               <p className="text-sm text-muted-foreground">{config.interpretation}</p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="radar-name">Radar name</Label>
+                  <Label htmlFor="radar-name">{t("new.name")}</Label>
                   <Input id="radar-name" value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Check frequency</Label>
+                  <Label>{t("new.frequency")}</Label>
                   <Select value={frequency} onValueChange={(v) => setFrequency(v as RadarFrequency)}>
                     <SelectTrigger>
                       <SelectValue />
@@ -188,7 +189,7 @@ function NewRadar() {
                     <SelectContent>
                       {(Object.keys(frequencyLabel) as RadarFrequency[]).map((key) => (
                         <SelectItem key={key} value={key}>
-                          {frequencyLabel[key]}
+                          {t(`freq.${key}` as TranslationKey)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -197,7 +198,7 @@ function NewRadar() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>Monitoring window</Label>
+                  <Label>{t("new.window")}</Label>
                   <Select
                     value={monitoringWindow}
                     onValueChange={(v) => setMonitoringWindow(v as MonitoringWindow)}
@@ -208,14 +209,14 @@ function NewRadar() {
                     <SelectContent>
                       {(Object.keys(monitoringWindowLabel) as MonitoringWindow[]).map((key) => (
                         <SelectItem key={key} value={key}>
-                          {monitoringWindowLabel[key]}
+                          {t(`window.${key}` as TranslationKey)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>How recent must information be?</Label>
+                  <Label>{t("new.recency")}</Label>
                   <Select value={String(recencyDays)} onValueChange={(v) => setRecencyDays(Number(v))}>
                     <SelectTrigger>
                       <SelectValue />
@@ -238,7 +239,7 @@ function NewRadar() {
 
             <div className="panel space-y-5 p-5">
               <div className="space-y-2">
-                <Label>Läge</Label>
+                <Label>{t("new.mode")}</Label>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {(Object.keys(radarModeLabel) as RadarMode[]).map((key) => (
                     <button
@@ -249,21 +250,21 @@ function NewRadar() {
                         mode === key ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30"
                       }`}
                     >
-                      <p className="text-sm font-medium">{radarModeLabel[key]}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{radarModeDescription[key]}</p>
+                      <p className="text-sm font-medium">{t(`mode.${key}` as TranslationKey)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{t(`mode.${key}.desc` as TranslationKey)}</p>
                     </button>
                   ))}
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>När ska första sökningen köras?</Label>
+                <Label>{t("new.startWhen")}</Label>
                 <div className="grid gap-2 sm:grid-cols-3">
                   {(
                     [
-                      ["now", "Starta direkt"],
-                      ["scheduled", "Schemalägg (Pro Plus)"],
-                      ["manual", "Starta manuellt"],
+                      ["now", t("new.start.now")],
+                      ["scheduled", t("new.start.scheduled")],
+                      ["manual", t("new.start.manual")],
                     ] as [RadarStart, string][]
                   ).map(([key, label]) => (
                     <button
@@ -280,7 +281,7 @@ function NewRadar() {
                 </div>
                 {start === "scheduled" && (
                   <div className="space-y-1.5 pt-1">
-                    <Label htmlFor="scheduled-at">Starttid (din tidszon)</Label>
+                    <Label htmlFor="scheduled-at">{t("new.startAt")}</Label>
                     <Input
                       id="scheduled-at"
                       type="datetime-local"
@@ -295,16 +296,16 @@ function NewRadar() {
 
 
             <div className="panel grid gap-5 p-5 sm:grid-cols-2">
-              <Facts title="Watching for" items={config.monitored_events} />
-              <Facts title="Matters most" items={config.important_criteria} />
-              <Facts title="Search strategy" items={config.search_queries} />
-              <Facts title="Excluding" items={config.exclusions} />
-              {config.locations.length > 0 && <Facts title="Locations" items={config.locations} />}
+              <Facts title={t("new.facts.watching")} items={config.monitored_events} />
+              <Facts title={t("new.facts.important")} items={config.important_criteria} />
+              <Facts title={t("new.facts.strategy")} items={config.search_queries} />
+              <Facts title={t("new.facts.excluding")} items={config.exclusions} />
+              {config.locations.length > 0 && <Facts title={t("new.facts.locations")} items={config.locations} />}
               {(config.price_min !== null || config.price_max !== null) && (
                 <Facts
-                  title="Price range"
+                  title={t("new.facts.priceRange")}
                   items={[
-                    `${config.price_min ?? "any"} – ${config.price_max ?? "any"} ${config.currency ?? ""}`.trim(),
+                    `${config.price_min ?? t("new.any")} – ${config.price_max ?? t("new.any")} ${config.currency ?? ""}`.trim(),
                   ]}
                 />
               )}
@@ -316,7 +317,7 @@ function NewRadar() {
               className="w-full gap-2"
             >
               {busy && <Loader2 className="size-4 animate-spin" />}
-              {start === "now" ? "Aktivera och sök nu" : "Aktivera radar"}
+              {start === "now" ? t("new.activateAndSearch") : t("new.activate")}
 
             </Button>
           </div>
