@@ -1644,15 +1644,26 @@ ${documentBlock(allDocs.slice(0, 45))}`,
         geoResolvedUrls.add(item.url);
       }
     }
+    // Identity evidence: every retrieved surface for this item, plus the item's
+    // own extracted wording as a last-resort surface.
+    const identitySources: IdentitySource[] = [
+      ...(identitySourcesByUrl.get(item.url) ?? []),
+      { sourceType: "extracted_item", url: item.url, text: `${item.title}\n${item.summary ?? ""}` },
+      ...Object.values(attributes)
+        .filter((a) => a.raw && (a.confidence === "stated" || a.confidence === "structured"))
+        .map((a) => ({ sourceType: "detail_field", url: a.source_url, text: `${a.key}: ${a.raw}` })),
+    ];
     const verdict = evaluateCriteria(
       {
         title: item.title,
         attributes,
         numericValue: item.numeric_value,
         currency: item.currency,
+        identitySources,
       },
       constraints,
     );
+
     verdicts.set(item.fingerprint, verdict);
     if (verdict.status === "match") criteriaMatched += 1;
     else if (verdict.status === "reject") criteriaRejected += 1;
