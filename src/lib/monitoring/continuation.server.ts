@@ -39,6 +39,7 @@ export type ClaimableRun = {
   heartbeat_at: string | null;
   attempt: number | null;
   current_phase: string | null;
+  phase_started_at?: string | null;
 };
 
 /**
@@ -83,7 +84,7 @@ export async function resumeInterruptedRuns(
   const now = options.now ?? Date.now();
   let query = db
     .from("monitor_runs")
-    .select("id, radar_id, status, started_at, heartbeat_at, attempt, current_phase")
+    .select("id, radar_id, status, started_at, heartbeat_at, attempt, current_phase, phase_started_at")
     .eq("status", "running")
     .order("started_at", { ascending: false })
     .limit(options.limit ?? 20);

@@ -56,6 +56,7 @@ import {
 } from "./evidence";
 import { detectIdentifiers, mergeIdentifiers, presentableIdentifiers, type Identifier } from "./identifiers";
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
+import { gateCandidates, marketAllowed } from "./candidate-gate";
 
 import {
   COUNTRY_ATTRIBUTE,
@@ -968,6 +969,32 @@ export async function runRadarCycle(
       );
       candidates = discovery.candidates;
       indexPages = discovery.indexPages;
+
+      // ---------- CHEAP DETERMINISTIC GATE (before any paid work) ----------
+      // A search/category page is never a listing, and a source whose
+      // country-code TLD proves another market than the radar asked for can be
+      // dropped without spending a single fetch or AI token on it.
+      {
+        const gate = gateCandidates({
+          candidates,
+          indexUrls: [...indexPages, ...research.documents.map((d) => d.url)],
+          markets: requiredMarkets(config.locations),
+        });
+        if (gate.kept.length > 0) {
+          console.info(
+            `[radar:gate] ${candidates.length} candidate(s) → ${gate.kept.length} listing(s); dropped ${gate.searchPages} non-listing page(s), ${gate.offMarket} off-market source(s)`,
+          );
+          candidates = gate.kept;
+        } else {
+          // Never starve the sweep: with no provable listing URL we keep the
+          // market-eligible candidates and let link resolution mark them
+          // "unverified" so the UI says "Öppna källa", not "Öppna annons".
+          console.warn("[radar:gate] no candidate passed the listing gate — keeping market-eligible candidates");
+          const markets = requiredMarkets(config.locations);
+          candidates = candidates.filter((c) => !c.url || marketAllowed(c.url, markets));
+        }
+      }
+
       // Adaptive budget + priority: fetch what is most likely to yield stated,
       // item-level facts — never simply the first N results.
       const [{ data: hostRows }, { data: urlRows }] = await Promise.all([

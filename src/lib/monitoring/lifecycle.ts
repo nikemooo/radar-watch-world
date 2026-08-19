@@ -109,10 +109,26 @@ export function phaseLabel(phase: string | null | undefined): string {
 export const RESUME_AFTER_MS = 45_000;
 
 /** How many worker invocations one run may consume before we give up. */
-export const MAX_RUN_ATTEMPTS = 6;
+/**
+ * In a runtime that may end an invocation as soon as the HTTP response is
+ * sent, a three-minute sweep is normally carried by MANY short invocations,
+ * each resuming from the last checkpoint. The cap therefore exists to stop a
+ * run that makes no progress, not to limit how many invocations a healthy
+ * sweep may use — that job belongs to STALL_MS below.
+ */
+export const MAX_RUN_ATTEMPTS = 40;
+
+/**
+ * A quiet run that has not changed phase for this long is not progressing.
+ * Continuations replay from checkpoints, so a run stuck on the same phase
+ * across attempts would otherwise retry the same failing step forever.
+ */
+export const STALL_MS = 8 * 60_000;
 
 export type ContinuableRun = LifecycleRun & {
   attempt?: number | null;
+  /** When the run last entered a new phase — our progress marker. */
+  phase_started_at?: string | null;
 };
 
 export type RunVerdict =
@@ -133,6 +149,10 @@ export function runVerdict(run: ContinuableRun, now: number = Date.now()): RunVe
   const quietSince = beat !== null && Number.isFinite(beat) ? beat : started;
   const quietFor = now - quietSince;
   if (quietFor < RESUME_AFTER_MS) return { state: "alive" };
+
+  const progressAt = run.phase_started_at ? new Date(run.phase_started_at).getTime() : started;
+  const stalled = Number.isFinite(progressAt) && now - progressAt > STALL_MS;
+  if (stalled) return { state: "dead", reason: beat === null ? "worker_lost" : "heartbeat_timeout" };
 
   if (attempt < MAX_RUN_ATTEMPTS) return { state: "resume", attempt };
   return { state: "dead", reason: beat === null ? "worker_lost" : "heartbeat_timeout" };

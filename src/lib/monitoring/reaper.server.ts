@@ -42,7 +42,7 @@ export async function reapStaleRuns(
   const now = options.now ?? Date.now();
   let query = db
     .from("monitor_runs")
-    .select("id, radar_id, status, started_at, heartbeat_at, current_phase, attempt")
+    .select("id, radar_id, status, started_at, heartbeat_at, current_phase, attempt, phase_started_at")
     .eq("status", "running")
     .order("started_at", { ascending: false })
     .limit(200);
