@@ -1577,6 +1577,51 @@ ${documentBlock(allDocs.slice(0, 45))}`,
     );
   }
 
+  // ------------------------------------------------------------------
+  // 2c. Visual evidence for what the text never stated.
+  // Only for items that are still unverified, only for the attributes that
+  // actually block them, only when the listing published its own photo, and
+  // only within a small budget. A photo is evidence, never proof: it can fill
+  // a gap or contradict the text, but it never changes the machine verdict.
+  // ------------------------------------------------------------------
+  const visualByUrl = new Map<string, { attribute: string; observation: string; value: string | null; confidence: "high" | "low" | "none"; image_url: string }[]>();
+  const visualTargets = items
+    .filter((item) => {
+      const verdict = verdicts.get(item.fingerprint);
+      if (!verdict || verdict.status !== "unverified") return false;
+      if (!imageByUrl.get(item.url)?.url) return false;
+      return verdict.outcomes.some((o) => o.status === "unverified" && specs.some((s) => s.key === o.constraint.attribute));
+    })
+    .slice(0, 6);
+
+  if (visualTargets.length > 0) {
+    await phase("verifying_images");
+    try {
+      const { readImageEvidence } = await import("./reverify.server");
+      for (const item of visualTargets) {
+        const image = imageByUrl.get(item.url)!.url;
+        const wanted = (verdicts.get(item.fingerprint)?.outcomes ?? [])
+          .filter((o) => o.status === "unverified")
+          .map((o) => specs.find((s) => s.key === o.constraint.attribute))
+          .filter((s): s is AttributeSpec => !!s);
+        if (wanted.length === 0) continue;
+        const observations = await step(`visual:${item.url}`, () => readImageEvidence(image, wanted), {
+          phase: "verifying_images",
+        });
+        const useful = observations.filter((o) => o.confidence !== "none");
+        if (useful.length === 0) continue;
+        visualByUrl.set(item.url, observations);
+        visualObservations += useful.length;
+        const current = attributeEvidenceByUrl.get(item.url);
+        if (current) attributeEvidenceByUrl.set(item.url, applyVisualEvidence(current, specs, observations));
+      }
+    } catch (err) {
+      console.warn(`[radar:evidence] visual pass skipped — ${(err as Error).message}`);
+    }
+  }
+
+
+
   const docByUrl = new Map(allDocs.map((d) => [d.url, d]));
   const temporalOf = (item: ExtractedItem): TemporalFacts => {
     const doc = docByUrl.get(item.url);
