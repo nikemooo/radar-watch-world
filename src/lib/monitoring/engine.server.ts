@@ -937,6 +937,15 @@ export async function runRadarCycle(
   let detailFetchBudget = 0;
   let budgetReason = "detail stage not reached";
   const imageByUrl = new Map<string, { url: string; source: string; images: string[] }>();
+  /** Per-item evidence: what is known, how strongly, and from which surface. */
+  const attributeEvidenceByUrl = new Map<string, Record<string, AttributeEvidence>>();
+  const identifiersByUrl = new Map<string, Identifier[]>();
+  const imageEvidenceByUrl = new Map<string, ImageEvidence>();
+  let structuredPricesApplied = 0;
+  let evidenceConflicts = 0;
+  let visualObservations = 0;
+  let identifiersFound = 0;
+
   /** Verified direct listing URL per requested candidate URL. */
   const linkByUrl = new Map<string, ResolvedListingUrl>();
   let directLinksVerified = 0;
