@@ -41,13 +41,17 @@ export interface FindingSnapshot {
   image?: string | null;
   image_source?: string | null;
   images?: string[];
+  image_status?: "from_listing" | "unavailable" | null;
   missing_attributes?: string[];
   criteria?: { label?: string; ok?: boolean | null; reason?: string }[];
   image_evidence?: unknown;
+  evidence?: StoredEvidence[];
+  identifiers?: { type: string; value: string; confidence: string }[];
   /** "direct" when the stored URL provably addresses the advert itself. */
   link_status?: "direct" | "unverified";
   canonical_url?: string | null;
 }
+
 
 export function snapshotOf(value: unknown): FindingSnapshot {
   return value && typeof value === "object" ? (value as FindingSnapshot) : {};
