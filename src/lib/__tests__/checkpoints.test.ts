@@ -100,7 +100,7 @@ describe("checkpoints", () => {
     expect(planningCalls).toBe(0); // no duplicate provider spend
     expect(researchCalls).toBe(1); // the step that never completed is retried
     expect(second.resumedSteps).toBe(1);
-    expect(db.rows.map((r) => r.key)).toEqual(["query_planning", "research"]);
+    expect(db.rows.map((r: { key: string }) => r.key)).toEqual(["query_planning", "research"]);
   });
 
   it("re-running an already checkpointed step never writes again", async () => {
