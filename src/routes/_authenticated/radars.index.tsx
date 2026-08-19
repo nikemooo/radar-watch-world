@@ -1,3 +1,4 @@
+import { useFormatDateTime, useT } from "@/lib/i18n";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Plus } from "lucide-react";
@@ -19,6 +20,8 @@ export const Route = createFileRoute("/_authenticated/radars/")({
 });
 
 function RadarsList() {
+  const t = useT();
+  const formatDateTime = useFormatDateTime();
   const { data, isLoading } = useQuery({
     queryKey: ["radars"],
     queryFn: async () => {
@@ -35,13 +38,13 @@ function RadarsList() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="mono-label">Active watches</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Radars</h1>
+          <p className="mono-label">{t("radars.eyebrow")}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{t("radars.title")}</h1>
         </div>
         <Button asChild className="gap-2">
           <Link to="/radars/new">
             <Plus className="size-4" />
-            New radar
+            {t("dashboard.newRadar")}
           </Link>
         </Button>
       </header>
@@ -76,8 +79,8 @@ function RadarsList() {
                   <p className="mono-label mt-2">
                     {radar.category} · {frequencyLabel[radar.frequency as RadarFrequency] ?? radar.frequency} ·{" "}
                     {radar.last_run_at
-                      ? `last swept ${new Date(radar.last_run_at).toLocaleString()}`
-                      : "awaiting first sweep"}
+                      ? t("radars.lastSwept", { when: formatDateTime(radar.last_run_at) })
+                      : t("radars.awaitingFirstSweep")}
                   </p>
                 </div>
                 <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
@@ -87,9 +90,9 @@ function RadarsList() {
         </div>
       ) : (
         <div className="panel p-10 text-center">
-          <p className="text-sm text-muted-foreground">No radars yet.</p>
+          <p className="text-sm text-muted-foreground">{t("radars.empty")}</p>
           <Button asChild className="mt-5">
-            <Link to="/radars/new">Create your first radar</Link>
+            <Link to="/radars/new">{t("radars.createFirst")}</Link>
           </Button>
         </div>
       )}

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LOCALE_NAMES, useI18n, useT, type Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
@@ -25,6 +26,8 @@ export const Route = createFileRoute("/_authenticated/settings")({
 
 function Settings() {
   const queryClient = useQueryClient();
+  const t = useT();
+  const { locale, setLocale, usingSystemLanguage } = useI18n();
   const researchStatus = useServerFn(getResearchStatus);
   const [displayName, setDisplayName] = useState("");
   const [digestHour, setDigestHour] = useState(8);
@@ -71,7 +74,7 @@ function Settings() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Settings saved.");
+      toast.success(t("settings.saved"));
       queryClient.invalidateQueries({ queryKey: ["profile"] });
     },
     onError: (error: Error) => toast.error(error.message),
@@ -82,33 +85,33 @@ function Settings() {
   return (
     <div className="max-w-2xl space-y-6">
       <header>
-        <p className="mono-label">Preferences</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Settings</h1>
+        <p className="mono-label">{t("settings.eyebrow")}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{t("settings.title")}</h1>
       </header>
 
       <section className="panel space-y-5 p-5">
-        <h2 className="text-lg font-medium">Profile</h2>
+        <h2 className="text-lg font-medium">{t("settings.profile")}</h2>
         <div className="space-y-1.5">
-          <Label htmlFor="display-name">Display name</Label>
+          <Label htmlFor="display-name">{t("settings.displayName")}</Label>
           <Input id="display-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">{t("settings.email")}</Label>
           <Input id="email" value={profile?.email ?? ""} disabled />
         </div>
       </section>
 
       <section className="panel space-y-5 p-5">
-        <h2 className="text-lg font-medium">Notifications</h2>
+        <h2 className="text-lg font-medium">{t("settings.notifications")}</h2>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium">Email alerts</p>
-            <p className="text-sm text-muted-foreground">Receive important findings by email.</p>
+            <p className="text-sm font-medium">{t("settings.emailAlerts")}</p>
+            <p className="text-sm text-muted-foreground">{t("settings.emailAlertsBody")}</p>
           </div>
           <Switch checked={emailNotifications} onCheckedChange={setEmailNotifications} />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="digest-hour">Daily digest hour (local, 0–23)</Label>
+          <Label htmlFor="digest-hour">{t("settings.digestHour")}</Label>
           <Input
             id="digest-hour"
             type="number"
@@ -121,9 +124,33 @@ function Settings() {
       </section>
 
       <section className="panel space-y-3 p-5">
-        <h2 className="text-lg font-medium">Research sources</h2>
+        <h2 className="text-lg font-medium">{t("settings.language")}</h2>
+        <p className="text-sm text-muted-foreground">{t("settings.languageBody")}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={usingSystemLanguage ? "default" : "outline"}
+            size="sm"
+            onClick={() => setLocale(null)}
+          >
+            {t("settings.languageSystem")}
+          </Button>
+          {(Object.keys(LOCALE_NAMES) as Locale[]).map((code) => (
+            <Button
+              key={code}
+              variant={!usingSystemLanguage && locale === code ? "default" : "outline"}
+              size="sm"
+              onClick={() => setLocale(code)}
+            >
+              {LOCALE_NAMES[code]}
+            </Button>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel space-y-3 p-5">
+        <h2 className="text-lg font-medium">{t("settings.research")}</h2>
         <p className="text-sm text-muted-foreground">
-          Radar never invents sources. It only reports what a configured live research provider returns.
+          {t("settings.researchBody")}
         </p>
         <div className="space-y-2">
           {(research?.providers ?? []).map((provider) => (
@@ -133,7 +160,7 @@ function Settings() {
             >
               <span>{provider.label}</span>
               <span className={provider.configured ? "text-interesting" : "text-muted-foreground"}>
-                {provider.configured ? "Connected" : "Not configured"}
+                {provider.configured ? t("settings.connected") : t("settings.notConfigured")}
               </span>
             </div>
           ))}
@@ -141,7 +168,7 @@ function Settings() {
       </section>
 
       <Button onClick={() => save.mutate()} disabled={save.isPending}>
-        {save.isPending ? "Saving…" : "Save changes"}
+        {save.isPending ? t("settings.saving") : t("settings.save")}
       </Button>
     </div>
   );

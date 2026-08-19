@@ -848,6 +848,37 @@ export async function runRadarCycle(
         });
       }
 
+      // Incremental visibility: persist discovered item candidates immediately as
+      // "pending" findings so the UI can show them while the sweep continues.
+      // They are replaced by the real finding once extraction settles, and any
+      // leftovers are removed at the end of the persist phase.
+      const knownUrls = new Set(
+        (existingRows ?? []).flatMap((f) => [f.primary_url, f.url].filter(Boolean) as string[]),
+      );
+      const provisional = candidates
+        .filter((c) => c.url && c.individual && !knownUrls.has(c.url))
+        .slice(0, 60)
+        .map((c) => ({
+          radar_id: radar.id,
+          user_id: radar.user_id,
+          fingerprint: `provisional:${c.url}`,
+          title: c.title || (c.url as string),
+          url: c.url as string,
+          snapshot: { match_status: "pending", match_reason: "being checked", images: [] } as never,
+          attributes: {} as never,
+          discovery_url: c.discovery_url,
+          detail_status: "not_attempted",
+          origin: isBaseline ? "baseline" : "incremental",
+          last_run_id: runId,
+          first_seen_at: new Date().toISOString(),
+          last_seen_at: new Date().toISOString(),
+        }));
+      // Clear placeholders left behind by an interrupted earlier sweep.
+      await db.from("findings").delete().eq("radar_id", radar.id).like("fingerprint", "provisional:%");
+      if (provisional.length > 0) {
+        await db.from("findings").upsert(provisional, { onConflict: "radar_id,fingerprint" });
+      }
+
       const fetchable = candidates.filter((c) => c.url && c.individual).length;
       const budgetPlan = adaptiveBudget({
         configured: Math.min(
@@ -1783,6 +1814,14 @@ ${eligible
       );
     }
   }
+
+  // Remove provisional placeholders: confirmed items now exist under their real
+  // identity, anything left was not a real item.
+  await db
+    .from("findings")
+    .delete()
+    .eq("radar_id", radar.id)
+    .like("fingerprint", "provisional:%");
 
   if (decisions.length > 0) {
     await db.from("alert_decisions").insert(

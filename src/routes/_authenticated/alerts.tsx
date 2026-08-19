@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/_authenticated/alerts")({
 type Filter = "all" | "new" | "saved" | "critical";
 
 function Alerts() {
+  const t = useT();
   const queryClient = useQueryClient();
   const { filter: initialFilter } = Route.useSearch();
   const [filter, setFilter] = useState<Filter>(initialFilter ?? "all");
@@ -63,16 +65,16 @@ function Alerts() {
   return (
     <div className="space-y-6">
       <header>
-        <p className="mono-label">Intelligence inbox</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Alerts</h1>
+        <p className="mono-label">{t("alerts.eyebrow")}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{t("alerts.title")}</h1>
       </header>
 
       <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
         <TabsList>
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="new">Unread</TabsTrigger>
-          <TabsTrigger value="critical">Needs attention</TabsTrigger>
-          <TabsTrigger value="saved">Saved</TabsTrigger>
+          <TabsTrigger value="all">{t("alerts.filter.all")}</TabsTrigger>
+          <TabsTrigger value="new">{t("alerts.filter.new")}</TabsTrigger>
+          <TabsTrigger value="critical">{t("alerts.filter.critical")}</TabsTrigger>
+          <TabsTrigger value="saved">{t("alerts.filter.saved")}</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -106,7 +108,7 @@ function Alerts() {
         </div>
       ) : (
         <p className="panel p-10 text-center text-sm text-muted-foreground">
-          Nothing here. Radar only surfaces changes that matter — silence means nothing changed.
+          {t("alerts.empty")}
         </p>
       )}
     </div>
