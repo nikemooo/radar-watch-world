@@ -1595,7 +1595,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
     .slice(0, 6);
 
   if (visualTargets.length > 0) {
-    await phase("verifying_images");
+    await phase("analyzing_images");
     try {
       const { readImageEvidence } = await import("./reverify.server");
       for (const item of visualTargets) {
@@ -1605,9 +1605,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
           .map((o) => specs.find((s) => s.key === o.constraint.attribute))
           .filter((s): s is AttributeSpec => !!s);
         if (wanted.length === 0) continue;
-        const observations = await step(`visual:${item.url}`, () => readImageEvidence(image, wanted), {
-          phase: "verifying_images",
-        });
+        const observations = await step(`visual:${item.url}`, () => readImageEvidence(image, wanted));
         const useful = observations.filter((o) => o.confidence !== "none");
         if (useful.length === 0) continue;
         visualByUrl.set(item.url, observations);
