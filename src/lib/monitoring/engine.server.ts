@@ -1591,6 +1591,19 @@ ${documentBlock(allDocs.slice(0, 45))}`,
   items.length = 0;
   items.push(...byIdentity.values());
 
+  // Listing-level deduplication: the same advert reached through a slugged URL,
+  // an id-only URL, an AMP mirror or a re-slug is ONE result, not four.
+  const listingDedupe = dedupeListings(
+    items.map((item) => ({ ...item, identifiers: identifiersByUrl.get(item.url) ?? [] })),
+  );
+  for (const gone of listingDedupe.removed) {
+    console.info(`[radar:dedupe] ${gone.rule} — ${gone.url} is the same listing as ${gone.duplicateOf}`);
+  }
+  const listingDuplicatesRemoved = listingDedupe.removed.length;
+  items.length = 0;
+  items.push(...listingDedupe.kept.map(({ identifiers: _identifiers, ...item }) => item as ExtractedItem));
+
+
   // Attribute enrichment: a detail page is the primary source for its item.
   const attributesFor = (item: ExtractedItem): Record<string, AttributeValue> | null =>
     detailByUrl.get(item.url)?.attributes ?? null;
