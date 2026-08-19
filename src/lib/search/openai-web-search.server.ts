@@ -13,7 +13,7 @@
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
 /** Current OpenAI model exposing the hosted `web_search` tool. */
-export const WEB_SEARCH_MODEL = "gpt-5.1";
+export const WEB_SEARCH_MODEL = "gpt-4o";
 
 export interface PocCandidate {
   title: string | null;
@@ -172,12 +172,23 @@ interface SseAccumulator {
   usage: Record<string, unknown> | null;
   webSearchCalls: number;
   webSearchQueries: string[];
+  error: { type: string; message: string; code: string | null } | null;
 }
 
 function handleEvent(acc: SseAccumulator, event: Record<string, unknown>) {
   const type = String(event["type"] ?? "");
   if (type === "response.output_text.delta" && typeof event["delta"] === "string") {
     acc.text += event["delta"];
+  }
+  if (type === "error") {
+    const err = event["error"] as Record<string, unknown> | undefined;
+    if (err) {
+      acc.error = {
+        type: String(err["type"] ?? "unknown"),
+        message: String(err["message"] ?? ""),
+        code: err["code"] ? String(err["code"]) : null,
+      };
+    }
   }
   if (type === "response.created" || type === "response.completed") {
     const response = event["response"] as Record<string, unknown> | undefined;
@@ -273,6 +284,7 @@ export async function runOpenAiWebSearchPoc(
     usage: null,
     webSearchCalls: 0,
     webSearchQueries: [],
+    error: null,
   };
 
   const reader = res.body.getReader();
@@ -296,6 +308,25 @@ export async function runOpenAiWebSearchPoc(
         }
       }
     }
+  }
+
+  if (acc.error) {
+    return {
+      ok: false,
+      configured: true,
+      error: `OpenAI Responses API error (${acc.error.type}${acc.error.code ? ` / ${acc.error.code}` : ""}): ${acc.error.message}`,
+      result: null,
+      telemetry: {
+        model: WEB_SEARCH_MODEL,
+        response_id: acc.responseId,
+        web_search_calls: acc.webSearchCalls,
+        web_search_queries: acc.webSearchQueries,
+        execution_ms: Date.now() - started,
+        usage: acc.usage,
+        raw_text_length: acc.text.length,
+        parse_error: null,
+      },
+    };
   }
 
   const telemetry: PocTelemetry = {
