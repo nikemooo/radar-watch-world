@@ -108,7 +108,7 @@ function Onboarding() {
   const [frequency, setFrequency] = useState<RadarFrequency>("daily");
   const [radarId, setRadarId] = useState<string | null>(null);
   const [interpretPhase, setInterpretPhase] = useState(0);
-  const [sweepPhase, setSweepPhase] = useState(0);
+  const [sweepPhaseLabel, setSweepPhaseLabel] = useState(INITIAL_SWEEP_LABEL);
   const [alert, setAlert] = useState<AlertRow | null>(null);
   const [sweepFailed, setSweepFailed] = useState(false);
   const [listingsFound, setListingsFound] = useState(0);
@@ -157,6 +157,8 @@ function Onboarding() {
       await new Promise((r) => setTimeout(r, 4000));
       try {
         const status = await sweepStatus({ data: { radarId: id, since } });
+        // Real backend progress: whatever phase the run row actually reports.
+        if (status.phaseLabel) setSweepPhaseLabel(status.phaseLabel);
         if (status.state === "completed") return "completed";
         if (status.state === "failed") return "failed";
       } catch {
@@ -219,11 +221,7 @@ function Onboarding() {
       await track("radar_created", { category, frequency, source: "onboarding" });
       queryClient.invalidateQueries();
       setStep("sweeping");
-      setSweepPhase(0);
-      const phases = window.setInterval(
-        () => setSweepPhase((p) => Math.min(p + 1, sweepProgress.length - 1)),
-        4000,
-      );
+      setSweepPhaseLabel(INITIAL_SWEEP_LABEL);
       const startedAt = new Date(Date.now() - 60_000).toISOString();
       try {
         // A full first sweep can run for minutes, so the server hands back
@@ -259,8 +257,6 @@ function Onboarding() {
         }
       } catch {
         setSweepFailed(true);
-      } finally {
-        window.clearInterval(phases);
       }
       setStep("result");
     } catch (error) {
@@ -499,7 +495,7 @@ function Onboarding() {
         <div className="flex w-full max-w-md flex-col items-center text-center">
           <RadarMark className="size-12" />
           <h1 className="mt-6 text-xl font-semibold">Radar is searching…</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{sweepProgress[sweepPhase]}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{sweepPhaseLabel}</p>
           <p className="mt-6 text-xs text-muted-foreground">
             The first run is a full market scan — it lists everything matching right now instead of
             alerting you just because the Radar is new.
