@@ -44,7 +44,19 @@ import {
   missingKeys,
   type EvidenceDoc,
 } from "./enrichment";
+import {
+  applyVisualEvidence,
+  collectAttributeEvidence,
+  imageEvidence,
+  storableEvidence,
+  structuredPrice,
+  type AttributeEvidence,
+  type ImageEvidence,
+  type StoredEvidence,
+} from "./evidence";
+import { detectIdentifiers, mergeIdentifiers, presentableIdentifiers, type Identifier } from "./identifiers";
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
+
 import {
   COUNTRY_ATTRIBUTE,
   countryAttribute,
