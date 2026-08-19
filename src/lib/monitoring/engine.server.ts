@@ -1319,13 +1319,34 @@ export async function runRadarCycle(
           // price — otherwise the value stays unknown.
           const valueSpec = valueKey ? specs.find((s) => s.key === valueKey) : undefined;
           if (valueSpec) {
+            const structuredByUrl = new Map(fetched.pages.map((p) => [p.url, p.structured]));
             for (const d of details) {
               const current = d.attributes[valueSpec.key];
               if (current?.raw) {
                 console.info(`[radar:price] ${d.url} — price from detail page (${current.raw})`);
                 continue;
               }
+              // Structured commerce metadata states a price far more often than
+              // the prose does on client-rendered marketplaces.
+              const st = structuredByUrl.get(d.url);
+              const fromStructured = st
+                ? structuredPrice({ ...st.jsonld, ...st.og, ...st.meta, ...st.fields })
+                : null;
+              if (fromStructured) {
+                d.attributes[valueSpec.key] = normalizeAttribute(
+                  valueSpec,
+                  fromStructured.raw,
+                  "structured",
+                  d.url,
+                );
+                structuredPricesApplied += 1;
+                d.extracted += 1;
+                d.missing = Math.max(0, d.missing - 1);
+                console.info(`[radar:price] ${d.url} — price from structured metadata (${fromStructured.raw})`);
+                continue;
+              }
               const hint = indexPriceHints.get(d.url) ?? indexPriceHints.get(`${d.url}/`);
+
               if (hint && hint.value !== null) {
                 d.attributes[valueSpec.key] = {
                   ...normalizeAttribute(valueSpec, hint.raw, "structured", hint.sourceUrl),
