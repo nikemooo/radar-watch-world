@@ -126,6 +126,46 @@ function textOf(subject: MatchSubject, constraint: HardConstraint): { text: stri
   return null;
 }
 
+/**
+ * Identity fallback for a text requirement: instead of demanding that one
+ * field literally contains the user's wording, resolve the canonical identity
+ * against every surface Radar retrieved. A different generation is a proven
+ * rejection; a fully stated identity is a proven match; a stated family with an
+ * unstated generation stays unverified but is reported as PROBABLE.
+ */
+function identityOutcome(
+  subject: MatchSubject,
+  constraint: HardConstraint,
+  fallback: CriterionOutcome,
+): CriterionOutcome {
+  const sources = subject.identitySources ?? [];
+  if (sources.length === 0) return fallback;
+  const wording = [String(constraint.value), ...(constraint.aliases ?? [])].filter(Boolean);
+  let best: IdentityResolution | null = null;
+  const rank: Record<string, number> = { verified: 4, probable: 3, conflicted: 2, unknown: 1 };
+  for (const text of wording) {
+    const resolution = resolveIdentity(parseIdentity(text), sources);
+    if (!best || rank[resolution.status]! > rank[best.status]!) best = resolution;
+  }
+  if (!best) return fallback;
+  if (best.status === "verified") {
+    return { constraint, status: "match", reason: best.explanation, observedRaw: fallback.observedRaw, identity: best };
+  }
+  if (best.status === "conflicted") {
+    return { constraint, status: "reject", reason: best.explanation, observedRaw: fallback.observedRaw, identity: best };
+  }
+  if (best.status === "probable") {
+    return {
+      constraint,
+      status: "unverified",
+      reason: best.explanation,
+      observedRaw: fallback.observedRaw,
+      identity: best,
+    };
+  }
+  return { ...fallback, identity: best };
+}
+
 /** Evaluate one constraint against one item. Pure and fully explainable. */
 export function evaluateConstraint(subject: MatchSubject, constraint: HardConstraint): CriterionOutcome {
   const label = labelOf(constraint);
@@ -146,22 +186,31 @@ export function evaluateConstraint(subject: MatchSubject, constraint: HardConstr
           observedRaw: subject.title,
         };
       }
-      return {
+      const unknown: CriterionOutcome = {
         constraint,
         status: "unverified",
         reason: `${constraint.attribute} unknown — cannot safely verify ${label}`,
         observedRaw: null,
       };
+      return constraint.op === "includes" ? identityOutcome(subject, constraint, unknown) : unknown;
     }
     if (constraint.op === "includes") {
-      return found
-        ? { constraint, status: "match", reason: `${constraint.attribute} = "${field.raw}" satisfies ${label}`, observedRaw: field.raw }
-        : {
-            constraint,
-            status: "reject",
-            reason: `${constraint.attribute} = "${field.raw}" does not match required "${constraint.value}"`,
-            observedRaw: field.raw,
-          };
+      if (found) {
+        return {
+          constraint,
+          status: "match",
+          reason: `${constraint.attribute} = "${field.raw}" satisfies ${label}`,
+          observedRaw: field.raw,
+        };
+      }
+      // The field says something else — but marketplaces spell the same product
+      // a dozen ways, so a literal mismatch is not yet a rejection.
+      return identityOutcome(subject, constraint, {
+        constraint,
+        status: "reject",
+        reason: `${constraint.attribute} = "${field.raw}" does not match required "${constraint.value}"`,
+        observedRaw: field.raw,
+      });
     }
     return found
       ? {
@@ -172,6 +221,8 @@ export function evaluateConstraint(subject: MatchSubject, constraint: HardConstr
         }
       : { constraint, status: "match", reason: `${constraint.attribute} = "${field.raw}" satisfies ${label}`, observedRaw: field.raw };
   }
+
+
 
   const observed = numericOf(subject, constraint);
   if (!observed) {
