@@ -27,7 +27,7 @@ export const Route = createFileRoute("/_authenticated/settings")({
 function Settings() {
   const queryClient = useQueryClient();
   const t = useT();
-  const { locale, setLocale, isSystemLocale } = useI18n();
+  const { locale, setLocale, usingSystemLanguage } = useI18n();
   const researchStatus = useServerFn(getResearchStatus);
   const [displayName, setDisplayName] = useState("");
   const [digestHour, setDigestHour] = useState(8);
@@ -128,7 +128,7 @@ function Settings() {
         <p className="text-sm text-muted-foreground">{t("settings.languageBody")}</p>
         <div className="flex flex-wrap gap-2">
           <Button
-            variant={isSystemLocale ? "default" : "outline"}
+            variant={usingSystemLanguage ? "default" : "outline"}
             size="sm"
             onClick={() => setLocale(null)}
           >
@@ -137,7 +137,7 @@ function Settings() {
           {(Object.keys(LOCALE_NAMES) as Locale[]).map((code) => (
             <Button
               key={code}
-              variant={!isSystemLocale && locale === code ? "default" : "outline"}
+              variant={!usingSystemLanguage && locale === code ? "default" : "outline"}
               size="sm"
               onClick={() => setLocale(code)}
             >
