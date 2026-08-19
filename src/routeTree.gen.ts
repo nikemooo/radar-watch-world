@@ -22,6 +22,7 @@ import { Route as AuthenticatedIntelligenceRouteImport } from './routes/_authent
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as AuthenticatedAdminSearchTestRouteImport } from './routes/_authenticated/admin_.search-test'
 import { Route as AuthenticatedRadarsIndexRouteImport } from './routes/_authenticated/radars.index'
 import { Route as AuthenticatedRadarsRadarIdRouteImport } from './routes/_authenticated/radars.$radarId'
 import { Route as AuthenticatedRadarsNewRouteImport } from './routes/_authenticated/radars.new'
@@ -97,6 +98,12 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/callback',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthenticatedAdminSearchTestRoute =
+  AuthenticatedAdminSearchTestRouteImport.update({
+    id: '/admin_/search-test',
+    path: '/admin/search-test',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedRadarsIndexRoute =
   AuthenticatedRadarsIndexRouteImport.update({
     id: '/radars/',
@@ -161,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/admin/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
   '/api/test/openai-web-search': typeof ApiTestOpenaiWebSearchRoute
@@ -184,6 +192,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/admin/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
   '/api/test/openai-web-search': typeof ApiTestOpenaiWebSearchRoute
@@ -209,6 +218,7 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/_authenticated/admin_/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/_authenticated/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/_authenticated/radars/new': typeof AuthenticatedRadarsNewRoute
   '/api/test/openai-web-search': typeof ApiTestOpenaiWebSearchRoute
@@ -234,6 +244,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/settings'
     | '/auth/callback'
+    | '/admin/search-test'
     | '/radars/$radarId'
     | '/radars/new'
     | '/api/test/openai-web-search'
@@ -257,6 +268,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/settings'
     | '/auth/callback'
+    | '/admin/search-test'
     | '/radars/$radarId'
     | '/radars/new'
     | '/api/test/openai-web-search'
@@ -281,6 +293,7 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/settings'
     | '/auth/callback'
+    | '/_authenticated/admin_/search-test'
     | '/_authenticated/radars/$radarId'
     | '/_authenticated/radars/new'
     | '/api/test/openai-web-search'
@@ -399,6 +412,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_authenticated/admin_/search-test': {
+      id: '/_authenticated/admin_/search-test'
+      path: '/admin/search-test'
+      fullPath: '/admin/search-test'
+      preLoaderRoute: typeof AuthenticatedAdminSearchTestRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/radars/': {
       id: '/_authenticated/radars/'
       path: '/radars'
@@ -473,6 +493,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedIntelligenceRoute: typeof AuthenticatedIntelligenceRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedAdminSearchTestRoute: typeof AuthenticatedAdminSearchTestRoute
   AuthenticatedRadarsRadarIdRoute: typeof AuthenticatedRadarsRadarIdRoute
   AuthenticatedRadarsNewRoute: typeof AuthenticatedRadarsNewRoute
   AuthenticatedRadarsIndexRoute: typeof AuthenticatedRadarsIndexRoute
@@ -486,6 +507,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIntelligenceRoute: AuthenticatedIntelligenceRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedAdminSearchTestRoute: AuthenticatedAdminSearchTestRoute,
   AuthenticatedRadarsRadarIdRoute: AuthenticatedRadarsRadarIdRoute,
   AuthenticatedRadarsNewRoute: AuthenticatedRadarsNewRoute,
   AuthenticatedRadarsIndexRoute: AuthenticatedRadarsIndexRoute,
