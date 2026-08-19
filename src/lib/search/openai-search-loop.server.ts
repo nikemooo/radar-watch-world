@@ -434,7 +434,10 @@ function evaluate(d: DetailRecord, c: LoopCriteria): EvaluatedCandidate["criteri
     });
   }
   if (c.country) {
-    const hit = norm(d.country).includes(c.country.toLowerCase()) || norm(d.country) === "se";
+    const aliases: Record<string, string[]> = { sweden: ["sweden", "sverige", "se", "swedish"] };
+    const want = c.country.toLowerCase();
+    const names = aliases[want] ?? [want];
+    const hit = names.some((n) => norm(d.country) === n || norm(d.country).includes(n));
     out.push({
       key: `country=${c.country}`,
       status: hit ? "verified" : d.country ? "rejected" : "unknown",
@@ -449,7 +452,10 @@ function evaluate(d: DetailRecord, c: LoopCriteria): EvaluatedCandidate["criteri
     });
   }
   if (c.maxPrice !== undefined) {
-    const wrongCurrency = d.price !== null && c.currency && d.currency && d.currency !== c.currency;
+    const cur = (d.currency ?? "").toLowerCase();
+    const normalizedCurrency = cur === "kr" || cur === "sek" ? "SEK" : (d.currency ?? null);
+    const wrongCurrency =
+      d.price !== null && !!c.currency && !!normalizedCurrency && normalizedCurrency !== c.currency;
     out.push({
       key: `price<=${c.maxPrice} ${c.currency ?? ""}`.trim(),
       status:
@@ -460,7 +466,7 @@ function evaluate(d: DetailRecord, c: LoopCriteria): EvaluatedCandidate["criteri
             : d.price <= c.maxPrice
               ? "verified"
               : "rejected",
-      detail: d.price === null ? null : `${d.price} ${d.currency ?? "?"}`,
+      detail: d.price === null ? null : `${d.price} ${normalizedCurrency ?? "?"}`,
     });
   }
   if (c.requireAvailable) {
