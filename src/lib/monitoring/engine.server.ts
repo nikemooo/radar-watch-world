@@ -521,13 +521,24 @@ export async function runRadarCycle(
    * the whole sweep fails honestly (lock released, radar restored) instead of
    * pretending to be resumable.
    */
-  const step = <T,>(key: string, fn: () => Promise<T>): Promise<T> =>
-    checkpoints
-      .step(key, fn, { phase: currentPhase })
-      .then(async (value) => {
-        await patchRun({ last_successful_operation: key });
-        return value;
-      });
+  const deadlineAt = options.deadlineAt ?? null;
+  /**
+   * True when this invocation stopped on its slice deadline rather than
+   * finishing. The run then stays claimed (and locked) so the next invocation
+   * resumes it from the checkpoint just written.
+   */
+  let paused = false;
+  const step = async <T,>(key: string, fn: () => Promise<T>): Promise<T> => {
+    const resumedBefore = checkpoints.resumedSteps;
+    const value = await checkpoints.step(key, fn, { phase: currentPhase });
+    const fresh = checkpoints.resumedSteps === resumedBefore;
+    if (fresh) await patchRun({ last_successful_operation: key });
+    if (fresh && deadlineAt !== null && Date.now() > deadlineAt) {
+      paused = true;
+      throw new SweepPaused(currentPhase, key);
+    }
+    return value;
+  };
 
 
   const patchRun = async (patch: Database["public"]["Tables"]["monitor_runs"]["Update"]) => {
@@ -554,9 +565,11 @@ export async function runRadarCycle(
     return await runCycleBody();
   } finally {
     if (ownsTracker) tracker.stop();
-    // Whatever happened, the radar must not stay locked.
-    if (runId) await clearRunLock(db, radar.id, runId);
+    // Whatever happened, the radar must not stay locked — unless this
+    // invocation only paused, in which case the run still owns the radar.
+    if (runId && !paused) await clearRunLock(db, radar.id, runId);
   }
+
 
   // eslint-disable-next-line no-inner-declarations
   async function runCycleBody(): Promise<RunResult> {
