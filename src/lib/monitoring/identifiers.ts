@@ -69,7 +69,7 @@ export function detectIdentifiers(input: {
   for (const [rawKey, rawValue] of Object.entries(input.fields ?? {})) {
     const key = rawKey.toLowerCase();
     const value = clean(rawValue);
-    if (!value || value.length < 4) continue;
+    if (!value || value.length < 4 || !/\d/.test(value)) continue;
     for (const { type, labels } of LABELS) {
       if (!labels.some((l) => key === l || key.includes(l))) continue;
       if (type === "vin" && !validVin(value.replace(/\s/g, ""))) continue;
@@ -82,10 +82,17 @@ export function detectIdentifiers(input: {
     // 2. Labelled values written in prose ("Chassinummer: WBA8E9...").
     for (const { type, labels } of LABELS) {
       for (const label of labels) {
-        const re = new RegExp(`${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[:#-]?\\s*([A-Z0-9][A-Z0-9 \\-/]{3,30})`, "i");
+        // The label must stand on its own word boundary, be followed by a real
+        // separator, and introduce a value that carries at least one digit —
+        // otherwise page scripts ("indexOf", "reference:") become identifiers.
+        const re = new RegExp(
+          `(?:^|[^\\p{L}\\p{N}])${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[:#]\\s*([A-Z0-9][A-Z0-9 \\-/]{3,30})`,
+          "iu",
+        );
         const m = text.match(re);
         const value = m?.[1] ? clean(m[1]) : null;
         if (!value) continue;
+        if (!/\d/.test(value)) continue;
         if (type === "vin" && !validVin(value.replace(/[\s-]/g, ""))) continue;
         add({ type, value, confidence: "labelled", sourceUrl: input.url });
         break;

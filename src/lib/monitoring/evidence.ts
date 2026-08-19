@@ -93,6 +93,16 @@ function signatureOf(value: AttributeValue): string {
     .trim();
 }
 
+/**
+ * Guard against page machinery leaking into evidence. Stylesheets, inline
+ * scripts and markup fragments are not statements about the item, so a value
+ * that looks like code is never recorded as a fact.
+ */
+export function plausibleValue(raw: string): boolean {
+  if (raw.length > 120) return false;
+  return !/var\(--|[{}]|;\s*$|=>|function\s*\(|<\/?[a-z]+>|\bpx\b\s*[;)]|https?:\/\/\S+\s+\S+\s+\S+/i.test(raw);
+}
+
 function factual(record: EvidenceRecord): boolean {
   return record.strength === "structured" || record.strength === "stated";
 }
@@ -113,6 +123,7 @@ export function collectAttributeEvidence(
     for (const spec of specs) {
       const value = reading.attributes[spec.key];
       if (!value || value.confidence === "unknown" || !value.raw) continue;
+      if (!plausibleValue(value.raw)) continue;
       const bucket = byAttribute.get(spec.key)!;
       const signature = signatureOf(value);
       bucket.records.push({
