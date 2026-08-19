@@ -20,6 +20,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { runVerdict } from "./lifecycle";
 import { keepRuntimeAlive } from "../runtime-context.server";
+import { isSweepPaused, UI_SLICE_MS } from "./slice";
+
 
 type Db = SupabaseClient<Database>;
 type RadarRow = Database["public"]["Tables"]["radars"]["Row"];
@@ -79,7 +81,19 @@ export async function claimContinuation(
  */
 export async function resumeInterruptedRuns(
   db: Db,
-  options: { radarId?: string; userId?: string; now?: number; limit?: number } = {},
+  options: {
+    radarId?: string;
+    userId?: string;
+    now?: number;
+    limit?: number;
+    /**
+     * Run the continuation inside THIS request (bounded by `sliceMs`) instead
+     * of detaching it. Awaiting is what makes progress independent of whether
+     * the runtime keeps background work alive.
+     */
+    await?: boolean;
+    sliceMs?: number;
+  } = {},
 ): Promise<ContinuationOutcome[]> {
   const now = options.now ?? Date.now();
   let query = db
@@ -98,9 +112,12 @@ export async function resumeInterruptedRuns(
   }
 
   const resumed: ContinuationOutcome[] = [];
+  const sliceMs = options.sliceMs ?? UI_SLICE_MS;
+  const budgetEnd = Date.now() + sliceMs;
   for (const run of data ?? []) {
     const verdict = runVerdict(run, now);
     if (verdict.state !== "resume") continue;
+    if (options.await && Date.now() >= budgetEnd) break;
     if (!(await claimContinuation(db, run, now))) continue;
 
     const { data: radar } = await db
@@ -113,19 +130,27 @@ export async function resumeInterruptedRuns(
     console.info(
       `[radar:continuation] resuming run ${run.id} (radar ${run.radar_id}) from phase ${run.current_phase ?? "?"} — attempt ${verdict.attempt + 1}`,
     );
-    startContinuation(db, radar as RadarRow, run.id, run.started_at);
+    const work = startContinuation(db, radar as RadarRow, run.id, run.started_at, budgetEnd);
+    if (options.await) await work;
     resumed.push({ runId: run.id, radarId: run.radar_id, attempt: verdict.attempt + 1 });
   }
   return resumed;
 }
 
 /**
- * Run one more invocation of an already-claimed run.
+ * Run one more slice of an already-claimed run.
  *
  * The engine is imported lazily so that merely reading a status never pulls the
- * whole monitoring stack into the request.
+ * whole monitoring stack into the request. The returned promise settles when
+ * the slice finishes, pauses on its deadline, or fails.
  */
-function startContinuation(db: Db, radar: RadarRow, runId: string, startedAt: string): void {
+function startContinuation(
+  db: Db,
+  radar: RadarRow,
+  runId: string,
+  startedAt: string,
+  deadlineAt: number,
+): Promise<void> {
   const work = (async () => {
     const [{ runRadarCycle }, { startRunHeartbeat }, { releaseRadar }] = await Promise.all([
       import("./engine.server"),
@@ -134,8 +159,20 @@ function startContinuation(db: Db, radar: RadarRow, runId: string, startedAt: st
     ]);
     const tracker = startRunHeartbeat(db, runId);
     try {
-      await runRadarCycle(db, radar, { runId, startedAt, tracker, continuation: true });
+      await runRadarCycle(db, radar, {
+        runId,
+        startedAt,
+        tracker,
+        continuation: true,
+        deadlineAt,
+      });
     } catch (err) {
+      if (isSweepPaused(err)) {
+        // Expected: the slice ended between two checkpointed steps. The run
+        // stays running and the next tick/poll carries it forward.
+        console.info(`[radar:continuation] run ${runId} paused — ${(err as Error).message}`);
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[radar:continuation] run ${runId} failed — ${message}`);
       await db
@@ -159,4 +196,6 @@ function startContinuation(db: Db, radar: RadarRow, runId: string, startedAt: st
 
   keepRuntimeAlive(work);
   work.catch(() => undefined);
+  return work;
 }
+

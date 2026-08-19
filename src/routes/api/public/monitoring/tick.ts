@@ -37,7 +37,15 @@ async function handleTick(request: Request): Promise<Response> {
     import("@/lib/monitoring/scheduler.server"),
   ]);
 
-  const resumed = await resumeInterruptedRuns(supabaseAdmin, { limit: 10 });
+  // The tick does the work itself, inside this request: a slice of every
+  // resumable run, bounded so the response still returns. Nothing depends on
+  // background execution surviving the response.
+  const { TICK_SLICE_MS } = await import("@/lib/monitoring/slice");
+  const resumed = await resumeInterruptedRuns(supabaseAdmin, {
+    limit: 10,
+    await: true,
+    sliceMs: TICK_SLICE_MS,
+  });
   const reaped = await reapStaleRuns(supabaseAdmin);
   const started = await startDueRadars(supabaseAdmin, { limit: 5 });
 
