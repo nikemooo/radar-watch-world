@@ -2322,7 +2322,8 @@ ${eligible
     searchRequests: research.requests,
     searchFailures: research.failures,
     costEstimate: Number((research.costEstimate + detailCostEstimate + indexExpansionCost).toFixed(4)),
-    duplicatesRemoved: research.duplicatesRemoved,
+    duplicatesRemoved: research.duplicatesRemoved + listingDuplicatesRemoved,
+
     baselineFindings,
     incrementalFindings,
     suppressedBaseline,
