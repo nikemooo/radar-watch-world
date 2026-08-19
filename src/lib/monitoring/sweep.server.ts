@@ -24,6 +24,7 @@ import { beginRun, runRadarCycle, type RunOptions, type RunResult } from "./engi
 import { keepRuntimeAlive } from "../runtime-context.server";
 import { startRunHeartbeat } from "./heartbeat.server";
 import { reapStaleRuns, releaseRadar } from "./reaper.server";
+import { resumeInterruptedRuns } from "./continuation.server";
 import { phaseLabel } from "./lifecycle";
 
 type Db = SupabaseClient<Database>;
@@ -54,6 +55,14 @@ export type SweepStatus = {
   detailFetches: number;
   startedAt: string | null;
   finishedAt: string | null;
+  /** Which worker invocation is currently carrying the run (1 = the first). */
+  attempt: number;
+  /** How many times the run had to be picked up again after an interruption. */
+  continuations: number;
+  lastOperation: string | null;
+  phaseStartedAt: string | null;
+  /** True when the run is claimed but waiting to be picked up again. */
+  resuming: boolean;
 };
 
 export async function startRadarSweep(
@@ -131,12 +140,17 @@ export async function readSweepStatus(
 ): Promise<SweepStatus> {
   // Recovery is never left to chance: every status read first closes runs whose
   // worker has gone quiet, so the UI cannot show an endless "searching".
+  // Recovery is never left to chance. A quiet run is first offered a
+  // continuation (it resumes from its checkpoints, paying nothing twice); only
+  // a run that can no longer be resumed is closed as failed. Either way the UI
+  // can never show an endless "searching".
+  const resumed = await resumeInterruptedRuns(db, { radarId });
   await reapStaleRuns(db, { radarId });
 
   let query = db
     .from("monitor_runs")
     .select(
-      "id, status, run_type, error, failure_reason, current_phase, heartbeat_at, items_found, new_items, alerts_created, sources_retrieved, candidates_discovered, detail_fetches_ok, started_at, finished_at",
+      "id, status, run_type, error, failure_reason, current_phase, heartbeat_at, items_found, new_items, alerts_created, sources_retrieved, candidates_discovered, detail_fetches_ok, started_at, finished_at, attempt, continuation_count, last_successful_operation, phase_started_at",
     )
     .eq("radar_id", radarId)
     .order("started_at", { ascending: false })
@@ -165,6 +179,11 @@ export async function readSweepStatus(
       detailFetches: 0,
       startedAt: null,
       finishedAt: null,
+      attempt: 0,
+      continuations: 0,
+      lastOperation: null,
+      phaseStartedAt: null,
+      resuming: false,
     };
   }
 
@@ -194,5 +213,10 @@ export async function readSweepStatus(
     detailFetches: run.detail_fetches_ok,
     startedAt: run.started_at,
     finishedAt: run.finished_at,
+    attempt: run.attempt ?? 1,
+    continuations: run.continuation_count ?? 0,
+    lastOperation: run.last_successful_operation,
+    phaseStartedAt: run.phase_started_at,
+    resuming: resumed.some((r) => r.runId === run.id),
   };
 }
