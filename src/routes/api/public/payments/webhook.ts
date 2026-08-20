@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type Stripe from "stripe";
 import { createStripeClient, type StripeEnv } from "@/lib/stripe.server";
+import { runBillingLifecycle, type LifecycleEvent } from "@/lib/billing/lifecycle.server";
 
 async function planForPrice(
   db: any,
@@ -37,7 +38,7 @@ async function syncSubscription(db: any, sub: Stripe.Subscription, environment: 
 
   const { data: existing } = await db
     .from("subscriptions")
-    .select("id, user_id, pending_plan_key")
+    .select("id, user_id, pending_plan_key, plan_key")
     .eq("stripe_subscription_id", sub.id)
     .maybeSingle();
 
@@ -75,6 +76,8 @@ async function syncSubscription(db: any, sub: Stripe.Subscription, environment: 
     .from("profiles")
     .update({ plan_key: active ? planKey : "free" })
     .eq("id", resolvedUserId);
+
+  return { previousPlanKey: existing?.plan_key ?? "free", planKey, active, marketCode, currency, periodEnd };
 }
 
 export const Route = createFileRoute("/api/public/payments/webhook")({
@@ -118,7 +121,18 @@ export const Route = createFileRoute("/api/public/payments/webhook")({
                   });
                   (sub.metadata as Record<string, string>)['user_id'] = userId;
                 }
-                await syncSubscription(supabaseAdmin, sub, environment);
+                const synced = await syncSubscription(supabaseAdmin, sub, environment);
+                if (synced?.active) {
+                  const lifecycleEvent: LifecycleEvent = {
+                    type: "subscription_started",
+                    userId,
+                    planKey: synced.planKey,
+                    environment,
+                    marketCode: synced.marketCode,
+                    currency: synced.currency,
+                  };
+                  await runBillingLifecycle(supabaseAdmin, lifecycleEvent);
+                }
               }
               break;
             }
@@ -128,7 +142,37 @@ export const Route = createFileRoute("/api/public/payments/webhook")({
               await syncSubscription(supabaseAdmin, event.data.object as Stripe.Subscription, environment);
               break;
             }
-            case "invoice.paid":
+            case "invoice.paid": {
+              const invoice = event.data.object as Stripe.Invoice;
+              const subId =
+                typeof (invoice as any).subscription === "string"
+                  ? (invoice as any).subscription
+                  : (invoice as any).subscription?.id;
+              if (subId) {
+                const sub = await stripe.subscriptions.retrieve(subId);
+                const synced = await syncSubscription(supabaseAdmin, sub, environment);
+                if (synced?.planKey && invoice.customer) {
+                  const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer.id;
+                  const { data: rows } = await supabaseAdmin
+                    .from("subscriptions")
+                    .select("user_id")
+                    .eq("stripe_customer_id", customerId)
+                    .eq("environment", environment)
+                    .limit(1);
+                  const userId = rows?.[0]?.user_id;
+                  if (userId) {
+                    await runBillingLifecycle(supabaseAdmin, {
+                      type: "payment_succeeded",
+                      userId,
+                      planKey: synced.planKey,
+                      environment,
+                      invoiceId: invoice.id,
+                    });
+                  }
+                }
+              }
+              break;
+            }
             case "invoice.payment_failed": {
               const invoice = event.data.object as Stripe.Invoice;
               const subId =
@@ -137,7 +181,26 @@ export const Route = createFileRoute("/api/public/payments/webhook")({
                   : (invoice as any).subscription?.id;
               if (subId) {
                 const sub = await stripe.subscriptions.retrieve(subId);
-                await syncSubscription(supabaseAdmin, sub, environment);
+                const synced = await syncSubscription(supabaseAdmin, sub, environment);
+                if (synced?.planKey && invoice.customer) {
+                  const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer.id;
+                  const { data: rows } = await supabaseAdmin
+                    .from("subscriptions")
+                    .select("user_id")
+                    .eq("stripe_customer_id", customerId)
+                    .eq("environment", environment)
+                    .limit(1);
+                  const userId = rows?.[0]?.user_id;
+                  if (userId) {
+                    await runBillingLifecycle(supabaseAdmin, {
+                      type: "payment_failed",
+                      userId,
+                      planKey: synced.planKey,
+                      environment,
+                      invoiceId: invoice.id,
+                    });
+                  }
+                }
               }
               break;
             }
