@@ -22,6 +22,7 @@ import { Route as AuthenticatedIntelligenceRouteImport } from './routes/_authent
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as CheckoutReturnRouteImport } from './routes/checkout/return'
 import { Route as AuthenticatedAdminSearchLoopRouteImport } from './routes/_authenticated/admin_.search-loop'
 import { Route as AuthenticatedAdminSearchTestRouteImport } from './routes/_authenticated/admin_.search-test'
 import { Route as AuthenticatedRadarsIndexRouteImport } from './routes/_authenticated/radars.index'
@@ -99,6 +100,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/callback',
   path: '/callback',
   getParentRoute: () => AuthRoute,
+} as any)
+const CheckoutReturnRoute = CheckoutReturnRouteImport.update({
+  id: '/checkout/return',
+  path: '/checkout/return',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAdminSearchLoopRoute =
   AuthenticatedAdminSearchLoopRouteImport.update({
@@ -181,6 +187,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/checkout/return': typeof CheckoutReturnRoute
   '/admin/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/admin/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
@@ -207,6 +214,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/checkout/return': typeof CheckoutReturnRoute
   '/admin/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/admin/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
@@ -235,6 +243,7 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/checkout/return': typeof CheckoutReturnRoute
   '/_authenticated/admin_/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/_authenticated/admin_/search-test': typeof AuthenticatedAdminSearchTestRoute
   '/_authenticated/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
@@ -263,6 +272,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/settings'
     | '/auth/callback'
+    | '/checkout/return'
     | '/admin/search-loop'
     | '/admin/search-test'
     | '/radars/$radarId'
@@ -289,6 +299,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/settings'
     | '/auth/callback'
+    | '/checkout/return'
     | '/admin/search-loop'
     | '/admin/search-test'
     | '/radars/$radarId'
@@ -316,6 +327,7 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/settings'
     | '/auth/callback'
+    | '/checkout/return'
     | '/_authenticated/admin_/search-loop'
     | '/_authenticated/admin_/search-test'
     | '/_authenticated/radars/$radarId'
@@ -336,6 +348,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren
   PricingRoute: typeof PricingRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  CheckoutReturnRoute: typeof CheckoutReturnRoute
   ApiTestOpenaiSearchLoopRoute: typeof ApiTestOpenaiSearchLoopRoute
   ApiTestOpenaiWebSearchRoute: typeof ApiTestOpenaiWebSearchRoute
   ApiPublicMonitoringProbeRoute: typeof ApiPublicMonitoringProbeRoute
@@ -437,6 +450,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/auth/callback'
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof AuthRoute
+    }
+    '/checkout/return': {
+      id: '/checkout/return'
+      path: '/checkout/return'
+      fullPath: '/checkout/return'
+      preLoaderRoute: typeof CheckoutReturnRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/admin_/search-loop': {
       id: '/_authenticated/admin_/search-loop'
@@ -574,6 +594,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRouteWithChildren,
   PricingRoute: PricingRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  CheckoutReturnRoute: CheckoutReturnRoute,
   ApiTestOpenaiSearchLoopRoute: ApiTestOpenaiSearchLoopRoute,
   ApiTestOpenaiWebSearchRoute: ApiTestOpenaiWebSearchRoute,
   ApiPublicMonitoringProbeRoute: ApiPublicMonitoringProbeRoute,

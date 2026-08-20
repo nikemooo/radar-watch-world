@@ -12,14 +12,15 @@ export const Route = createFileRoute("/checkout/return")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
-  validateSearch: (search: Record<string, unknown>): { session_id?: string } => ({
-    session_id: typeof search.session_id === "string" ? search.session_id : undefined,
+  validateSearch: (search: Record<string, unknown>): { session_id?: string | undefined } => ({
+    session_id: typeof search['session_id'] === "string" ? search['session_id'] : undefined,
   }),
   component: CheckoutReturn,
 });
 
 function CheckoutReturn() {
-  const { session_id: sessionId } = Route.useSearch();
+  const search = Route.useSearch();
+  const sessionId = search['session_id'];
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">

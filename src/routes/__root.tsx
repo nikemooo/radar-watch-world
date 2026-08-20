@@ -142,6 +142,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* The whole app speaks the visitor's system language unless they picked one. */}
       <I18nProvider>
+        <PaymentTestModeBanner />
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
         <Outlet />
         <Toaster position="top-right" />
