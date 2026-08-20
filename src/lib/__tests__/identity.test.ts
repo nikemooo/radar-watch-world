@@ -77,6 +77,31 @@ describe("identity resolution over evidence", () => {
     expect(r.status).toBe("verified");
   });
 
+  it("rejects a different model code from the same numbering scheme", () => {
+    expect(resolveIdentity(parseIdentity("BMW M340i"), [src("detail_title", "BMW 330i xDrive")]).status).toBe(
+      "conflicted",
+    );
+    expect(
+      resolveIdentity(parseIdentity("Rolex Submariner Date 126610LN"), [
+        src("detail_title", "Rolex Submariner No Date 124060"),
+      ]).status,
+    ).toBe("conflicted");
+  });
+
+  it("does not mistake a price for a model code", () => {
+    const r = resolveIdentity(parseIdentity("Rolex Submariner Date 126610LN"), [
+      src("detail_title", "Rolex Submariner Date 126610LN"),
+      src("detail_text", "Pris: 129000 kr inklusive box och papper"),
+    ]);
+    expect(r.status).toBe("verified");
+  });
+
+  it("stays unknown when only a generic brand word is stated", () => {
+    expect(resolveIdentity(parseIdentity("BMW M340i"), [src("detail_title", "BMW M3 Competition")]).status).toBe(
+      "unknown",
+    );
+  });
+
   it("never verifies without a retrieved source", () => {
     expect(resolveIdentity(target, []).status).toBe("unknown");
   });
