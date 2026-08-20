@@ -31,10 +31,17 @@ export const getBillingState = createServerFn({ method: "GET" })
     };
   });
 
-/** Start a Stripe Checkout session for a paid plan (test mode). */
+/** Start a Stripe Embedded Checkout session for a paid plan. */
 export const createCheckoutSession = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { planKey: string; interval: "month" | "year"; returnUrl: string; marketCode?: string; localeHint?: string }) => {
+  .inputValidator((input: {
+    planKey: string;
+    interval: "month" | "year";
+    returnUrl: string;
+    marketCode?: string | null;
+    localeHint?: string | null;
+    environment: StripeEnv;
+  }) => {
     if (!input?.planKey || !input?.returnUrl) throw new Error("Missing plan or return URL.");
     return {
       planKey: input.planKey,
@@ -42,9 +49,10 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       returnUrl: input.returnUrl,
       marketCode: typeof input.marketCode === "string" ? input.marketCode.toLowerCase() : null,
       localeHint: typeof input.localeHint === "string" ? input.localeHint : null,
+      environment: input.environment === "live" ? "live" : "sandbox",
     } as const;
   })
-  .handler(async ({ data, context }): Promise<Result<{ url: string }>> => {
+  .handler(async ({ data, context }): Promise<Result<{ clientSecret: string }>> => {
     const { supabase, userId, claims } = context as { supabase: any; userId: string; claims?: { email?: string } };
     const { data: plan } = await supabase.from("plans").select("key").eq("key", data.planKey).maybeSingle();
     if (!plan) return { error: "Unknown plan." };
@@ -56,7 +64,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     const resolved = await resolveBillingMarket(supabase, userId, {
       requestedCode: data.marketCode,
       localeHint: data.localeHint,
-      environment: ENV,
+      environment: data.environment,
     });
     const planPrice = await resolvePlanPrice(supabase, data.planKey, resolved.market.code, data.interval);
     if (!planPrice) return { error: `This plan is not available in ${resolved.market.name} yet.` };
@@ -66,7 +74,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       .from("subscriptions")
       .select("stripe_customer_id, stripe_subscription_id, status")
       .eq("user_id", userId)
-      .eq("environment", ENV)
+      .eq("environment", data.environment)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -76,14 +84,15 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     }
 
     try {
-      const stripe = createStripeClient(ENV);
+      const stripe = createStripeClient(data.environment);
       const mismatch = await assertStripePriceMatches(stripe, planPrice);
       if (mismatch) return { error: mismatch };
+
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${data.returnUrl}?checkout=success`,
-        cancel_url: `${data.returnUrl}?checkout=cancelled`,
+        ui_mode: "embedded_page",
+        return_url: data.returnUrl,
         client_reference_id: userId,
         ...(existing?.stripe_customer_id
           ? { customer: existing.stripe_customer_id }
@@ -101,14 +110,15 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
         metadata: {
           user_id: userId,
           plan_key: data.planKey,
-          environment: ENV,
+          environment: data.environment,
           market_code: resolved.market.code,
           currency: planPrice.currency,
         },
         managed_payments: { enabled: true },
       } as any);
-      if (!session.url) return { error: "Stripe did not return a checkout URL." };
-      return { url: session.url };
+
+      if (!session.client_secret) return { error: "Stripe did not return a client secret." };
+      return { clientSecret: session.client_secret };
     } catch (error) {
       return { error: getStripeErrorMessage(error) };
     }
@@ -156,6 +166,7 @@ export const changePlan = createServerFn({ method: "POST" })
     const { supabase, userId } = context as { supabase: any; userId: string };
     const { isUpgrade } = await import("@/lib/billing/plans");
     const { getEntitlements } = await import("@/lib/billing/entitlements.server");
+    const { runBillingLifecycle } = await import("@/lib/billing/lifecycle.server");
 
     const e = await getEntitlements(supabase, userId, ENV);
     const subId = e.subscription?.stripe_subscription_id;
@@ -181,7 +192,7 @@ export const changePlan = createServerFn({ method: "POST" })
       const sub = await stripe.subscriptions.retrieve(subId);
       const item = sub.items.data[0];
       if (!item) return { error: "Subscription has no billable item." };
-      const periodEnd = (item as any).current_period_end ?? (sub as any).current_period_end ?? null;
+      const periodEnd = (sub as any).current_period_end ?? null;
       const periodEndIso = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
 
       // Downgrade to Free = cancel at period end.
@@ -191,6 +202,13 @@ export const changePlan = createServerFn({ method: "POST" })
           .from("subscriptions")
           .update({ cancel_at_period_end: true, pending_plan_key: "free", pending_effective_at: periodEndIso })
           .eq("stripe_subscription_id", subId);
+        await runBillingLifecycle(supabase, {
+          type: "subscription_cancelled",
+          userId,
+          planKey: e.planKey,
+          environment: ENV,
+          effectiveAt: periodEndIso,
+        });
         return { effect: "period_end", effectiveAt: periodEndIso, planKey: "free" };
       }
 
@@ -216,6 +234,15 @@ export const changePlan = createServerFn({ method: "POST" })
           })
           .eq("stripe_subscription_id", subId);
         await supabase.from("profiles").update({ plan_key: data.planKey }).eq("id", userId);
+        await runBillingLifecycle(supabase, {
+          type: "plan_upgraded",
+          userId,
+          fromPlanKey: e.planKey,
+          toPlanKey: data.planKey,
+          environment: ENV,
+          effect: "immediate",
+          effectiveAt: new Date().toISOString(),
+        });
         return { effect: "immediate", effectiveAt: new Date().toISOString(), planKey: data.planKey };
       }
 
@@ -244,6 +271,15 @@ export const changePlan = createServerFn({ method: "POST" })
         .from("subscriptions")
         .update({ pending_plan_key: data.planKey, pending_effective_at: periodEndIso })
         .eq("stripe_subscription_id", subId);
+      await runBillingLifecycle(supabase, {
+        type: "plan_downgraded",
+        userId,
+        fromPlanKey: e.planKey,
+        toPlanKey: data.planKey,
+        environment: ENV,
+        effect: "period_end",
+        effectiveAt: periodEndIso,
+      });
       return { effect: "period_end", effectiveAt: periodEndIso, planKey: data.planKey };
     } catch (error) {
       return { error: getStripeErrorMessage(error) };
@@ -255,6 +291,10 @@ export const cancelSubscription = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<Result<{ effectiveAt: string | null }>> => {
     const { supabase, userId } = context as { supabase: any; userId: string };
+    const { getEntitlements } = await import("@/lib/billing/entitlements.server");
+    const { runBillingLifecycle } = await import("@/lib/billing/lifecycle.server");
+    const e = await getEntitlements(supabase, userId, ENV);
+
     const { data: sub } = await supabase
       .from("subscriptions")
       .select("stripe_subscription_id, current_period_end")
@@ -271,6 +311,13 @@ export const cancelSubscription = createServerFn({ method: "POST" })
         .from("subscriptions")
         .update({ cancel_at_period_end: true, pending_plan_key: "free", pending_effective_at: sub.current_period_end })
         .eq("stripe_subscription_id", sub.stripe_subscription_id);
+      await runBillingLifecycle(supabase, {
+        type: "subscription_cancelled",
+        userId,
+        planKey: e.planKey,
+        environment: ENV,
+        effectiveAt: sub.current_period_end,
+      });
       return { effectiveAt: sub.current_period_end };
     } catch (error) {
       return { error: getStripeErrorMessage(error) };
@@ -282,6 +329,10 @@ export const resumeSubscription = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<Result<{ ok: true }>> => {
     const { supabase, userId } = context as { supabase: any; userId: string };
+    const { getEntitlements } = await import("@/lib/billing/entitlements.server");
+    const { runBillingLifecycle } = await import("@/lib/billing/lifecycle.server");
+    const e = await getEntitlements(supabase, userId, ENV);
+
     const { data: sub } = await supabase
       .from("subscriptions")
       .select("stripe_subscription_id")
@@ -298,6 +349,12 @@ export const resumeSubscription = createServerFn({ method: "POST" })
         .from("subscriptions")
         .update({ cancel_at_period_end: false, pending_plan_key: null, pending_effective_at: null })
         .eq("stripe_subscription_id", sub.stripe_subscription_id);
+      await runBillingLifecycle(supabase, {
+        type: "subscription_resumed",
+        userId,
+        planKey: e.planKey,
+        environment: ENV,
+      });
       return { ok: true };
     } catch (error) {
       return { error: getStripeErrorMessage(error) };

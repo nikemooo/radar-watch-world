@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { PaymentTestModeBanner } from "@/components/PaymentTestModeBanner";
 
 function NotFoundComponent() {
   return (
@@ -141,6 +142,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* The whole app speaks the visitor's system language unless they picked one. */}
       <I18nProvider>
+        <PaymentTestModeBanner />
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
         <Outlet />
         <Toaster position="top-right" />
