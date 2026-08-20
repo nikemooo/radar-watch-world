@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { comparableIdentity, parseIdentity, resolveIdentity, type IdentitySource } from "../monitoring/identity";
 import { dedupeListings, listingId, normalizedUrl } from "../monitoring/dedupe";
 import { evaluateConstraint } from "../monitoring/criteria";
+import { inferMarket } from "../monitoring/geo";
 
 const src = (sourceType: string, text: string, url = "https://shop.se/p/1"): IdentitySource => ({
   sourceType,
@@ -93,8 +94,24 @@ describe("identity resolution over evidence", () => {
       src("detail_title", "Rolex Submariner Date 126610LN"),
       src("detail_text", "Pris: 129000 kr inklusive box och papper"),
     ]);
-    expect(r.status).toBe("probable");
+    expect(r.status).toBe("verified");
     expect(r.conflicts).toHaveLength(0);
+  });
+
+  it("verifies from one naming source that states the identity in full", () => {
+    expect(resolveIdentity(target, [src("detail_title", "Apple AirPods Pro (2nd generation) 2022")]).status).toBe(
+      "verified",
+    );
+    expect(resolveIdentity(target, [src("index_card", "Apple AirPods Pro 2:a generationen")]).status).toBe("verified");
+    expect(resolveIdentity(parseIdentity("BMW M340i"), [src("detail_title", "BMW M340i xDrive Touring")]).status).toBe(
+      "verified",
+    );
+  });
+
+  it("does not verify from loose prose alone", () => {
+    expect(
+      resolveIdentity(target, [src("detail_text", "Vi säljer AirPods Pro 2 och mycket annat i vår butik")]).status,
+    ).toBe("probable");
   });
 
   it("stays unknown when only a generic brand word is stated", () => {
@@ -186,5 +203,57 @@ describe("comparable identity", () => {
   it("refuses to compare across generations", () => {
     expect(comparableIdentity(parseIdentity("AirPods Pro 2"), parseIdentity("AirPods Pro 3"))).toBe(false);
     expect(comparableIdentity(parseIdentity("AirPods Pro 2"), parseIdentity("AirPods Pro (2nd generation)"))).toBe(true);
+  });
+});
+
+describe("attribute independence and geography", () => {
+  const geo = { attribute: "country", op: "includes" as const, value: "Sweden", aliases: ["SE", "sverige"], kind: "geo" as const };
+  const subject = {
+    title: "Apple AirPods Pro (2nd generation) 2022",
+    attributes: {},
+    numericValue: 1669,
+    currency: "SEK",
+    identitySources: [src("detail_title", "Apple AirPods Pro (2nd generation) 2022")],
+  };
+
+  it("verifies the model even when the country cannot be verified", () => {
+    const model = evaluateConstraint(subject, {
+      attribute: "model",
+      op: "includes",
+      value: "AirPods Pro 2",
+    });
+    const country = evaluateConstraint(subject, geo);
+    expect(model.status).toBe("match");
+    expect(country.status).toBe("unverified");
+    expect(country.reason).toContain("country could not be verified");
+  });
+
+  it("never resolves a country through product identity", () => {
+    const country = evaluateConstraint(subject, geo);
+    expect(country.identity).toBeUndefined();
+  });
+
+  it("verifies a price independently of the model", () => {
+    const price = evaluateConstraint(subject, {
+      attribute: "price",
+      op: "lte",
+      value: 2500,
+      currency: "SEK",
+    });
+    expect(price.status).toBe("match");
+  });
+});
+
+describe("geographic evidence", () => {
+  it("reads a market from a ccTLD and from a locale segment", () => {
+    expect(inferMarket({ url: "https://www.blocket.se/annons/1" }).market?.code).toBe("SE");
+    const localised = inferMarket({ url: "https://swappie.com/se/modell/airpods-pro-2/" });
+    expect(localised.market?.code).toBe("SE");
+    expect(localised.confidence).toBe("stated");
+    expect(inferMarket({ url: "https://shop.com/sv-se/p/1" }).market?.code).toBe("SE");
+  });
+
+  it("never guesses a country from currency alone", () => {
+    expect(inferMarket({ url: "https://shop.com/p/1", currency: "SEK" }).market).toBeNull();
   });
 });

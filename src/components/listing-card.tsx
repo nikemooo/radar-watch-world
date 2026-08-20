@@ -149,7 +149,6 @@ export function ListingCard({
   const evidence = storedEvidenceOf(snapshot.evidence);
   const identifiers = snapshot.identifiers ?? [];
   const status: MatchStatus = verdict?.status ?? snapshot.match_status ?? "unverified";
-  const pending = verdict?.pending ?? [];
 
   const meta = attributes
     .filter((a) => a.key !== "price" && !a.key.includes("url"))
@@ -213,12 +212,17 @@ export function ListingCard({
         </div>
 
 
-        {status === "unverified" && pending.length > 0 && (
+        {status === "unverified" && (verdict?.requirements.length ?? 0) > 0 && (
           <div className="rounded-md bg-muted/50 p-3 text-sm">
             <p className="font-medium">{t("listing.notVerified")}</p>
-            <ul className="mt-1 space-y-0.5 text-muted-foreground">
-              {pending.slice(0, 4).map((r) => (
-                <li key={r.attribute}>⚠ {r.label}</li>
+            {/* Per attribute — a single unverifiable criterion must never make
+                the criteria that ARE verified look uncertain. */}
+            <ul className="mt-1 space-y-0.5">
+              {verdict!.requirements.slice(0, 6).map((r) => (
+                <li key={r.attribute} className={r.status === "match" ? "" : "text-muted-foreground"}>
+                  {statusIcon[r.status]} {r.label}
+                  {r.status !== "match" && r.autoReason ? ` — ${r.autoReason}` : ""}
+                </li>
               ))}
             </ul>
             {snapshot.missing_attributes?.length ? (
@@ -230,6 +234,7 @@ export function ListingCard({
             ) : null}
           </div>
         )}
+
 
         {status === "reject" && (
           <p className="text-sm text-muted-foreground">{verdict?.reason ?? snapshot.match_reason}</p>
