@@ -206,6 +206,33 @@ function statesCode(text: string, code: string): boolean {
   return new RegExp(`(^|[^\\p{L}\\p{N}])${loose}([^\\p{L}\\p{N}]|$)`, "u").test(text);
 }
 
+
+/** Sources short enough that a model code in them is about the item itself. */
+const NAMING_SOURCES = new Set(["detail_title", "og", "jsonld", "meta", "index_card", "extracted_item", "detail_field"]);
+const PRICE_CONTEXT = /(kr|sek|eur|usd|gbp|nok|dkk|:-|,-|\$|€|£)/;
+
+/**
+ * Model codes the SOURCE states, so a different code in the same numbering
+ * scheme can be reported as a contradiction instead of a silent gap. Numbers
+ * written next to a currency are prices, never model codes.
+ */
+function statedCodes(text: string): string[] {
+  const found: string[] = [];
+  for (const m of text.matchAll(/(^|[^\p{L}\p{N}])([\p{L}]*\d[\p{L}\d]{2,})(?=[^\p{L}\p{N}]|$)/gu)) {
+    const token = m[2]!;
+    if (isYear(token)) continue;
+    if (!isCode(token)) continue;
+    const tail = text.slice(m.index! + m[0].length, m.index! + m[0].length + 6);
+    if (PRICE_CONTEXT.test(tail)) continue;
+    if (!found.includes(token)) found.push(token);
+  }
+  return found;
+}
+
+function digitsOf(token: string): string {
+  return token.replace(/\D/g, "");
+}
+
 interface SourceReading {
   source: IdentitySource;
   covered: string[];
@@ -228,6 +255,18 @@ function readSource(target: CanonicalIdentity, source: IdentitySource): SourceRe
     if (statesCode(text, code)) covered.push(code);
     else missing.push(code);
   }
+  // A source that names a DIFFERENT code from the same numbering scheme is
+  // describing a different model, not merely omitting the one we asked for.
+  if (target.codes.length > 0 && !target.codes.some((c) => covered.includes(c)) && NAMING_SOURCES.has(source.sourceType)) {
+    for (const candidate of statedCodes(text)) {
+      const clash = target.codes.find((c) => digitsOf(c).length === digitsOf(candidate).length && c !== candidate);
+      if (clash) {
+        conflicts.push(`model ${candidate} ≠ ${clash}`);
+        break;
+      }
+    }
+  }
+
 
   if (target.generation !== null) {
     const anchor = target.words.length > 0 ? target.words[target.words.length - 1]! : target.brand;
@@ -340,7 +379,13 @@ export function resolveIdentity(target: CanonicalIdentity, sources: IdentitySour
     };
   }
 
-  if (wordsCovered && matched.length > 0) {
+  // PROBABLE is only honest when the missing part is the generation, or when
+  // the family itself is distinctive enough (two or more naming words) that a
+  // missing model code is an omission rather than a different product.
+  const onlyGenerationMissing = missing.every((m) => m.startsWith("generation "));
+  const distinctiveFamily = target.words.length >= 2 && target.words.every((w) => coveredUnion.has(w));
+  if (wordsCovered && matched.length > 0 && (onlyGenerationMissing || distinctiveFamily)) {
+
     return {
       status: "probable",
       confidence: structuredSupport || distinct >= 2 ? 0.65 : 0.5,

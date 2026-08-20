@@ -55,7 +55,7 @@ import {
   type StoredEvidence,
 } from "./evidence";
 import { detectIdentifiers, mergeIdentifiers, presentableIdentifiers, type Identifier } from "./identifiers";
-import type { IdentitySource } from "./identity";
+import { comparableIdentity, parseIdentity, type IdentitySource } from "./identity";
 import { dedupeListings } from "./dedupe";
 
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
@@ -1790,7 +1790,23 @@ ${documentBlock(allDocs.slice(0, 45))}`,
   const persistedObservations: Observation[] = (existingRows ?? [])
     .filter((f) => !currentKeys.has(f.fingerprint))
     .map(asObservation);
-  const population = [...currentObservations, ...persistedObservations];
+  // Market value may only be built from products that are actually comparable:
+  // a different generation or a different model code is a different market.
+  const targetIdentity = parseIdentity(config.target || radar.raw_request || "");
+  const identityComparable = (o: Observation): boolean =>
+    targetIdentity.words.length === 0 && targetIdentity.codes.length === 0
+      ? true
+      : comparableIdentity(targetIdentity, parseIdentity(o.title));
+  const rejectedComparables = [...currentObservations, ...persistedObservations].filter(
+    (o) => !identityComparable(o),
+  );
+  if (rejectedComparables.length > 0) {
+    console.info(
+      `[radar:comparables] ${rejectedComparables.length} observation(s) excluded — not the same product identity as "${targetIdentity.raw}"`,
+    );
+  }
+  const population = [...currentObservations, ...persistedObservations].filter(identityComparable);
+
 
   await phase("building_comparables");
   const baselines = new Map<string, BaselineResult>();
