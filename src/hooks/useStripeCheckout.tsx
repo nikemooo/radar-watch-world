@@ -4,9 +4,9 @@ import { StripeEmbeddedCheckout } from "@/components/StripeEmbeddedCheckout";
 interface CheckoutOptions {
   planKey: string;
   interval: "month" | "year";
-  marketCode?: string;
-  localeHint?: string;
-  returnUrl?: string;
+  marketCode: string | undefined;
+  localeHint: string | undefined;
+  returnUrl: string;
   onError?: (message: string) => void;
 }
 

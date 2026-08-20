@@ -5,9 +5,9 @@ import { createCheckoutSession } from "@/utils/payments.functions";
 interface StripeEmbeddedCheckoutProps {
   planKey: string;
   interval: "month" | "year";
-  marketCode?: string;
-  localeHint?: string;
-  returnUrl?: string;
+  marketCode: string | undefined;
+  localeHint: string | undefined;
+  returnUrl: string;
   onError?: (message: string) => void;
 }
 
@@ -24,7 +24,7 @@ export function StripeEmbeddedCheckout({
       data: {
         planKey,
         interval,
-        returnUrl: returnUrl || window.location.href,
+        returnUrl,
         marketCode,
         localeHint,
         environment: getStripeEnvironment(),
