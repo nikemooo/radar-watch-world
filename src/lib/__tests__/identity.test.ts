@@ -93,7 +93,8 @@ describe("identity resolution over evidence", () => {
       src("detail_title", "Rolex Submariner Date 126610LN"),
       src("detail_text", "Pris: 129000 kr inklusive box och papper"),
     ]);
-    expect(r.status).toBe("verified");
+    expect(r.status).toBe("probable");
+    expect(r.conflicts).toHaveLength(0);
   });
 
   it("stays unknown when only a generic brand word is stated", () => {
