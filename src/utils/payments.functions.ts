@@ -38,8 +38,8 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     planKey: string;
     interval: "month" | "year";
     returnUrl: string;
-    marketCode?: string;
-    localeHint?: string;
+    marketCode?: string | null;
+    localeHint?: string | null;
     environment: StripeEnv;
   }) => {
     if (!input?.planKey || !input?.returnUrl) throw new Error("Missing plan or return URL.");
