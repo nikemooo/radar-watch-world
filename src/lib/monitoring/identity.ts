@@ -379,7 +379,13 @@ export function resolveIdentity(target: CanonicalIdentity, sources: IdentitySour
     };
   }
 
-  if (wordsCovered && matched.length > 0) {
+  // PROBABLE is only honest when the missing part is the generation, or when
+  // the family itself is distinctive enough (two or more naming words) that a
+  // missing model code is an omission rather than a different product.
+  const onlyGenerationMissing = missing.every((m) => m.startsWith("generation "));
+  const distinctiveFamily = target.words.length >= 2 && target.words.every((w) => coveredUnion.has(w));
+  if (wordsCovered && matched.length > 0 && (onlyGenerationMissing || distinctiveFamily)) {
+
     return {
       status: "probable",
       confidence: structuredSupport || distinct >= 2 ? 0.65 : 0.5,
