@@ -29,8 +29,16 @@ export interface HardConstraint {
   currency?: string | null;
   /** Equivalent spellings/translations of a text token ("black", "svart"). */
   aliases?: string[];
+  /**
+   * What kind of requirement this is. "geo" requirements are about where the
+   * listing lives and are judged ONLY on geographic evidence — never on product
+   * identity resolution, so an unverifiable country can never make the model
+   * look unverified (and vice versa).
+   */
+  kind?: "identity" | "geo" | "text";
   /** Human-readable form used in reasons ("price < 600 000 SEK"). */
   label?: string;
+
 }
 
 export type MatchStatus = "match" | "reject" | "unverified";
@@ -99,6 +107,15 @@ export function containsToken(haystack: string, token: string): boolean {
 function labelOf(c: HardConstraint): string {
   return c.label ?? `${c.attribute} ${OP_TEXT[c.op]} ${c.value}${c.currency ? ` ${c.currency}` : ""}`;
 }
+
+/** Attribute names that describe WHERE a listing lives, in any radar's schema. */
+const GEO_ATTRIBUTE = /^(country|land|location|plats|market|marknad|region|geography)$/i;
+
+/** A geographic requirement is never resolved through product identity. */
+export function isGeoConstraint(c: HardConstraint): boolean {
+  return c.kind === "geo" || (!c.kind && GEO_ATTRIBUTE.test(c.attribute));
+}
+
 
 function isFactual(a: AttributeValue | undefined): a is AttributeValue {
   return !!a && (a.confidence === "stated" || a.confidence === "structured") && a.raw !== null;
@@ -189,10 +206,15 @@ export function evaluateConstraint(subject: MatchSubject, constraint: HardConstr
       const unknown: CriterionOutcome = {
         constraint,
         status: "unverified",
-        reason: `${constraint.attribute} unknown — cannot safely verify ${label}`,
+        reason:
+          isGeoConstraint(constraint)
+            ? `${constraint.attribute} could not be verified from the listing`
+            : `${constraint.attribute} unknown — cannot safely verify ${label}`,
         observedRaw: null,
       };
-      return constraint.op === "includes" ? identityOutcome(subject, constraint, unknown) : unknown;
+      return constraint.op === "includes" && !isGeoConstraint(constraint)
+        ? identityOutcome(subject, constraint, unknown)
+        : unknown;
     }
     if (constraint.op === "includes") {
       if (found) {
@@ -203,15 +225,18 @@ export function evaluateConstraint(subject: MatchSubject, constraint: HardConstr
           observedRaw: field.raw,
         };
       }
-      // The field says something else — but marketplaces spell the same product
-      // a dozen ways, so a literal mismatch is not yet a rejection.
-      return identityOutcome(subject, constraint, {
+      const mismatch: CriterionOutcome = {
         constraint,
         status: "reject",
         reason: `${constraint.attribute} = "${field.raw}" does not match required "${constraint.value}"`,
         observedRaw: field.raw,
-      });
+      };
+      // The field says something else — but marketplaces spell the same product
+      // a dozen ways, so a literal mismatch is not yet a rejection. Geography is
+      // not a naming problem: a stated country that differs is a real mismatch.
+      return isGeoConstraint(constraint) ? mismatch : identityOutcome(subject, constraint, mismatch);
     }
+
     return found
       ? {
           constraint,

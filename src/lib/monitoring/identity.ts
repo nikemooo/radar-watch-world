@@ -364,7 +364,14 @@ export function resolveIdentity(target: CanonicalIdentity, sources: IdentitySour
   }
 
   if (missing.length === 0) {
-    const strong = structuredSupport || distinct >= 2;
+    // A SINGLE source is enough when it names the product itself (a title, a
+    // structured product field, an index card) AND the identity is specific
+    // enough to be unambiguous: it carries a model code, a generation, or two
+    // or more distinguishing words. Loose prose ("detail_text",
+    // "search_snippet") never verifies on its own — it only supports.
+    const namingSupport = supporting.some((s) => NAMING_SOURCES.has(s.source.sourceType));
+    const distinctive = target.codes.length > 0 || target.generation !== null || target.words.length >= 2;
+    const strong = structuredSupport || distinct >= 2 || (namingSupport && distinctive && brandSeen);
     return {
       status: strong ? "verified" : "probable",
       confidence: strong ? (brandSeen ? 0.95 : 0.85) : 0.7,
@@ -373,11 +380,12 @@ export function resolveIdentity(target: CanonicalIdentity, sources: IdentitySour
       conflicts: [],
       sources: usedSources,
       explanation: strong
-        ? `"${canonical}" is stated by ${distinct} source${distinct === 1 ? "" : "s"} (${matched.join(", ")})`
-        : `"${canonical}" is stated by a single source (${matched.join(", ")})`,
+        ? `"${canonical}" is stated in full by ${distinct} source${distinct === 1 ? "" : "s"} (${matched.join(", ")})`
+        : `"${canonical}" is only suggested by loose page text (${matched.join(", ")})`,
       canonical,
     };
   }
+
 
   // PROBABLE is only honest when the missing part is the generation, or when
   // the family itself is distinctive enough (two or more naming words) that a

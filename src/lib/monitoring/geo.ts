@@ -100,6 +100,25 @@ export function marketOfHost(host: string): Market | null {
   return best;
 }
 
+/**
+ * Market named by a locale segment of the URL — "shop.com/se/…",
+ * "shop.com/sv-se/…", "se.shop.com". Generic: every market's own country code
+ * is looked for, no host is special-cased.
+ */
+export function marketOfLocaleSegment(url: URL): { market: Market; evidence: string } | null {
+  const segments = url.pathname.split("/").filter(Boolean).slice(0, 2).map((s) => s.toLowerCase());
+  const sub = url.host.toLowerCase().replace(/^www\./, "").split(".")[0] ?? "";
+  const candidates = [...segments, sub];
+  for (const raw of candidates) {
+    const code = raw.length === 2 ? raw : /^[a-z]{2}[-_][a-z]{2}$/.test(raw) ? raw.slice(3) : null;
+    if (!code) continue;
+    const market = byCode.get(code.toUpperCase());
+    if (market) return { market, evidence: `${url.host}/${raw}` };
+  }
+  return null;
+}
+
+
 export interface GeoEvidence {
   /** URL of the listing itself (its host TLD is structural evidence). */
   url?: string | null;
@@ -133,13 +152,22 @@ export function inferMarket(evidence: GeoEvidence): GeoVerdict {
 
   if (evidence.url) {
     try {
-      const host = new URL(evidence.url).host;
+      const parsed = new URL(evidence.url);
+      const host = parsed.host;
       const m = marketOfHost(host);
       if (m) return { market: m, confidence: "structured", evidence: host, source: evidence.url };
+      // International marketplaces address a country through a locale segment
+      // ("/se/", "/sv-se/", "se.shop.com"). That is an explicit statement about
+      // the storefront's market, but weaker than a ccTLD.
+      const localised = marketOfLocaleSegment(parsed);
+      if (localised) {
+        return { market: localised.market, confidence: "stated", evidence: localised.evidence, source: evidence.url };
+      }
     } catch {
       /* not a URL — no structural evidence */
     }
   }
+
 
   const text = evidence.text ?? "";
   if (text) {
@@ -184,8 +212,10 @@ export function countryConstraint(locations: string[] | null | undefined): HardC
     op: "includes",
     value: m.name,
     aliases: [m.code, ...m.aliases],
+    kind: "geo",
     label: `country = ${m.name}`,
   };
+
 }
 
 /** Currency that a market uses — used only to explain, never to prove. */

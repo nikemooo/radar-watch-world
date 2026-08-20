@@ -455,11 +455,47 @@ export async function beginRun(db: Db, radar: RadarRow): Promise<RunClaim> {
       .limit(1);
     const existing = open?.[0];
     if (existing) throw new ActiveRunError(existing.id, existing.started_at);
-    // Never release an unknown owner's lock or report a run id that was not
-    // persisted. A genuinely torn claim is recovered by the stale-run path;
-    // a concurrent start gets a truthful conflict instead of corrupting it.
-    throw new Error("A sweep is being claimed. Please check its status again.");
+    // The pointer survived its run: the owning run already finished (or never
+    // persisted). Releasing exactly that finished owner is safe and unblocks
+    // the radar; anything else is a genuine concurrent claim.
+    const { data: current } = await db
+      .from("radars")
+      .select("active_run_id")
+      .eq("id", radar.id)
+      .maybeSingle();
+    const staleId = current?.active_run_id ?? null;
+    if (staleId) {
+      const { data: owner } = await db
+        .from("monitor_runs")
+        .select("id, status")
+        .eq("id", staleId)
+        .maybeSingle();
+      if (!owner || owner.status !== "running") {
+        await releaseRadar(db, radar.id, staleId);
+        const { data: retried } = await db
+          .from("radars")
+          .update({
+            active_run_id: runId,
+            ...(isBaseline
+              ? { scan_state: "INITIAL_SCAN_RUNNING", initial_scan_started_at: startedAt }
+              : {}),
+          })
+          .eq("id", radar.id)
+          .is("active_run_id", null)
+          .select("id");
+        if (retried?.length) {
+          // Lock acquired on the retry — fall through to run creation below.
+        } else {
+          throw new Error("A sweep is being claimed. Please check its status again.");
+        }
+      } else {
+        throw new ActiveRunError(owner.id, startedAt);
+      }
+    } else {
+      throw new Error("A sweep is being claimed. Please check its status again.");
+    }
   }
+
 
   const { error } = await db.from("monitor_runs").insert({
     id: runId,

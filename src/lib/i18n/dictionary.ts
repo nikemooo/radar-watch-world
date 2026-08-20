@@ -174,7 +174,7 @@ export const en = {
   "alerts.sources": "Sources",
 
   // ── verification ───────────────────────────────────────────────────────
-  "listing.noImage": "No photo in the listing",
+  "listing.noImage": "No verified product image",
   "listing.noPrice": "No price",
   "listing.notVerified": "Could not be verified",
   "listing.missingInfo": "Missing information: {fields}",
@@ -478,7 +478,7 @@ const sv: Dictionary = {
   "alerts.notUseful": "Inte användbart",
   "alerts.sources": "Källor",
 
-  "listing.noImage": "Ingen bild från annonsen",
+  "listing.noImage": "Ingen verifierad produktbild",
   "listing.noPrice": "Pris saknas",
   "listing.notVerified": "Kunde inte verifieras",
   "listing.missingInfo": "Saknad information: {fields}",
