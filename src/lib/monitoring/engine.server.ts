@@ -55,7 +55,7 @@ import {
   type StoredEvidence,
 } from "./evidence";
 import { detectIdentifiers, mergeIdentifiers, presentableIdentifiers, type Identifier } from "./identifiers";
-import type { IdentitySource } from "./identity";
+import { comparableIdentity, parseIdentity, type IdentitySource } from "./identity";
 import { dedupeListings } from "./dedupe";
 
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
