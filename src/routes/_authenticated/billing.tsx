@@ -2,14 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { Check, ExternalLink, Loader2 } from "lucide-react";
+import { Check, ExternalLink, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   cancelSubscription,
   changePlan,
-  createCheckoutSession,
   createPortalSession,
   getBillingState,
   resumeSubscription,
@@ -17,6 +16,7 @@ import {
 import { PLAN_RANK, type PlanRow } from "@/lib/billing/plans";
 import { MarketSelect } from "@/components/market-select";
 import { useMarketPricing } from "@/hooks/use-market";
+import { useStripeCheckout } from "@/hooks/useStripeCheckout";
 
 export const Route = createFileRoute("/_authenticated/billing")({
   head: () => ({
@@ -38,11 +38,12 @@ function Billing() {
   const [busy, setBusy] = useState<string | null>(null);
 
   const fetchState = useServerFn(getBillingState);
-  const checkout = useServerFn(createCheckoutSession);
   const portal = useServerFn(createPortalSession);
   const change = useServerFn(changePlan);
   const cancel = useServerFn(cancelSubscription);
   const resume = useServerFn(resumeSubscription);
+
+  const { openCheckout, closeCheckout, isOpen: checkoutOpen, checkoutElement } = useStripeCheckout();
 
   const { data, isLoading } = useQuery({ queryKey: ["billing"], queryFn: () => fetchState({}) });
   const { markets, market, setMarket, priceFor, format } = useMarketPricing({
@@ -58,25 +59,18 @@ function Billing() {
     return result as T;
   };
 
-  const startCheckout = async (planKey: string) => {
-    setBusy(planKey);
-    try {
-      const result = unwrap(
-        await checkout({
-          data: {
-            planKey,
-            interval,
-            returnUrl: `${window.location.origin}/billing`,
-            marketCode: market.code,
-            localeHint: navigator.language,
-          },
-        }),
-      );
-      window.location.href = result.url;
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not start checkout.");
-      setBusy(null);
-    }
+  const startCheckout = (planKey: string) => {
+    openCheckout({
+      planKey,
+      interval,
+      returnUrl: `${window.location.origin}/checkout/return`,
+      marketCode: market.code,
+      localeHint: navigator.language,
+      onError: (message) => {
+        toast.error(message);
+        closeCheckout();
+      },
+    });
   };
 
   const switchPlan = async (planKey: string) => {
@@ -233,6 +227,19 @@ function Billing() {
         </Button>
       </div>
 
+      {checkoutOpen && (
+        <section className="panel space-y-3 p-5">
+          <div className="flex items-center justify-between">
+            <p className="mono-label">Checkout</p>
+            <Button variant="ghost" size="sm" onClick={closeCheckout}>
+              <X className="size-4" />
+              Close
+            </Button>
+          </div>
+          {checkoutElement}
+        </section>
+      )}
+
       <div className="grid gap-5 md:grid-cols-3">
         {plans.map((plan) => {
           const features = Array.isArray(plan.features) ? (plan.features as string[]) : [];
@@ -272,7 +279,7 @@ function Billing() {
               <Button
                 className="mt-5 w-full"
                 variant={isCurrent ? "outline" : upgrade ? "default" : "secondary"}
-                disabled={isCurrent || busy === plan.key || (plan.key === "free" && !sub?.stripe_subscription_id)}
+                disabled={isCurrent || busy === plan.key || (plan.key === "free" && !sub?.stripe_subscription_id) || checkoutOpen}
                 onClick={onClick}
               >
                 {busy === plan.key && <Loader2 className="mr-2 size-4 animate-spin" />}
