@@ -1,5 +1,6 @@
 import { chatJson, MODELS } from "./gateway.server";
-import type { RadarConfig } from "../radar-types";
+import type { MarketMonitorSpec, RadarConfig, RadarKind } from "../radar-types";
+import { asMarketSpec } from "../market/types";
 import {
   asMonitoringWindow,
   clampRecencyDays,
@@ -12,6 +13,8 @@ const configSchema = {
   required: [
     "name",
     "category",
+    "kind",
+    "market",
     "config",
     "suggested_frequency",
     "monitoring_window",
@@ -20,6 +23,63 @@ const configSchema = {
   properties: {
     name: { type: "string" },
     category: { type: "string" },
+    kind: { type: "string", enum: ["product_discovery", "market_monitoring"] },
+    market: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["instrument", "rules"],
+      properties: {
+        instrument: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "symbol",
+            "name",
+            "kind",
+            "metric",
+            "currency",
+            "unit",
+            "base_currency",
+            "quote_currency",
+            "stooq_symbol",
+            "coingecko_id",
+          ],
+          properties: {
+            symbol: { type: "string" },
+            name: { type: "string" },
+            kind: {
+              type: "string",
+              enum: ["forex", "stock", "commodity", "crypto", "index", "housing", "rate", "statistic", "other"],
+            },
+            metric: { type: "string" },
+            currency: { type: ["string", "null"] },
+            unit: { type: ["string", "null"] },
+            base_currency: { type: ["string", "null"] },
+            quote_currency: { type: ["string", "null"] },
+            stooq_symbol: { type: ["string", "null"] },
+            coingecko_id: { type: ["string", "null"] },
+          },
+        },
+        rules: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "type", "label", "operator", "value", "direction", "pct", "window"],
+            properties: {
+              id: { type: "string" },
+              type: { type: "string", enum: ["threshold", "pct_change"] },
+              label: { type: "string" },
+              operator: { type: ["string", "null"], enum: ["lt", "lte", "gt", "gte", null] },
+              value: { type: ["number", "null"] },
+              direction: { type: ["string", "null"], enum: ["up", "down", "any", null] },
+              pct: { type: ["number", "null"] },
+              window: { type: ["string", "null"], enum: ["baseline", "24h", "7d", "30d", null] },
+            },
+          },
+        },
+      },
+    },
     suggested_frequency: { type: "string", enum: ["smart", "instant", "daily", "weekly"] },
     monitoring_window: { type: "string", enum: ["realtime", "rolling", "evergreen"] },
     recency_days: { type: "number" },
@@ -95,6 +155,8 @@ const configSchema = {
 export interface InterpretedRadar {
   name: string;
   category: string;
+  kind: RadarKind;
+  market: MarketMonitorSpec | null;
   suggested_frequency: "smart" | "instant" | "daily" | "weekly";
   monitoring_window: MonitoringWindow;
   recency_days: number;
@@ -132,12 +194,36 @@ export async function interpretRequest(request: string): Promise<InterpretedRada
       "with a single token value. For every text token, list aliases with the equivalent spellings and local-language words a listing " +
       "may use (for colour black: black, svart, schwarz, noir, nero; for a variant: the exact variant spellings). " +
       "label is a short human-readable form of the rule. Never invent a constraint the user did not state, and never turn a soft " +
-      "preference into a hard constraint — if the user only said they prefer something, leave it in preferences.",
+      "preference into a hard constraint — if the user only said they prefer something, leave it in preferences. " +
+      "Every request is exactly one kind. 'product_discovery' (the default) hunts items, listings or offers — vehicles, watches, " +
+      "real estate, jobs, products, collectibles, flights to buy. 'market_monitoring' tracks a measurable datapoint over time: " +
+      "exchange rates, share prices, crypto, commodities, index levels, interest rates, housing or market statistics. A request is " +
+      "market_monitoring ONLY when the subject is the value itself, watched over time (e.g. 'bevaka USD/EUR', 'alert me when NVIDIA " +
+      "drops 5%', 'track the gold price'); wanting to FIND or BUY a specific item is always product_discovery, even when the item has " +
+      "a price. When kind is market_monitoring, fill market: the instrument (canonical symbol like 'USD/EUR' or 'NVDA', human name, " +
+      "kind, snake_case metric like exchange_rate/price/spot_price/index_level, currency and unit where applicable, base_currency and " +
+      "quote_currency for forex, stooq_symbol only when you are confident of the Stooq ticker — US stocks '<ticker>.us', forex " +
+      "'usdeur', gold 'xauusd', S&P 500 '^spx', Nasdaq 100 '^ndx' — else null, coingecko_id for crypto like 'bitcoin' else null) and " +
+      "rules: the alert conditions the user actually stated, each either {type:'threshold', operator lt/lte/gt/gte, value} or " +
+      "{type:'pct_change', direction up/down/any, pct, window baseline/24h/7d/30d}. Translate 'från nuvarande nivå'/'from now'/" +
+      "'compared to today' to window 'baseline'; an unspecified move window means 'baseline'. label restates the rule in the user's " +
+      "own language ('under 1.15', 'faller mer än 10 % från nu'). Leave operator/value null on pct_change rules and direction/pct/" +
+      "window null on threshold rules, and give each rule a stable id ('rule_1', 'rule_2'). With no stated condition, rules is an " +
+      "empty array — never invent one. When kind is market_monitoring: search_queries, attribute_schema and hard_constraints stay " +
+      "empty, category is a short slug ('forex', 'stock', 'commodity', 'crypto', 'index'), and monitored_events lists the rule " +
+      "labels. When kind is product_discovery, market is null.",
     user: request,
   });
 
+  // Coerce, never trust: kind falls back to product_discovery, and a market
+  // spec that does not survive validation silently downgrades the radar.
+  const market = asMarketSpec(result.market);
+  const kind: RadarKind = result.kind === "market_monitoring" && market ? "market_monitoring" : "product_discovery";
   return {
     ...result,
+    kind,
+    market: kind === "market_monitoring" ? market : null,
+    config: { ...result.config, kind, market: kind === "market_monitoring" ? market : null },
     monitoring_window: asMonitoringWindow(result.monitoring_window),
     recency_days: clampRecencyDays(result.recency_days),
   };

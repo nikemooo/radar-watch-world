@@ -37,7 +37,7 @@ export const createRadar = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { getEntitlements } = await import("./billing/entitlements.server");
-    const { asRadarMode } = await import("./radar-types");
+    const { asConfig, asRadarKind, asRadarMode } = await import("./radar-types");
     const e = await getEntitlements(context.supabase, context.userId);
     if (!e.isInternal && e.radarCount >= e.plan.max_radars) {
       throw new Error(
@@ -51,13 +51,34 @@ export const createRadar = createServerFn({ method: "POST" })
       throw new Error("Scheduling the first sweep requires Pro Plus.");
     }
     const scheduledAt = wantsSchedule ? new Date(data.scheduled_start_at!).toISOString() : null;
+
+    // Server-side validation, never trust the client: the engine a radar runs
+    // on is decided here, and a market radar without a valid instrument is
+    // rejected instead of dying on its first sweep.
+    const parsedConfig = asConfig(data.config);
+    if (asRadarKind(parsedConfig.kind) === "market_monitoring") {
+      const { asMarketSpec } = await import("./market/types");
+      const spec = asMarketSpec(parsedConfig.market);
+      if (!spec) throw new Error("A market radar needs a valid instrument. Describe what you want tracked.");
+      parsedConfig.kind = "market_monitoring";
+      parsedConfig.market = spec;
+    } else {
+      parsedConfig.kind = "product_discovery";
+      parsedConfig.market = null;
+    }
+    const knownFrequencies = ["smart", "instant", "daily", "weekly"];
+    let frequency = knownFrequencies.includes(data.frequency) ? data.frequency : "smart";
+    // Market values move continuously; instant (30 min) sweeps add cost
+    // without adding signal. Clamp to the closest sensible cadence.
+    if (parsedConfig.kind === "market_monitoring" && frequency === "instant") frequency = "smart";
+
     const { data: radar, error } = await context.supabase
       .from("radars")
       .insert({
         user_id: context.userId,
         name: data.name,
         category: data.category,
-        frequency: data.frequency,
+        frequency,
         raw_request: data.raw_request,
         monitoring_window: data.monitoring_window,
         recency_days: data.recency_days,
@@ -66,7 +87,7 @@ export const createRadar = createServerFn({ method: "POST" })
         mode: asRadarMode(data.mode),
         scheduled_start_at: scheduledAt,
         next_run_at: scheduledAt,
-        config: data.config as never,
+        config: parsedConfig as never,
       })
       .select("id")
       .single();

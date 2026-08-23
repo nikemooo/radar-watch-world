@@ -399,6 +399,87 @@ export type Database = {
           },
         ]
       }
+      market_observations: {
+        Row: {
+          base_currency: string | null
+          confidence: number
+          created_at: string
+          currency: string | null
+          id: string
+          instrument: string
+          instrument_kind: string
+          metadata: Json
+          metric: string
+          observed_at: string
+          quote_currency: string | null
+          radar_id: string
+          retrieved_at: string
+          run_id: string | null
+          sources: Json
+          status: string
+          unit: string | null
+          user_id: string
+          value: number
+        }
+        Insert: {
+          base_currency?: string | null
+          confidence?: number
+          created_at?: string
+          currency?: string | null
+          id?: string
+          instrument: string
+          instrument_kind?: string
+          metadata?: Json
+          metric: string
+          observed_at: string
+          quote_currency?: string | null
+          radar_id: string
+          retrieved_at?: string
+          run_id?: string | null
+          sources?: Json
+          status?: string
+          unit?: string | null
+          user_id: string
+          value: number
+        }
+        Update: {
+          base_currency?: string | null
+          confidence?: number
+          created_at?: string
+          currency?: string | null
+          id?: string
+          instrument?: string
+          instrument_kind?: string
+          metadata?: Json
+          metric?: string
+          observed_at?: string
+          quote_currency?: string | null
+          radar_id?: string
+          retrieved_at?: string
+          run_id?: string | null
+          sources?: Json
+          status?: string
+          unit?: string | null
+          user_id?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_observations_radar_id_fkey"
+            columns: ["radar_id"]
+            isOneToOne: false
+            referencedRelation: "radars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "market_observations_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "monitor_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       markets: {
         Row: {
           active: boolean
