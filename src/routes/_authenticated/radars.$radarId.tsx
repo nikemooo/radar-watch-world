@@ -24,6 +24,9 @@ import type { RunPhase } from "@/lib/monitoring/lifecycle";
 import { ListingRail, snapshotOf, type FindingLike } from "@/components/listing-card";
 import { VerifyDialog } from "@/components/verify-dialog";
 import { EditCriteriaDialog } from "@/components/edit-criteria-dialog";
+import { MarketRadarView } from "@/components/market-radar-view";
+import { asMarketSpec } from "@/lib/market/types";
+import type { MarketRuleStateMap } from "@/lib/market/rules";
 import {
   effectiveVerdict,
   imageObservationsOf,
@@ -77,7 +80,7 @@ function RadarDetail() {
     refetchInterval: sweepStatus?.state === "running" ? 4000 : false,
 
     queryFn: async () => {
-      const [radar, alerts, runs, decisions, findings, changes, verifications] = await Promise.all([
+      const [radar, alerts, runs, decisions, findings, changes, verifications, observations] = await Promise.all([
         supabase.from("radars").select("*").eq("id", radarId).maybeSingle(),
         supabase
           .from("alerts")
@@ -110,6 +113,12 @@ function RadarDetail() {
           .order("changed_at", { ascending: false })
           .limit(25),
         supabase.from("finding_verifications").select("*").eq("radar_id", radarId),
+        supabase
+          .from("market_observations")
+          .select("*")
+          .eq("radar_id", radarId)
+          .order("observed_at", { ascending: true })
+          .limit(500),
       ]);
       if (radar.error) throw radar.error;
       return {
@@ -120,6 +129,7 @@ function RadarDetail() {
         findings: findings.data ?? [],
         changes: changes.data ?? [],
         verifications: verifications.data ?? [],
+        observations: observations.data ?? [],
       };
     },
   });
@@ -133,12 +143,17 @@ function RadarDetail() {
       } else {
         const r = outcome.result as { alertsCreated?: number; runType?: string; itemsFound?: number };
         const created = r?.alertsCreated ?? 0;
+        const isMarketRadar = asConfig(data?.radar?.config).kind === "market_monitoring";
         toast.success(
           r?.runType === "baseline"
-            ? t("detail.toast.baselineDone", { count: r.itemsFound ?? 0 })
+            ? isMarketRadar
+              ? t("detail.toast.marketBaseline")
+              : t("detail.toast.baselineDone", { count: r.itemsFound ?? 0 })
             : created > 0
               ? t("detail.toast.alerts", { count: created })
-              : t("detail.toast.noNews"),
+              : isMarketRadar
+                ? t("detail.toast.marketDone")
+                : t("detail.toast.noNews"),
         );
 
       }
@@ -224,6 +239,10 @@ function RadarDetail() {
 
   const radar = data.radar;
   const config = asConfig(radar.config);
+  const marketSpec = config.kind === "market_monitoring" ? asMarketSpec(config.market) : null;
+  const isMarket = marketSpec !== null;
+  const marketRuleState = (((radar.memory ?? {}) as Record<string, unknown>)["market_rules"] ??
+    {}) as MarketRuleStateMap;
   const findings = data.findings as unknown as FindingLike[];
   const verdictOf = (f: FindingLike) => {
     const snapshot = snapshotOf(f.snapshot) as { criteria?: unknown; image_evidence?: unknown };
@@ -286,13 +305,15 @@ function RadarDetail() {
               {scanning ? "🔎" : "🟢"} {statusLine}
             </span>
             <span className="text-muted-foreground">
-              {t("detail.counts", {
-                found: findings.length,
-                match: matched.length,
-                unverified: unverified.length,
-                reject: rejected.length,
-              })}
-              {pending.length > 0 ? ` · ${t("detail.countsChecking", { pending: pending.length })}` : ""}
+              {isMarket
+                ? `${t("market.badge")} · ${t("market.observations", { count: data.observations.length })}`
+                : t("detail.counts", {
+                    found: findings.length,
+                    match: matched.length,
+                    unverified: unverified.length,
+                    reject: rejected.length,
+                  }) +
+                  (pending.length > 0 ? ` · ${t("detail.countsChecking", { pending: pending.length })}` : "")}
             </span>
             <span className="text-muted-foreground">
               {radar.last_successful_sweep_at
@@ -353,13 +374,15 @@ function RadarDetail() {
         <section className="panel p-5">
           <p className="text-sm font-medium">{phaseText}…</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {sweepStatus && (sweepStatus.sourcesRetrieved > 0 || sweepStatus.candidates > 0)
-              ? t("detail.progress.live", {
-                  sources: sweepStatus.sourcesRetrieved,
-                  candidates: sweepStatus.candidates,
-                  details: sweepStatus.detailFetches,
-                })
-              : t("detail.progress.idle")}{" "}
+            {isMarket
+              ? t("detail.progress.market", { sources: sweepStatus?.sourcesRetrieved ?? 0 })
+              : sweepStatus && (sweepStatus.sourcesRetrieved > 0 || sweepStatus.candidates > 0)
+                ? t("detail.progress.live", {
+                    sources: sweepStatus.sourcesRetrieved,
+                    candidates: sweepStatus.candidates,
+                    details: sweepStatus.detailFetches,
+                  })
+                : t("detail.progress.idle")}{" "}
             {t("detail.progress.tail")}
           </p>
           {!!sweepStatus?.continuations && (
@@ -367,19 +390,30 @@ function RadarDetail() {
               {t("detail.progress.resumed", { count: sweepStatus.continuations })}
             </p>
           )}
-          <p className="mt-2 text-sm">
-            {t("detail.counts", {
-              found: findings.length,
-              match: matched.length,
-              unverified: unverified.length,
-              reject: rejected.length,
-            })}
-          </p>
+          {!isMarket && (
+            <p className="mt-2 text-sm">
+              {t("detail.counts", {
+                found: findings.length,
+                match: matched.length,
+                unverified: unverified.length,
+                reject: rejected.length,
+              })}
+            </p>
+          )}
           <p className="mt-1 text-xs text-muted-foreground">{t("detail.progress.liveResults")}</p>
 
         </section>
       )}
 
+      {isMarket && (
+        <MarketRadarView
+          spec={marketSpec}
+          observations={data.observations}
+          ruleState={marketRuleState}
+        />
+      )}
+
+      {!isMarket && (
       <section>
         <h2 className="text-lg font-medium">{t("detail.matches.title")}</h2>
         {matched.length > 0 ? (
@@ -396,6 +430,7 @@ function RadarDetail() {
           </div>
         )}
       </section>
+      )}
 
       {unverified.length > 0 && (
         <section>
@@ -529,6 +564,7 @@ function RadarDetail() {
               ))}
             </SelectContent>
           </Select>
+          {!isMarket && (
           <Select
             value={String(radar.recency_days)}
             onValueChange={(v) => update.mutate({ recency_days: Number(v), recency_source: "user_override" })}
@@ -544,6 +580,7 @@ function RadarDetail() {
               ))}
             </SelectContent>
           </Select>
+          )}
         </div>
         <p className="mt-4 text-sm text-muted-foreground">{config.interpretation || radar.raw_request}</p>
         <div className="mt-4 grid gap-5 sm:grid-cols-2">

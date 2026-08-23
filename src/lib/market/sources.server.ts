@@ -115,21 +115,33 @@ function parseStooqCsv(csv: string): { close: number; date: string; time: string
   return { close, date: cells[1]?.trim() ?? "", time: cells[2]?.trim() ?? "" };
 }
 
-async function stooqQuote(symbol: string, instrument: MarketInstrument): Promise<SourceQuote | null> {
+async function stooqFetch(symbol: string): Promise<{ close: number; date: string; time: string } | null> {
   const url = `https://stooq.com/q/l/?s=${encodeURIComponent(symbol)}&f=sd2t2ohlcv&h&e=csv`;
   const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`stooq HTTP ${res.status}`);
-  const parsed = parseStooqCsv(await res.text());
-  if (!parsed) return null;
-  const observedAt = validIso(`${parsed.date}T${parsed.time}Z`) ?? new Date().toISOString();
-  return {
+  if (!res.ok) return null;
+  return parseStooqCsv(await res.text());
+}
+
+async function stooqQuote(symbol: string, instrument: MarketInstrument): Promise<SourceQuote | null> {
+  const toQuote = (sym: string, value: number): SourceQuote => ({
     source: "stooq",
-    sourceUrl: `https://stooq.com/q/?s=${encodeURIComponent(symbol)}`,
-    value: parsed.close,
+    sourceUrl: `https://stooq.com/q/?s=${encodeURIComponent(sym)}`,
+    value,
     currency: instrument.currency,
     unit: instrument.unit,
-    observedAt,
-  };
+    observedAt: new Date().toISOString(),
+  });
+  const direct = await stooqFetch(symbol);
+  if (direct) return toQuote(symbol, direct.close);
+  // Stooq lists most forex pairs in one direction only — try the inverse.
+  if (instrument.kind === "forex" && instrument.base_currency && instrument.quote_currency) {
+    const invertedSymbol = `${instrument.quote_currency}${instrument.base_currency}`.toLowerCase();
+    if (invertedSymbol !== symbol) {
+      const inverted = await stooqFetch(invertedSymbol);
+      if (inverted && inverted.close !== 0) return toQuote(invertedSymbol, 1 / inverted.close);
+    }
+  }
+  return null;
 }
 
 async function frankfurterQuote(base: string, quote: string): Promise<SourceQuote | null> {

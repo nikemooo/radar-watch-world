@@ -25,6 +25,7 @@ import {
   type RadarMode,
   type RadarStart,
 } from "@/lib/radar-types";
+import { OPERATOR_LABEL, type MarketMonitorSpec } from "@/lib/market/types";
 import { monitoringWindowLabel, type MonitoringWindow } from "@/lib/monitoring/temporal";
 import { track } from "@/lib/analytics";
 import { useFormatDateTime, useT, type TranslationKey } from "@/lib/i18n";
@@ -47,6 +48,8 @@ const suggestions = [
   "Tell me when anything material happens to Tesla stock",
   "Watch for remote senior React roles paying over $150k",
   "Alert me if flights from London to Tokyo drop below £600 in March",
+  "Alert me if USD/EUR drops 5% from today's level",
+  "Track the gold price and alert me under $2,000 per ounce",
 ];
 
 function NewRadar() {
@@ -173,6 +176,9 @@ function NewRadar() {
         config && (
           <div className="space-y-5">
             <div className="panel space-y-4 p-5">
+              <p className="mono-label">
+                {t(config.kind === "market_monitoring" ? "new.kindBadge.market" : "new.kindBadge.product")}
+              </p>
               <p className="text-sm text-muted-foreground">{config.interpretation}</p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
@@ -236,7 +242,12 @@ function NewRadar() {
               </div>
             </div>
 
+            {config.kind === "market_monitoring" && config.market && (
+              <MarketConfirm spec={config.market} />
+            )}
+
             <div className="panel space-y-5 p-5">
+              {config.kind === "product_discovery" && (
               <div className="space-y-2">
                 <Label>{t("new.mode")}</Label>
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -255,6 +266,7 @@ function NewRadar() {
                   ))}
                 </div>
               </div>
+              )}
 
               <div className="space-y-2">
                 <Label>{t("new.startWhen")}</Label>
@@ -322,6 +334,44 @@ function NewRadar() {
           </div>
         )
       )}
+    </div>
+  );
+}
+
+function MarketConfirm({ spec }: { spec: MarketMonitorSpec }) {
+  const t = useT();
+  const inst = spec.instrument;
+  return (
+    <div className="panel space-y-4 p-5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="mono-label">{t("new.kindBadge.market")}</p>
+        <p className="mono-label">{inst.kind}</p>
+      </div>
+      <div>
+        <p className="text-lg font-medium">{inst.symbol}</p>
+        <p className="text-sm text-muted-foreground">
+          {inst.name} · {inst.metric.replace(/_/g, " ")}
+        </p>
+      </div>
+      <div>
+        <p className="mono-label">{t("new.market.rules")}</p>
+        {spec.rules.length > 0 ? (
+          <ul className="mt-2 space-y-1.5 text-sm">
+            {spec.rules.map((rule) => (
+              <li key={rule.id} className="flex gap-2 text-muted-foreground">
+                <span className="mt-1.5 size-1 shrink-0 rounded-full bg-primary" />
+                {rule.label ||
+                  (rule.type === "threshold"
+                    ? `${OPERATOR_LABEL[rule.operator]} ${rule.value}`
+                    : `${rule.direction} ${rule.pct}% (${rule.window})`)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">{t("new.market.noRules")}</p>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">{t("new.market.sourceHint")}</p>
     </div>
   );
 }

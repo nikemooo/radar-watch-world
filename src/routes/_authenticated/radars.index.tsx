@@ -77,6 +77,7 @@ function RadarsList() {
                     {config.interpretation || radar.raw_request}
                   </p>
                   <p className="mono-label mt-2">
+                    {config.kind === "market_monitoring" ? `${t("market.badge")} · ` : ""}
                     {radar.category} · {frequencyLabel[radar.frequency as RadarFrequency] ?? radar.frequency} ·{" "}
                     {radar.last_run_at
                       ? t("radars.lastSwept", { when: formatDateTime(radar.last_run_at) })
