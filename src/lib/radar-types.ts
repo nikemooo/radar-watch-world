@@ -5,8 +5,20 @@
  */
 import type { AttributeSpec } from "./monitoring/normalize";
 import type { HardConstraint } from "./monitoring/criteria";
+import type { MarketMonitorSpec } from "./market/types";
 
-export type { AttributeSpec, HardConstraint };
+export type { AttributeSpec, HardConstraint, MarketMonitorSpec };
+
+/**
+ * Which engine serves the radar. product_discovery hunts items/listings;
+ * market_monitoring tracks a measurable datapoint over time. The two engines
+ * are fully separate — this field is only the dispatch key.
+ */
+export type RadarKind = "product_discovery" | "market_monitoring";
+
+export function asRadarKind(value: unknown): RadarKind {
+  return value === "market_monitoring" ? "market_monitoring" : "product_discovery";
+}
 
 export type RadarFrequency = "smart" | "instant" | "daily" | "weekly";
 
@@ -39,6 +51,8 @@ export type RadarStart = "now" | "scheduled" | "manual";
 export type Importance = "critical" | "important" | "interesting" | "minor";
 
 export interface RadarConfig {
+  /** Which engine serves this radar — never changes mid-life. */
+  kind: RadarKind;
   target: string;
   interpretation: string;
   locations: string[];
@@ -55,9 +69,12 @@ export interface RadarConfig {
   attribute_schema: AttributeSpec[];
   /** Machine-checkable requirements derived from the user's own wording. */
   hard_constraints: HardConstraint[];
+  /** Market Monitoring only: instrument + alert rules. Null for product radars. */
+  market: MarketMonitorSpec | null;
 }
 
 export const emptyConfig: RadarConfig = {
+  kind: "product_discovery",
   target: "",
   interpretation: "",
   locations: [],
@@ -72,6 +89,7 @@ export const emptyConfig: RadarConfig = {
   exclusions: [],
   attribute_schema: [],
   hard_constraints: [],
+  market: null,
 };
 
 export function asConfig(value: unknown): RadarConfig {

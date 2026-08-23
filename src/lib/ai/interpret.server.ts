@@ -1,5 +1,6 @@
 import { chatJson, MODELS } from "./gateway.server";
-import type { RadarConfig } from "../radar-types";
+import type { MarketMonitorSpec, RadarConfig, RadarKind } from "../radar-types";
+import { asMarketSpec } from "../market/types";
 import {
   asMonitoringWindow,
   clampRecencyDays,
@@ -12,6 +13,8 @@ const configSchema = {
   required: [
     "name",
     "category",
+    "kind",
+    "market",
     "config",
     "suggested_frequency",
     "monitoring_window",
@@ -20,6 +23,63 @@ const configSchema = {
   properties: {
     name: { type: "string" },
     category: { type: "string" },
+    kind: { type: "string", enum: ["product_discovery", "market_monitoring"] },
+    market: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["instrument", "rules"],
+      properties: {
+        instrument: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "symbol",
+            "name",
+            "kind",
+            "metric",
+            "currency",
+            "unit",
+            "base_currency",
+            "quote_currency",
+            "stooq_symbol",
+            "coingecko_id",
+          ],
+          properties: {
+            symbol: { type: "string" },
+            name: { type: "string" },
+            kind: {
+              type: "string",
+              enum: ["forex", "stock", "commodity", "crypto", "index", "housing", "rate", "statistic", "other"],
+            },
+            metric: { type: "string" },
+            currency: { type: ["string", "null"] },
+            unit: { type: ["string", "null"] },
+            base_currency: { type: ["string", "null"] },
+            quote_currency: { type: ["string", "null"] },
+            stooq_symbol: { type: ["string", "null"] },
+            coingecko_id: { type: ["string", "null"] },
+          },
+        },
+        rules: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "type", "label", "operator", "value", "direction", "pct", "window"],
+            properties: {
+              id: { type: "string" },
+              type: { type: "string", enum: ["threshold", "pct_change"] },
+              label: { type: "string" },
+              operator: { type: ["string", "null"], enum: ["lt", "lte", "gt", "gte", null] },
+              value: { type: ["number", "null"] },
+              direction: { type: ["string", "null"], enum: ["up", "down", "any", null] },
+              pct: { type: ["number", "null"] },
+              window: { type: ["string", "null"], enum: ["baseline", "24h", "7d", "30d", null] },
+            },
+          },
+        },
+      },
+    },
     suggested_frequency: { type: "string", enum: ["smart", "instant", "daily", "weekly"] },
     monitoring_window: { type: "string", enum: ["realtime", "rolling", "evergreen"] },
     recency_days: { type: "number" },
@@ -95,6 +155,8 @@ const configSchema = {
 export interface InterpretedRadar {
   name: string;
   category: string;
+  kind: RadarKind;
+  market: MarketMonitorSpec | null;
   suggested_frequency: "smart" | "instant" | "daily" | "weekly";
   monitoring_window: MonitoringWindow;
   recency_days: number;

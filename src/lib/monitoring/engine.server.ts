@@ -521,8 +521,15 @@ export async function runRadarCycle(
   radar: RadarRow,
   options: RunOptions = {},
 ): Promise<RunResult> {
-  let alertBudget = options.alertBudget ?? null;
   const config: RadarConfig = asConfig(radar.config);
+  // Market Monitoring runs on its own engine. Dispatch before any product
+  // state is set up so the two engines never share a code path.
+  if (config.kind === "market_monitoring" && config.market) {
+    const { runMarketCycle } = await import("../market/engine.server");
+    return runMarketCycle(db, radar, options);
+  }
+
+  let alertBudget = options.alertBudget ?? null;
   const isBaseline = !radar.baseline_completed;
   const runType: "baseline" | "incremental" = isBaseline ? "baseline" : "incremental";
   const recencyDays = clampRecencyDays(radar.recency_days);

@@ -33,6 +33,10 @@ export type RunPhase =
   | "evaluating_criteria"
   | "building_comparables"
   | "persisting_results"
+  // Market Monitoring phases (separate engine; shared lifecycle)
+  | "resolving_instrument"
+  | "collecting_observations"
+  | "evaluating_rules"
   | "completed";
 
 export type FailureReason = "worker_lost" | "heartbeat_timeout" | "run_timeout" | "start_failed";
@@ -82,6 +86,9 @@ export const PHASE_LABELS: Record<RunPhase, string> = {
   evaluating_criteria: "Verifierar kriterier",
   building_comparables: "Jämför marknadspriser",
   persisting_results: "Sammanställer resultatet",
+  resolving_instrument: "Kopplar datakällor",
+  collecting_observations: "Hämtar marknadsdata",
+  evaluating_rules: "Utvärderar regler",
   completed: "Klar",
 };
 
