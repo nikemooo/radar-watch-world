@@ -327,15 +327,17 @@ function RadarDetail() {
             {sweep.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             {sweep.isPending ? t("detail.searching") : t("detail.searchNow")}
           </Button>
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={() => recheck.mutate()}
-            disabled={recheck.isPending}
-          >
-            {recheck.isPending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
-            {recheck.isPending ? t("detail.reverifying") : t("detail.reverify")}
-          </Button>
+          {!isMarket && (
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => recheck.mutate()}
+              disabled={recheck.isPending}
+            >
+              {recheck.isPending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+              {recheck.isPending ? t("detail.reverifying") : t("detail.reverify")}
+            </Button>
+          )}
           {!isMarket && (
             <Button variant="outline" className="gap-2" onClick={() => setEditOpen(true)}>
               <Pencil className="size-4" />
