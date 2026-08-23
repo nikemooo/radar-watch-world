@@ -81,7 +81,37 @@ function RadarDetail() {
 
     queryFn: async () => {
       const [radar, alerts, runs, decisions, findings, changes, verifications, observations] = await Promise.all([
-...
+        supabase.from("radars").select("*").eq("id", radarId).maybeSingle(),
+        supabase
+          .from("alerts")
+          .select("*")
+          .eq("radar_id", radarId)
+          .order("created_at", { ascending: false })
+          .limit(50),
+        supabase
+          .from("monitor_runs")
+          .select("*")
+          .eq("radar_id", radarId)
+          .order("started_at", { ascending: false })
+          .limit(5),
+        supabase
+          .from("alert_decisions")
+          .select("*")
+          .eq("radar_id", radarId)
+          .order("created_at", { ascending: false })
+          .limit(25),
+        supabase
+          .from("findings")
+          .select("*")
+          .eq("radar_id", radarId)
+          .order("last_seen_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("finding_changes")
+          .select("*")
+          .eq("radar_id", radarId)
+          .order("changed_at", { ascending: false })
+          .limit(25),
         supabase.from("finding_verifications").select("*").eq("radar_id", radarId),
         supabase
           .from("market_observations")
