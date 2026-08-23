@@ -202,6 +202,16 @@ export async function runMarketCycle(
       state: priorState,
       nowIso,
     });
+    // A baseline sweep records the edge state but sends nothing, so it must
+    // not leave a "last alerted" timestamp behind for rules already true.
+    if (isBaseline) {
+      for (const [id, state] of Object.entries(evaluation.nextState)) {
+        evaluation.nextState[id] = { ...state, lastTriggeredAt: priorState[id]?.lastTriggeredAt ?? null };
+      }
+      for (const status of evaluation.statuses) {
+        status.lastTriggeredAt = priorState[status.rule.id]?.lastTriggeredAt ?? null;
+      }
+    }
 
     let alertsCreated = 0;
     // Baseline sweeps never alert — the first sweep only establishes history.

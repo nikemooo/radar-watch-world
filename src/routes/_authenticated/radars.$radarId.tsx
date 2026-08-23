@@ -327,19 +327,23 @@ function RadarDetail() {
             {sweep.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             {sweep.isPending ? t("detail.searching") : t("detail.searchNow")}
           </Button>
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={() => recheck.mutate()}
-            disabled={recheck.isPending}
-          >
-            {recheck.isPending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
-            {recheck.isPending ? t("detail.reverifying") : t("detail.reverify")}
-          </Button>
-          <Button variant="outline" className="gap-2" onClick={() => setEditOpen(true)}>
-            <Pencil className="size-4" />
-            {t("detail.editCriteria")}
-          </Button>
+          {!isMarket && (
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => recheck.mutate()}
+              disabled={recheck.isPending}
+            >
+              {recheck.isPending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+              {recheck.isPending ? t("detail.reverifying") : t("detail.reverify")}
+            </Button>
+          )}
+          {!isMarket && (
+            <Button variant="outline" className="gap-2" onClick={() => setEditOpen(true)}>
+              <Pencil className="size-4" />
+              {t("detail.editCriteria")}
+            </Button>
+          )}
           <Button
 
             variant="outline"
@@ -524,7 +528,7 @@ function RadarDetail() {
           </div>
         ) : (
           <p className="panel mt-4 p-5 text-sm text-muted-foreground">
-            {t("detail.alerts.empty")}
+            {t(isMarket ? "detail.alerts.emptyMarket" : "detail.alerts.empty")}
           </p>
         )}
         {data.changes.length > 0 && (
