@@ -311,8 +311,10 @@ export async function collectMarketQuotes(
   const tasks: { source: string; run: () => Promise<SourceQuote | null> }[] = [];
   const stooqSym = stooqSymbolFor(inst);
   if (stooqSym) tasks.push({ source: "stooq", run: () => stooqQuote(stooqSym, inst) });
-  if (inst.kind === "forex" && inst.base_currency && inst.quote_currency) {
-    tasks.push({ source: "frankfurter", run: () => frankfurterQuote(inst.base_currency, inst.quote_currency) });
+  const baseCurrency = inst.base_currency;
+  const quoteCurrency = inst.quote_currency;
+  if (inst.kind === "forex" && baseCurrency && quoteCurrency) {
+    tasks.push({ source: "frankfurter", run: () => frankfurterQuote(baseCurrency, quoteCurrency) });
   }
   if (inst.coingecko_id) {
     tasks.push({
@@ -355,7 +357,7 @@ export async function collectMarketQuotes(
       attempts.push({ source: web.quote.source, ok: true });
       provider = `web:${web.quote.source}`;
     } else {
-      attempts.push({ source: "web_search", ok: false, error: web.error });
+      attempts.push({ source: "web_search", ok: false, ...(web.error ? { error: web.error } : {}) });
     }
   }
 

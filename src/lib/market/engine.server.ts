@@ -256,7 +256,7 @@ export async function runMarketCycle(
       finished_at: finishedAt,
       worker_finished_at: finishedAt,
       termination_reason: "completed",
-      first_useful_result_at: radar.baseline_completed ? undefined : finishedAt,
+      ...(radar.baseline_completed ? {} : { first_useful_result_at: finishedAt }),
     });
     await db
       .from("radars")
