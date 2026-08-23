@@ -126,6 +126,8 @@ export const en = {
   "detail.mustBeSignedIn": "You must be signed in.",
   "detail.alerts.empty":
     "Nothing new yet. Radar gets in touch when a new listing appears, a price changes or a listing disappears.",
+  "detail.alerts.emptyMarket":
+    "No alerts yet. Radar gets in touch when a rule fires — a threshold is crossed or the value moves the way you asked.",
   "detail.facts.watching": "Watching",
   "detail.facts.important": "Most important",
   "detail.facts.strategy": "Search strategy",
@@ -468,6 +470,8 @@ const sv: Dictionary = {
   "detail.mustBeSignedIn": "Du måste vara inloggad.",
   "detail.alerts.empty":
     "Inget nytt ännu. Radar hör av sig när en ny annons dyker upp, ett pris ändras eller en annons försvinner.",
+  "detail.alerts.emptyMarket":
+    "Inga larm ännu. Radar hör av sig när en regel slår till — en nivå passeras eller värdet rör sig som du bett om.",
   "detail.facts.watching": "Bevakar",
   "detail.facts.important": "Viktigast",
   "detail.facts.strategy": "Sökstrategi",
