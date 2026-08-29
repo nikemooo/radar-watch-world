@@ -61,9 +61,18 @@ import { extractListingFacts, verifyPlace, type ListingExtraction } from "./list
 import {
   evaluateSemanticCriteria,
   storableSemantics,
+  unfetchableVerdict,
   type SemanticSurface,
+  type SemanticVerdict,
   type StoredSemantic,
 } from "./semantic";
+import { readCriteriaWithAi } from "./semantic-ai.server";
+import {
+  deepVerify,
+  storableRequirements,
+  type FetchOutcome,
+  type VerifiedRequirement,
+} from "./deep-verify";
 
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
 import { classifyCandidateUrl, gateCandidates, marketAllowed } from "./candidate-gate";
@@ -1039,6 +1048,51 @@ export async function runRadarCycle(
   const listingFactsByUrl = new Map<string, ListingExtraction>();
   /** Semantic verdict per stated criterion phrase, per item URL. */
   const semanticByUrl = new Map<string, StoredSemantic[]>();
+  /** Whether the item's OWN page could be opened — a failure is never "unknown". */
+  const fetchStateByUrl = new Map<string, FetchOutcome>();
+  /** Per-requirement verification rows shown in the UI. */
+  const requirementsByUrl = new Map<string, VerifiedRequirement[]>();
+  let aiVerificationCalls = 0;
+  let aiVerificationVerdicts = 0;
+  /** Raw semantic verdicts and the surfaces they were read from, per item URL. */
+  const semanticVerdictsByUrl = new Map<string, SemanticVerdict[]>();
+  const placeVerdictsByUrl = new Map<string, StoredSemantic[]>();
+  const surfacesByUrl = new Map<string, SemanticSurface[]>();
+  /** Content fingerprint of the fetched page, so unchanged pages are not re-read. */
+  const contentHashByUrl = new Map<string, string>();
+  /** Cheap, stable content fingerprint (no crypto needed — this is a cache key). */
+  const contentHash = (text: string): string => {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i += 1) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return `${(h >>> 0).toString(36)}:${text.length}`;
+  };
+  /**
+   * Verifications already paid for on an identical page. Re-verification only
+   * happens when the page content itself changed.
+   */
+  const cachedSemanticFor = (url: string, hash: string): SemanticVerdict[] | null => {
+    const row = (existingRows ?? []).find((f) => f.primary_url === url || f.url === url);
+    const snap = (row?.snapshot ?? null) as
+      | { content_hash?: string; semantic_criteria?: StoredSemantic[] }
+      | null;
+    if (!snap || snap.content_hash !== hash || !Array.isArray(snap.semantic_criteria)) return null;
+    const ai = snap.semantic_criteria.filter((s) => s.method === "ai");
+    if (ai.length === 0) return null;
+    return ai.map((s) => ({
+      phrase: s.phrase,
+      status: s.status,
+      confidence: s.confidence,
+      matched: s.snippet,
+      snippet: s.snippet,
+      source_url: s.source_url,
+      source_kind: s.source_kind ?? "description",
+      reason: s.reason,
+      method: "ai" as const,
+    }));
+  };
   /** Every retrieved surface per item URL, used for canonical identity resolution. */
   const identitySourcesByUrl = new Map<string, IdentitySource[]>();
 
@@ -1230,8 +1284,21 @@ export async function runRadarCycle(
         detailFetchesOk = fetched.pages.length;
         detailFetchesFailed = fetched.failures.length;
         detailCostEstimate = fetched.costEstimate;
+        for (const p of fetched.pages) fetchStateByUrl.set(p.url, { status: "ok" });
         for (const f of fetched.failures) {
           console.warn(`[radar:detail] could not fetch ${f.url} — ${f.reason}`);
+          // A page we could not open is a KNOWLEDGE GAP, not an absent feature:
+          // every criterion for it is reported as unverifiable, with the reason.
+          fetchStateByUrl.set(f.url, { status: "failed", reason: f.reason.slice(0, 140) });
+          const phrases = [...config.important_criteria, ...config.preferences, ...(config.locations ?? [])].filter(
+            Boolean,
+          );
+          if (phrases.length > 0) {
+            semanticByUrl.set(
+              f.url,
+              storableSemantics(phrases.map((p) => unfetchableVerdict(p, f.url, f.reason.slice(0, 120)))),
+            );
+          }
         }
         // A listing whose own page is proven gone (404/410) is recorded as
         // removed on the SAME finding — history is never deleted.
@@ -1421,7 +1488,9 @@ export async function runRadarCycle(
                       ? "opengraph"
                       : t === "search_snippet"
                         ? "snippet"
-                        : "text";
+                        : t === "detail_text"
+                          ? "description"
+                          : "text";
             const semanticSurfaces: SemanticSurface[] = docs.map((d) => ({
               url: d.url,
               kind: surfaceKind(d.sourceType),
@@ -1430,8 +1499,10 @@ export async function runRadarCycle(
                 .join("\n")
                 .slice(0, 20000),
             }));
+            surfacesByUrl.set(page.url, semanticSurfaces);
             const phrases = [...config.important_criteria, ...config.preferences].filter(Boolean);
             const semantic = evaluateSemanticCriteria(phrases, semanticSurfaces);
+            semanticVerdictsByUrl.set(page.url, semantic);
             // Requested places are verified against stated address data, never
             // against marketing copy that merely mentions a neighbourhood.
             const placeVerdicts = (config.locations ?? []).map((place) => {
@@ -1443,12 +1514,68 @@ export async function runRadarCycle(
                 snippet: v.matched,
                 source_url: page.url,
                 reason: v.reason,
+                source_kind: "description" as const,
+                source_label: "listing address",
+                method: "vocabulary" as const,
               } satisfies StoredSemantic;
             });
+            placeVerdictsByUrl.set(page.url, placeVerdicts);
             const stored = [...storableSemantics(semantic), ...placeVerdicts];
             if (stored.length > 0) semanticByUrl.set(page.url, stored);
 
           }
+
+          // ---------- DEEP AI READING OF THE LISTING TEXT ----------
+          // Word lists settle the easy cases. Everything they left open is read
+          // by a model FROM THE PAGE WE ACTUALLY FETCHED, with each verdict
+          // required to quote the page verbatim. Cached per page content, so a
+          // returning, unchanged listing is never re-read at cost.
+          {
+            const openPages = fetched.pages.filter((p) => {
+              const verdicts = semanticVerdictsByUrl.get(p.url) ?? [];
+              return verdicts.some((v) => v.status === "unknown" || v.status === "probable");
+            });
+            const budget = Math.min(openPages.length, isBaseline ? 12 : 8);
+            for (const page of openPages.slice(0, budget)) {
+              const surfaces = surfacesByUrl.get(page.url) ?? [];
+              const verdicts = semanticVerdictsByUrl.get(page.url) ?? [];
+              const open = verdicts.filter((v) => v.status === "unknown" || v.status === "probable");
+              const hash = contentHash(page.text);
+              const cached = cachedSemanticFor(page.url, hash);
+              let aiVerdicts: SemanticVerdict[] = [];
+              if (cached) {
+                aiVerdicts = cached.filter((c) => open.some((o) => o.phrase === c.phrase));
+              } else {
+                try {
+                  aiVerificationCalls += 1;
+                  aiVerdicts = await step(`semantic_ai:${page.url}`, () =>
+                    readCriteriaWithAi({ url: page.url, phrases: open.map((o) => o.phrase), surfaces }),
+                  );
+                } catch (err) {
+                  console.warn(`[radar:verify] AI reading skipped for ${page.url} — ${(err as Error).message}`);
+                  aiVerdicts = [];
+                }
+              }
+              if (aiVerdicts.length === 0) continue;
+              aiVerificationVerdicts += aiVerdicts.length;
+              const byPhrase = new Map(aiVerdicts.map((v) => [v.phrase, v]));
+              const merged = verdicts.map((v) => {
+                const ai = byPhrase.get(v.phrase);
+                // The model may only STRENGTHEN an open verdict, never weaken a
+                // deterministic confirmation or contradiction.
+                if (!ai || (v.status !== "unknown" && v.status !== "probable")) return v;
+                if (ai.status === "probable" && v.status === "probable") return v;
+                return ai;
+              });
+              semanticVerdictsByUrl.set(page.url, merged);
+              contentHashByUrl.set(page.url, hash);
+              semanticByUrl.set(page.url, [
+                ...storableSemantics(merged),
+                ...(placeVerdictsByUrl.get(page.url) ?? []),
+              ]);
+            }
+          }
+
 
           // AI extraction runs ONLY for pages that still miss attributes.
           const needsAi = fetched.pages.filter(
@@ -1789,7 +1916,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
         .filter((a) => a.raw && (a.confidence === "stated" || a.confidence === "structured"))
         .map((a) => ({ sourceType: "detail_field", url: a.source_url, text: `${a.key}: ${a.raw}` })),
     ];
-    const verdict = evaluateCriteria(
+    const attributeVerdict = evaluateCriteria(
       {
         title: item.title,
         attributes,
@@ -1799,6 +1926,16 @@ ${documentBlock(allDocs.slice(0, 45))}`,
       },
       constraints,
     );
+
+    // Deep verification: what the attribute gate could not settle is decided
+    // from what the listing itself SAYS — with the verbatim quote attached, and
+    // with an unreachable page reported as unreachable, never as "unknown".
+    const verdict = deepVerify(
+      attributeVerdict,
+      semanticByUrl.get(item.url) ?? [],
+      fetchStateByUrl.get(item.url) ?? { status: "not_attempted" },
+    );
+    requirementsByUrl.set(item.url, storableRequirements(verdict.requirements));
 
     verdicts.set(item.fingerprint, verdict);
     if (verdict.status === "match") criteriaMatched += 1;
