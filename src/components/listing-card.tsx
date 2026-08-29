@@ -63,6 +63,10 @@ export interface FindingSnapshot {
   listing_status_evidence?: string | null;
   /** The user's own criteria wording, judged against the sources. */
   semantic_criteria?: StoredSemantic[];
+  /** Deep verification: one row per requirement, with verbatim evidence. */
+  requirements?: VerifiedRequirement[];
+  fetch_status?: "ok" | "failed" | "not_attempted" | null;
+  fetch_error?: string | null;
 
   /** "direct" when the stored URL provably addresses the advert itself. */
   link_status?: "direct" | "unverified";
