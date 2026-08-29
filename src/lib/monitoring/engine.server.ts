@@ -1808,9 +1808,15 @@ export async function runRadarCycle(
         }
       }
     } catch (err) {
+      // Control flow is NOT an error: swallowing a paused slice here made the
+      // run continue past its deadline and leave the radar locked, which is
+      // what produced endless abort/resume cycles with nothing to show.
+      const name = (err as Error).name;
+      if (name === "SweepPaused" || name === "CheckpointWriteError") throw err;
       console.error(`[radar:detail] detail pipeline failed — ${(err as Error).message}`);
       extractionsFailed += 1;
     }
+
   }
 
   if (detailDocs.length > 0) {
