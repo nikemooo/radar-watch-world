@@ -174,7 +174,7 @@ function fieldLookup(
  * ------------------------------------------------------------------ */
 
 function measureFrom(spec: MeasureSpec, surfaces: ListingSurfaces): ListingFact | null {
-  const layers: { layer: FactLayer; confidence: FactConfidence; fields?: Record<string, string>; text?: string }[] = [
+  const layers: { layer: FactLayer; confidence: FactConfidence; fields?: Record<string, string> | undefined; text?: string | undefined }[] = [
     { layer: "jsonld", confidence: "structured", fields: surfaces.jsonld },
     { layer: "field", confidence: "structured", fields: surfaces.fields },
     { layer: "opengraph", confidence: "stated", fields: surfaces.og },
