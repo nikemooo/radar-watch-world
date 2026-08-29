@@ -269,13 +269,19 @@ export function selectListingImages(
     return a.order - b.order;
   });
 
-  const images = ranked.slice(0, limit).map((c) => c.url);
-  const foreign = ranked.filter((c) => !sameOperator(c.url, pageUrl)).length;
+  // Image integrity: when the listing serves its own photos, a foreign host is
+  // never this listing's photo — drop it rather than show someone else's item.
+  const own = ranked.filter((c) => sameOperator(c.url, pageUrl));
+  const foreign = ranked.length - own.length;
+  const kept = own.length > 0 ? own : ranked;
+
+  const images = kept.slice(0, limit).map((c) => c.url);
   const note =
     images.length === 0
       ? "the listing page published no usable photo"
       : `${images.length} photo(s) read from the listing page` +
-        (foreign > 0 ? `; ${foreign} served by an external host` : "") +
+        (own.length > 0 && foreign > 0 ? `; ${foreign} foreign-host image(s) dropped` : "") +
+        (own.length === 0 ? "; served by an external host" : "") +
         (rejected > 0 ? `; ${rejected} non-content image(s) filtered out` : "");
 
   return { images, primary: images[0] ?? null, note, rejected };

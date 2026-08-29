@@ -12,6 +12,7 @@ import { asBaseline, BaselinePanel } from "@/components/baseline-panel";
 import { isFactual, type AttributeValue } from "@/lib/monitoring/normalize";
 import { storedEvidenceOf, type StoredEvidence } from "@/lib/monitoring/evidence";
 import { storedSemanticsOf, type StoredSemantic } from "@/lib/monitoring/semantic";
+import { storedRequirementsOf, type VerifiedRequirement } from "@/lib/monitoring/deep-verify";
 import { statusLabel, type EffectiveVerdict } from "@/lib/monitoring/verification";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -63,6 +64,10 @@ export interface FindingSnapshot {
   listing_status_evidence?: string | null;
   /** The user's own criteria wording, judged against the sources. */
   semantic_criteria?: StoredSemantic[];
+  /** Deep verification: one row per requirement, with verbatim evidence. */
+  requirements?: VerifiedRequirement[];
+  fetch_status?: "ok" | "failed" | "not_attempted" | null;
+  fetch_error?: string | null;
 
   /** "direct" when the stored URL provably addresses the advert itself. */
   link_status?: "direct" | "unverified";
@@ -140,6 +145,7 @@ const semanticIcon: Record<StoredSemantic["status"], string> = {
   probable: "~",
   contradicted: "✕",
   unknown: "–",
+  unfetchable: "⚠",
 };
 
 const semanticTone: Record<StoredSemantic["status"], string> = {
@@ -147,6 +153,7 @@ const semanticTone: Record<StoredSemantic["status"], string> = {
   probable: "text-muted-foreground",
   contradicted: "text-critical",
   unknown: "text-muted-foreground",
+  unfetchable: "text-warning",
 };
 
 /** Image gallery for one listing — only photos read from its own page. */
@@ -220,6 +227,7 @@ export function ListingCard({
     new Set([...(snapshot.image ? [snapshot.image] : []), ...(snapshot.images ?? [])].filter(Boolean)),
   ) as string[];
   const semantic = storedSemanticsOf(snapshot.semantic_criteria);
+  const deepRequirements = storedRequirementsOf(snapshot.requirements);
   const listingFacts = snapshot.listing_facts ?? [];
   const offerStatus = snapshot.listing_status ?? "unknown";
   const evidence = storedEvidenceOf(snapshot.evidence);
@@ -394,6 +402,34 @@ export function ListingCard({
               </ul>
             ) : (
               snapshot.match_reason && <p className="text-sm text-muted-foreground">{snapshot.match_reason}</p>
+            )}
+            {deepRequirements.length > 0 && (
+              <div className="space-y-1">
+                <p className="mono-label">{t("listing.requirements")}</p>
+                <ul className="space-y-2 text-sm">
+                  {deepRequirements.map((r) => (
+                    <li key={`deep-${r.attribute}-${r.label}`} className="flex gap-2">
+                      <span aria-hidden>{statusIcon[r.status]}</span>
+                      <span className={r.status === "match" ? "" : "text-muted-foreground"}>
+                        <span className={r.status === "reject" ? "text-critical" : undefined}>{r.label}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {r.verdict === "unfetchable" ? t("listing.requirement.unreachable") : r.reason}
+                        </span>
+                        {r.evidence?.snippet && (
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            “{r.evidence.snippet}”
+                            {r.evidence.source_label && (
+                              <span className="block">
+                                {t("listing.requirement.source")}: {r.evidence.source_label}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             {semantic.length > 0 && (
               <div className="space-y-1">
