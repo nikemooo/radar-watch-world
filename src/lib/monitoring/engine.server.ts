@@ -61,9 +61,18 @@ import { extractListingFacts, verifyPlace, type ListingExtraction } from "./list
 import {
   evaluateSemanticCriteria,
   storableSemantics,
+  unfetchableVerdict,
   type SemanticSurface,
+  type SemanticVerdict,
   type StoredSemantic,
 } from "./semantic";
+import { readCriteriaWithAi } from "./semantic-ai.server";
+import {
+  deepVerify,
+  storableRequirements,
+  type FetchOutcome,
+  type VerifiedRequirement,
+} from "./deep-verify";
 
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
 import { classifyCandidateUrl, gateCandidates, marketAllowed } from "./candidate-gate";
