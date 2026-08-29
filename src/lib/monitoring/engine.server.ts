@@ -1246,9 +1246,52 @@ export async function runRadarCycle(
 
       if (selected.length > 0) {
         await phase("fetching_details");
-        const fetched = await step("detail_pages", () =>
-          fetchDetailPages(selected.map((c) => c.url!)),
-        );
+        // ---------- DEEP-VERIFICATION QUEUE ----------
+        // Every candidate is queued and read in small, individually
+        // checkpointed chunks. One dead site can no longer consume the sweep,
+        // and an interrupted worker resumes at the exact chunk it stopped on
+        // instead of paying for the whole batch again.
+        const networkFetched = new Set<string>();
+        const queued = await runDetailQueue<FetchedPage>({
+          urls: selected.map((c) => c.url!),
+          step,
+          fetchPages: (urls) => {
+            for (const u of urls) networkFetched.add(u);
+            return fetchDetailPages(urls);
+          },
+          onProgress: async ({ telemetry, changed }) => {
+            detailQueueTelemetry = { ...telemetry };
+            await patchRun({
+              ...telemetry,
+              detail_fetches_ok: telemetry.detail_candidates_completed,
+              detail_fetches_failed:
+                telemetry.detail_candidates_failed +
+                telemetry.detail_candidates_blocked +
+                telemetry.detail_candidates_timeout,
+            });
+            await markCandidateStates(changed);
+          },
+        });
+        const fetched = {
+          pages: queued.pages,
+          failures: queued.failures,
+          costEstimate: queued.costEstimate,
+        };
+        for (const c of queued.classified) candidateStateByUrl.set(c.url, c.state);
+        // Chunks served from a checkpoint never touched the network — that is
+        // exactly what "reused, not re-fetched" means for this run.
+        detailQueueTelemetry = {
+          ...queued.telemetry,
+          detail_candidates_cached:
+            queued.telemetry.detail_candidates_cached +
+            Math.max(0, queued.telemetry.detail_candidates_started - networkFetched.size),
+        };
+        if (queued.remaining.length > 0) {
+          console.warn(
+            `[radar:detail] ${queued.remaining.length} candidate(s) left unread — ${queued.budgetExhausted ? "deep-verification budget reached" : "queue not exhausted"}`,
+          );
+        }
+
         // Real listing imagery only — captured from the item's own page, with
         // its provenance. A missing image is left missing; nothing is invented.
         for (const p of fetched.pages) {
