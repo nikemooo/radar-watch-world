@@ -228,16 +228,26 @@ interface RawHit {
   labelled: boolean;
 }
 
+/**
+ * The price label closest before a value decides what kind of price it is.
+ * When a specific label ("utgångspris") overlaps the generic one ("pris"),
+ * the specific reading wins.
+ */
 function labelBefore(text: string, at: number): { type: PriceType; word: string } | null {
   const window = text.slice(Math.max(0, at - 42), at);
-  let best: { type: PriceType; word: string; index: number } | null = null;
-  for (const { re, type } of PRICE_LABELS) {
-    const m = window.match(re);
-    if (!m) continue;
-    const index = window.lastIndexOf(m[0]);
-    if (!best || index > best.index) best = { type, word: m[0].trim(), index };
-  }
-  return best ? { type: best.type, word: best.word } : null;
+  const found: { type: PriceType; word: string; start: number; end: number; rank: number }[] = [];
+  PRICE_LABELS.forEach(({ re, type }, rank) => {
+    const m = window.match(new RegExp(re.source, "gi"));
+    if (!m) return;
+    const word = m[m.length - 1]!;
+    const start = window.lastIndexOf(word);
+    found.push({ type, word: word.trim(), start, end: start + word.length, rank });
+  });
+  if (found.length === 0) return null;
+  const nearest = found.reduce((a, b) => (b.end > a.end ? b : a));
+  const overlapping = found.filter((f) => f.start < nearest.end && f.end > nearest.start);
+  const best = overlapping.reduce((a, b) => (b.rank < a.rank ? b : a), nearest);
+  return { type: best.type, word: best.word };
 }
 
 function rejected(text: string, hit: { start: number; end: number; text: string }, hasCurrency: boolean): boolean {
