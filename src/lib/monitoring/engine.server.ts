@@ -2451,6 +2451,21 @@ ${eligible
             semantic_criteria: (semanticByUrl.get(item.url) ??
               (prev?.snapshot as { semantic_criteria?: StoredSemantic[] } | null)?.semantic_criteria ??
               []) as never,
+            // One row per requirement: verdict, reason, verbatim evidence and
+            // which part of the page it was read from.
+            requirements: (requirementsByUrl.get(item.url) ??
+              (prev?.snapshot as { requirements?: VerifiedRequirement[] } | null)?.requirements ??
+              []) as never,
+            // Cache key for deep verification: unchanged content is not re-read.
+            content_hash: (contentHashByUrl.get(item.url) ??
+              (prev?.snapshot as { content_hash?: string } | null)?.content_hash ??
+              null) as never,
+            fetch_status: (fetchStateByUrl.get(item.url)?.status ??
+              (prev?.snapshot as { fetch_status?: string } | null)?.fetch_status ??
+              null) as never,
+            fetch_error: ((fetchStateByUrl.get(item.url) as { reason?: string } | undefined)?.reason ??
+              (prev?.snapshot as { fetch_error?: string } | null)?.fetch_error ??
+              null) as never,
             identity: ((verdicts.get(item.fingerprint)?.outcomes ?? [])
               .map((o) => o.identity)
               .filter(Boolean)[0] ??
