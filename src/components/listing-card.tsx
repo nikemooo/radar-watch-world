@@ -12,6 +12,7 @@ import { asBaseline, BaselinePanel } from "@/components/baseline-panel";
 import { isFactual, type AttributeValue } from "@/lib/monitoring/normalize";
 import { storedEvidenceOf, type StoredEvidence } from "@/lib/monitoring/evidence";
 import { storedSemanticsOf, type StoredSemantic } from "@/lib/monitoring/semantic";
+import { storedRequirementsOf, type VerifiedRequirement } from "@/lib/monitoring/deep-verify";
 import { statusLabel, type EffectiveVerdict } from "@/lib/monitoring/verification";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
