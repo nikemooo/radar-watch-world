@@ -7,10 +7,11 @@
  * only claimed when the deterministic baseline says it may be.
  */
 import { useState } from "react";
-import { ChevronDown, ExternalLink, ImageOff } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, ImageOff } from "lucide-react";
 import { asBaseline, BaselinePanel } from "@/components/baseline-panel";
 import { isFactual, type AttributeValue } from "@/lib/monitoring/normalize";
 import { storedEvidenceOf, type StoredEvidence } from "@/lib/monitoring/evidence";
+import { storedSemanticsOf, type StoredSemantic } from "@/lib/monitoring/semantic";
 import { statusLabel, type EffectiveVerdict } from "@/lib/monitoring/verification";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -54,6 +55,14 @@ export interface FindingSnapshot {
     canonical: string;
     explanation: string;
   } | null;
+
+  /** Generic listing facts read from the source (rooms, area, address…). */
+  listing_facts?: { key: string; raw: string; value: number | null; unit: string | null; confidence: string }[];
+  item_type?: string | null;
+  listing_status?: "active" | "sold" | "reserved" | "upcoming" | "unknown";
+  listing_status_evidence?: string | null;
+  /** The user's own criteria wording, judged against the sources. */
+  semantic_criteria?: StoredSemantic[];
 
   /** "direct" when the stored URL provably addresses the advert itself. */
   link_status?: "direct" | "unverified";
@@ -126,6 +135,68 @@ const evidenceIcon: Record<StoredEvidence["status"], string> = {
   unknown: "–",
 };
 
+const semanticIcon: Record<StoredSemantic["status"], string> = {
+  confirmed: "✓",
+  probable: "~",
+  contradicted: "✕",
+  unknown: "–",
+};
+
+const semanticTone: Record<StoredSemantic["status"], string> = {
+  confirmed: "",
+  probable: "text-muted-foreground",
+  contradicted: "text-critical",
+  unknown: "text-muted-foreground",
+};
+
+/** Image gallery for one listing — only photos read from its own page. */
+function Gallery({ images, alt, fallback }: { images: string[]; alt: string; fallback: React.ReactNode }) {
+  const [index, setIndex] = useState(0);
+  const [broken, setBroken] = useState<Record<number, boolean>>({});
+  const usable = images.filter((_, i) => !broken[i]);
+  if (images.length === 0 || usable.length === 0) return <>{fallback}</>;
+  const current = Math.min(index, images.length - 1);
+  return (
+    <>
+      <img
+        src={images[current]}
+        alt={alt}
+        loading="lazy"
+        className="size-full object-cover"
+        onError={() => setBroken((b) => ({ ...b, [current]: true }))}
+      />
+      {images.length > 1 && (
+        <>
+          <button
+            type="button"
+            aria-label="previous photo"
+            onClick={() => setIndex((i) => (i - 1 + images.length) % images.length)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-background/70 p-1 backdrop-blur hover:bg-background"
+          >
+            <ChevronLeft className="size-4" aria-hidden />
+          </button>
+          <button
+            type="button"
+            aria-label="next photo"
+            onClick={() => setIndex((i) => (i + 1) % images.length)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-background/70 p-1 backdrop-blur hover:bg-background"
+          >
+            <ChevronRight className="size-4" aria-hidden />
+          </button>
+          <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
+            {images.slice(0, 10).map((src, i) => (
+              <span
+                key={src}
+                className={cn("size-1.5 rounded-full", i === current ? "bg-foreground" : "bg-foreground/30")}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 export function ListingCard({
   finding,
   verdict,
@@ -145,7 +216,12 @@ export function ListingCard({
   const directLink = snapshot.link_status ? snapshot.link_status === "direct" : !!finding.primary_url;
   const market = marketVerdict(finding.baseline, t, locale);
   const price = money(finding.numeric_value, finding.currency, locale);
-  const image = snapshot.image ?? snapshot.images?.[0] ?? null;
+  const gallery = Array.from(
+    new Set([...(snapshot.image ? [snapshot.image] : []), ...(snapshot.images ?? [])].filter(Boolean)),
+  ) as string[];
+  const semantic = storedSemanticsOf(snapshot.semantic_criteria);
+  const listingFacts = snapshot.listing_facts ?? [];
+  const offerStatus = snapshot.listing_status ?? "unknown";
   const evidence = storedEvidenceOf(snapshot.evidence);
   const identifiers = snapshot.identifiers ?? [];
   const status: MatchStatus = verdict?.status ?? snapshot.match_status ?? "unverified";
@@ -158,24 +234,18 @@ export function ListingCard({
   return (
     <article className="panel flex h-full flex-col overflow-hidden">
       <div className="relative aspect-[16/10] w-full bg-muted/40">
-        {image ? (
-          <img
-            src={image}
-            alt={finding.title}
-            loading="lazy"
-            className="size-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
-          />
-        ) : (
-          <div className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground">
-            <ImageOff className="size-5" aria-hidden />
-            <span className="text-xs">
-              {snapshot.image_status === "unavailable" ? t("listing.imageUnavailable") : t("listing.noImage")}
-            </span>
-          </div>
-        )}
+        <Gallery
+          images={gallery}
+          alt={finding.title}
+          fallback={
+            <div className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground">
+              <ImageOff className="size-5" aria-hidden />
+              <span className="text-xs">
+                {snapshot.image_status === "unavailable" ? t("listing.imageUnavailable") : t("listing.noImage")}
+              </span>
+            </div>
+          }
+        />
         <span
           className={cn(
             "absolute left-3 top-3 rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur",
@@ -184,6 +254,14 @@ export function ListingCard({
         >
           {statusIcon[status]} {t(`verify.status.${status}` as TranslationKey)}
         </span>
+        {offerStatus !== "unknown" && offerStatus !== "active" && (
+          <span
+            className="absolute right-3 top-3 rounded-full bg-critical/15 px-2.5 py-1 text-xs font-medium text-critical backdrop-blur"
+            title={snapshot.listing_status_evidence ?? undefined}
+          >
+            {t(`listing.offer.${offerStatus}` as TranslationKey)}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-1 flex-col space-y-3 p-4">
@@ -316,6 +394,32 @@ export function ListingCard({
               </ul>
             ) : (
               snapshot.match_reason && <p className="text-sm text-muted-foreground">{snapshot.match_reason}</p>
+            )}
+            {semantic.length > 0 && (
+              <div className="space-y-1">
+                <p className="mono-label">{t("listing.criteriaEvidence")}</p>
+                <ul className="space-y-1 text-sm">
+                  {semantic.map((c) => (
+                    <li key={c.phrase} className="flex gap-2">
+                      <span aria-hidden>{semanticIcon[c.status]}</span>
+                      <span className={semanticTone[c.status]}>
+                        {c.phrase} · {t(`listing.semantic.${c.status}` as TranslationKey)}
+                        {c.snippet && <span className="block text-xs text-muted-foreground">“{c.snippet}”</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {listingFacts.length > 0 && (
+              <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                {listingFacts.map((f) => (
+                  <div key={f.key} className="flex gap-2">
+                    <dt className="mono-label">{f.key.replace(/_/g, " ")}</dt>
+                    <dd>{f.raw}</dd>
+                  </div>
+                ))}
+              </dl>
             )}
             {evidence.length > 0 && (
               <div className="space-y-1">

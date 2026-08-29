@@ -57,6 +57,13 @@ import { extractPrice, explainPrice } from "./price";
 import { detectIdentifiers, mergeIdentifiers, presentableIdentifiers, type Identifier } from "./identifiers";
 import { comparableIdentity, parseIdentity, type IdentitySource } from "./identity";
 import { dedupeListings } from "./dedupe";
+import { extractListingFacts, verifyPlace, type ListingExtraction } from "./listing-extract";
+import {
+  evaluateSemanticCriteria,
+  storableSemantics,
+  type SemanticSurface,
+  type StoredSemantic,
+} from "./semantic";
 
 import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
 import { classifyCandidateUrl, gateCandidates, marketAllowed } from "./candidate-gate";
@@ -1028,6 +1035,10 @@ export async function runRadarCycle(
   const attributeEvidenceByUrl = new Map<string, Record<string, AttributeEvidence>>();
   const identifiersByUrl = new Map<string, Identifier[]>();
   const imageEvidenceByUrl = new Map<string, ImageEvidence>();
+  /** Generic listing facts (place, measures, status) per item URL. */
+  const listingFactsByUrl = new Map<string, ListingExtraction>();
+  /** Semantic verdict per stated criterion phrase, per item URL. */
+  const semanticByUrl = new Map<string, StoredSemantic[]>();
   /** Every retrieved surface per item URL, used for canonical identity resolution. */
   const identitySourcesByUrl = new Map<string, IdentitySource[]>();
 
@@ -1380,6 +1391,62 @@ export async function runRadarCycle(
               identifiersByUrl.set(page.url, presentable);
               identifiersFound += presentable.length;
             }
+
+            // ---------- GENERIC LISTING UNDERSTANDING ----------
+            // What kind of thing is offered, where it is, what it measures and
+            // whether the offer is still open — read from stated facts only.
+            const listing = extractListingFacts({
+              url: page.url,
+              title: page.title,
+              text: page.text,
+              jsonld: st?.jsonld,
+              og: st?.og,
+              meta: st?.meta,
+              fields: st?.fields,
+            });
+            listingFactsByUrl.set(page.url, listing);
+
+            // ---------- SEMANTIC CRITERIA ----------
+            // The user's own wording, judged against every retrieved surface:
+            // synonyms confirm, adjacent wording is only probable, negations
+            // contradict. Each verdict carries the snippet it was read from.
+            const surfaceKind = (t: EvidenceDoc["sourceType"]): SemanticSurface["kind"] =>
+              t === "jsonld"
+                ? "jsonld"
+                : t === "detail_field"
+                  ? "field"
+                  : t === "detail_title"
+                    ? "title"
+                    : t === "opengraph" || t === "meta"
+                      ? "opengraph"
+                      : t === "search_snippet"
+                        ? "snippet"
+                        : "text";
+            const semanticSurfaces: SemanticSurface[] = docs.map((d) => ({
+              url: d.url,
+              kind: surfaceKind(d.sourceType),
+              text: [d.title ?? "", d.text ?? "", Object.entries(d.fields ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n")]
+                .filter(Boolean)
+                .join("\n")
+                .slice(0, 20000),
+            }));
+            const phrases = [...config.important_criteria, ...config.preferences].filter(Boolean);
+            const semantic = evaluateSemanticCriteria(phrases, semanticSurfaces);
+            // Requested places are verified against stated address data, never
+            // against marketing copy that merely mentions a neighbourhood.
+            const placeVerdicts = (config.locations ?? []).map((place) => {
+              const v = verifyPlace(place, listing, page.text);
+              return {
+                phrase: place,
+                status: v.status,
+                confidence: v.status === "confirmed" ? 0.95 : v.status === "probable" ? 0.5 : 0.2,
+                snippet: v.matched,
+                source_url: page.url,
+                reason: v.reason,
+              } satisfies StoredSemantic;
+            });
+            const stored = [...storableSemantics(semantic), ...placeVerdicts];
+            if (stored.length > 0) semanticByUrl.set(page.url, stored);
 
           }
 
@@ -2220,6 +2287,33 @@ ${eligible
               []) as never,
             // Canonical product identity: what the accumulated evidence says the
             // item IS, independent of whether every other criterion is proven.
+            // Generic listing understanding: measures, place and offer status.
+            listing_facts: (listingFactsByUrl.has(item.url)
+              ? Object.values(listingFactsByUrl.get(item.url)!.facts).map((f) => ({
+                  key: f.key,
+                  raw: f.raw,
+                  value: f.value,
+                  unit: f.unit,
+                  layer: f.layer,
+                  confidence: f.confidence,
+                }))
+              : ((prev?.snapshot as { listing_facts?: unknown[] } | null)?.listing_facts ?? [])) as never,
+            item_type:
+              listingFactsByUrl.get(item.url)?.item_type ??
+              (prev?.snapshot as { item_type?: string } | null)?.item_type ??
+              null,
+            listing_status:
+              listingFactsByUrl.get(item.url)?.status.status ??
+              (prev?.snapshot as { listing_status?: string } | null)?.listing_status ??
+              "unknown",
+            listing_status_evidence:
+              listingFactsByUrl.get(item.url)?.status.evidence ??
+              (prev?.snapshot as { listing_status_evidence?: string } | null)?.listing_status_evidence ??
+              null,
+            // The user's own wording, judged semantically against the sources.
+            semantic_criteria: (semanticByUrl.get(item.url) ??
+              (prev?.snapshot as { semantic_criteria?: StoredSemantic[] } | null)?.semantic_criteria ??
+              []) as never,
             identity: ((verdicts.get(item.fingerprint)?.outcomes ?? [])
               .map((o) => o.identity)
               .filter(Boolean)[0] ??
@@ -2240,7 +2334,11 @@ ${eligible
               ? "failed"
               : (prev?.detail_status ?? "not_attempted"),
           detail_fetched_at: detail ? now : (prev?.detail_fetched_at ?? null),
-          availability: detail?.availability ?? prev?.availability ?? null,
+          availability:
+            detail?.availability ??
+            (listingFactsByUrl.get(item.url)?.status.status === "sold" ? "removed" : null) ??
+            prev?.availability ??
+            null,
           published_at: t.publishedAt,
           source_updated_at: t.updatedAt,
           event_date: t.eventDate,
