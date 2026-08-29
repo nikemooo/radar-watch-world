@@ -1284,8 +1284,21 @@ export async function runRadarCycle(
         detailFetchesOk = fetched.pages.length;
         detailFetchesFailed = fetched.failures.length;
         detailCostEstimate = fetched.costEstimate;
+        for (const p of fetched.pages) fetchStateByUrl.set(p.url, { status: "ok" });
         for (const f of fetched.failures) {
           console.warn(`[radar:detail] could not fetch ${f.url} — ${f.reason}`);
+          // A page we could not open is a KNOWLEDGE GAP, not an absent feature:
+          // every criterion for it is reported as unverifiable, with the reason.
+          fetchStateByUrl.set(f.url, { status: "failed", reason: f.reason.slice(0, 140) });
+          const phrases = [...config.important_criteria, ...config.preferences, ...(config.locations ?? [])].filter(
+            Boolean,
+          );
+          if (phrases.length > 0) {
+            semanticByUrl.set(
+              f.url,
+              storableSemantics(phrases.map((p) => unfetchableVerdict(p, f.url, f.reason.slice(0, 120)))),
+            );
+          }
         }
         // A listing whose own page is proven gone (404/410) is recorded as
         // removed on the SAME finding — history is never deleted.
