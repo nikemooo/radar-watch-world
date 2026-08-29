@@ -187,8 +187,12 @@ function measureFrom(spec: MeasureSpec, surfaces: ListingSurfaces): ListingFact 
     let raw: string | null = null;
     if (l.fields) raw = fieldLookup(l.fields, spec.labels)?.value ?? null;
     else if (l.text) {
-      raw = labelledIn(l.text, spec.labels)?.raw ?? null;
+      // A label only introduces a value when the value follows it. Where the
+      // label is itself the unit ("3 rum"), the number comes BEFORE the word.
+      const labelled = labelledIn(l.text, spec.labels)?.raw ?? null;
+      raw = labelled && /^\D{0,3}\d/.test(labelled) ? labelled : null;
       if (!raw && spec.units) raw = unitBefore(l.text, spec.units);
+      if (!raw) raw = labelled;
     }
     if (!raw) continue;
     const value = parseNumber(raw);
