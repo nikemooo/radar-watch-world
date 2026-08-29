@@ -69,7 +69,7 @@ describe("deep-verification queue", () => {
       urls,
       step: first.step,
       chunkSize: 2,
-      budgetMs: 0.0001,
+      budgetMs: 1500,
       now: (() => {
         let t = 0;
         return () => (t += 1000);
