@@ -86,7 +86,8 @@ describe("prices keep working", () => {
       ["Pris 4500 tkr", 4500000],
     ] as const) {
       const p = extractPrice({ url: PAGE, text });
-      expect(p.value).toBe(expected);
+      expect(p.primary?.amount).toBe(expected);
+      expect(p.primary?.currency).toBe("SEK");
     }
   });
 });
