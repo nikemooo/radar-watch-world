@@ -13,6 +13,7 @@
  */
 
 import { parseStructured, type StructuredSignals } from "../monitoring/enrichment";
+import { extractListingImages, mergeImageSets } from "../monitoring/images";
 
 export interface FetchedPage {
   url: string;
