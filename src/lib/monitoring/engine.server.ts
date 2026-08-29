@@ -274,7 +274,10 @@ export interface RunResult {
   paginationPagesSucceeded?: number;
   paginationPagesBlocked?: number;
   indexesExhausted?: number;
+  /** Deep-verification queue telemetry (see detail-queue.ts). */
+  detailQueue?: DetailQueueTelemetry;
 }
+
 
 interface Decision {
   fingerprint: string;
