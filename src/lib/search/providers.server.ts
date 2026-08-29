@@ -277,7 +277,14 @@ const duckDuckGoProvider: SearchProvider = {
     }
     if (!res.ok) throw new SearchProviderError(res.status, `DuckDuckGo search failed (${res.status})`);
     const html = await res.text();
-    return parseDuckDuckGoHtml(html, query, limit, retrieved_at);
+    const documents = parseDuckDuckGoHtml(html, query, limit, retrieved_at);
+    // A parse yielding nothing means we were served an anti-bot page, not that
+    // the market is empty. Report it as a provider failure so the run is
+    // honest about discovery instead of claiming zero listings exist.
+    if (documents.length === 0) {
+      throw new SearchProviderError(0, "DuckDuckGo returned no parsable results (blocked or empty response)");
+    }
+    return documents;
   },
 };
 
