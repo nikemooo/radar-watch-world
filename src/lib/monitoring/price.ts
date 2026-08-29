@@ -201,8 +201,12 @@ function currencyFor(token: string | undefined, marketCurrency: string | null): 
 /** The currency a page's own market uses — supporting evidence only. */
 export function marketCurrencyForUrl(url: string | null | undefined): string | null {
   if (!url) return null;
-  const market = marketForUrl(url);
-  return market?.currencies[0] ?? null;
+  try {
+    const market = marketOfHost(new URL(url).hostname);
+    return market?.currencies[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ *
