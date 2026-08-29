@@ -227,6 +227,7 @@ export function ListingCard({
     new Set([...(snapshot.image ? [snapshot.image] : []), ...(snapshot.images ?? [])].filter(Boolean)),
   ) as string[];
   const semantic = storedSemanticsOf(snapshot.semantic_criteria);
+  const deepRequirements = storedRequirementsOf(snapshot.requirements);
   const listingFacts = snapshot.listing_facts ?? [];
   const offerStatus = snapshot.listing_status ?? "unknown";
   const evidence = storedEvidenceOf(snapshot.evidence);
