@@ -181,7 +181,7 @@ export async function readSweepStatus(
   let query = db
     .from("monitor_runs")
     .select(
-      "id, status, run_type, error, failure_reason, current_phase, heartbeat_at, items_found, new_items, alerts_created, sources_retrieved, candidates_discovered, detail_fetches_ok, started_at, finished_at, attempt, continuation_count, last_successful_operation, phase_started_at",
+      "id, status, run_type, error, failure_reason, current_phase, heartbeat_at, items_found, new_items, alerts_created, sources_retrieved, candidates_discovered, detail_fetches_ok, detail_queue_created, detail_candidates_failed, detail_candidates_blocked, detail_candidates_timeout, detail_candidates_remaining, started_at, finished_at, attempt, continuation_count, last_successful_operation, phase_started_at",
     )
     .eq("radar_id", radarId)
     .order("started_at", { ascending: false })
@@ -208,6 +208,9 @@ export async function readSweepStatus(
       sourcesRetrieved: 0,
       candidates: 0,
       detailFetches: 0,
+      detailQueued: 0,
+      detailFailed: 0,
+      detailRemaining: 0,
       startedAt: null,
       finishedAt: null,
       attempt: 0,
@@ -242,6 +245,12 @@ export async function readSweepStatus(
     sourcesRetrieved: run.sources_retrieved,
     candidates: run.candidates_discovered,
     detailFetches: run.detail_fetches_ok,
+    detailQueued: run.detail_queue_created ?? 0,
+    detailFailed:
+      (run.detail_candidates_failed ?? 0) +
+      (run.detail_candidates_blocked ?? 0) +
+      (run.detail_candidates_timeout ?? 0),
+    detailRemaining: run.detail_candidates_remaining ?? 0,
     startedAt: run.started_at,
     finishedAt: run.finished_at,
     attempt: run.attempt ?? 1,
