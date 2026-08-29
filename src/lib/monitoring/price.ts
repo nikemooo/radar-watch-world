@@ -261,7 +261,6 @@ function rejected(text: string, hit: { start: number; end: number; text: string 
     if (/^(?:19|20)\d{2}$/.test(hit.text.trim())) return true;
     if (digits.length < 3) return true;
     if (PHONE_LIKE.test(`${before.trim().slice(-6)}${hit.text}`.replace(/\s+/g, " ").trim())) return true;
-    if (/[A-Za-z]\d*$/.test(before.trim()) && before.trim().length > 0 && /[A-Za-z]-?$/.test(before.trim())) return true;
   }
   // Reference/part numbers glue letters to digits: "EPY76G", "126610LN".
   if (/[A-Za-z]$/.test(text.slice(Math.max(0, hit.start - 1), hit.start))) return true;
