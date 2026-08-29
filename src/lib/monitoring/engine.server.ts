@@ -1039,6 +1039,12 @@ export async function runRadarCycle(
   const listingFactsByUrl = new Map<string, ListingExtraction>();
   /** Semantic verdict per stated criterion phrase, per item URL. */
   const semanticByUrl = new Map<string, StoredSemantic[]>();
+  /** Whether the item's OWN page could be opened — a failure is never "unknown". */
+  const fetchStateByUrl = new Map<string, FetchOutcome>();
+  /** Per-requirement verification rows shown in the UI. */
+  const requirementsByUrl = new Map<string, VerifiedRequirement[]>();
+  let aiVerificationCalls = 0;
+  let aiVerificationVerdicts = 0;
   /** Every retrieved surface per item URL, used for canonical identity resolution. */
   const identitySourcesByUrl = new Map<string, IdentitySource[]>();
 
