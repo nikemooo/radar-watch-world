@@ -2817,6 +2817,8 @@ ${eligible
     paginationPagesSucceeded: indexTelemetry.pages_succeeded,
     paginationPagesBlocked: indexTelemetry.pages_blocked,
     indexesExhausted: indexTelemetry.indexes_exhausted,
+    detailQueue: detailQueueTelemetry,
+
   };
 }
 }
