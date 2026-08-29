@@ -537,12 +537,20 @@ export type Database = {
           criteria_rejected: number
           criteria_unverified: number
           current_phase: string
+          detail_candidates_blocked: number
+          detail_candidates_cached: number
+          detail_candidates_completed: number
+          detail_candidates_failed: number
+          detail_candidates_remaining: number
+          detail_candidates_started: number
+          detail_candidates_timeout: number
           detail_cost_estimate: number
           detail_fetch_budget: number
           detail_fetches_attempted: number
           detail_fetches_failed: number
           detail_fetches_ok: number
           detail_fetches_skipped_backoff: number
+          detail_queue_created: number
           direct_links_unverified: number
           direct_links_verified: number
           discovered_listings: number
@@ -632,12 +640,20 @@ export type Database = {
           criteria_rejected?: number
           criteria_unverified?: number
           current_phase?: string
+          detail_candidates_blocked?: number
+          detail_candidates_cached?: number
+          detail_candidates_completed?: number
+          detail_candidates_failed?: number
+          detail_candidates_remaining?: number
+          detail_candidates_started?: number
+          detail_candidates_timeout?: number
           detail_cost_estimate?: number
           detail_fetch_budget?: number
           detail_fetches_attempted?: number
           detail_fetches_failed?: number
           detail_fetches_ok?: number
           detail_fetches_skipped_backoff?: number
+          detail_queue_created?: number
           direct_links_unverified?: number
           direct_links_verified?: number
           discovered_listings?: number
@@ -727,12 +743,20 @@ export type Database = {
           criteria_rejected?: number
           criteria_unverified?: number
           current_phase?: string
+          detail_candidates_blocked?: number
+          detail_candidates_cached?: number
+          detail_candidates_completed?: number
+          detail_candidates_failed?: number
+          detail_candidates_remaining?: number
+          detail_candidates_started?: number
+          detail_candidates_timeout?: number
           detail_cost_estimate?: number
           detail_fetch_budget?: number
           detail_fetches_attempted?: number
           detail_fetches_failed?: number
           detail_fetches_ok?: number
           detail_fetches_skipped_backoff?: number
+          detail_queue_created?: number
           direct_links_unverified?: number
           direct_links_verified?: number
           discovered_listings?: number

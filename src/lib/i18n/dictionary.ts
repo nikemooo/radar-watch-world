@@ -93,7 +93,10 @@ export const en = {
   "detail.interrupted.retry": "Search again",
   "detail.progress.live":
     "{sources} sources read · {candidates} listings found · {details} listings read in detail.",
+  "detail.progress.queue":
+    "{done} of {total} listings read · {failed} could not be opened · {remaining} in queue.",
   "detail.progress.idle": "Finding current listings · reading listing details · comparing prices.",
+
   "detail.progress.tail": "It takes a few minutes and continues even if you leave the page.",
   "detail.progress.resumed":
     "The search was interrupted and resumed {count} time(s) — already-fetched data is reused, nothing is redone unnecessarily.",
@@ -450,7 +453,10 @@ const sv: Dictionary = {
   "detail.interrupted.retry": "Sök igen",
   "detail.progress.live":
     "{sources} källor lästa · {candidates} annonser hittade · {details} annonser lästa i detalj.",
+  "detail.progress.queue":
+    "{done} av {total} annonser lästa · {failed} kunde inte öppnas · {remaining} i kö.",
   "detail.progress.idle": "Hittar aktuella annonser · läser annonsdetaljer · jämför priser.",
+
   "detail.progress.tail": "Det tar några minuter och fortsätter även om du lämnar sidan.",
   "detail.progress.resumed":
     "Sökningen avbröts och återupptogs {count} gång(er) — redan hämtad data återanvänds, inget görs om i onödan.",

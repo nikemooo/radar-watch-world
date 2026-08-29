@@ -27,7 +27,15 @@ import { reapStaleRuns, releaseRadar } from "./reaper.server";
 import { createCheckpointStore, type CheckpointStore } from "./checkpoints.server";
 
 import { discoverCandidates, harvestLinks, type CandidateItem } from "./candidates.server";
-import { fetchDetailPages } from "../search/detail-fetch.server";
+import { fetchDetailPages, type FetchedPage } from "../search/detail-fetch.server";
+import {
+  isUnopenable,
+  runDetailQueue,
+  type CandidateProgress,
+  type CandidateState,
+  type DetailQueueTelemetry,
+} from "./detail-queue";
+
 import { resolveListingUrl, type ResolvedListingUrl } from "../search/listing-url";
 import { detectItemFamilies, looksLikeItemUrl } from "../search/url-shape";
 import {
@@ -266,7 +274,10 @@ export interface RunResult {
   paginationPagesSucceeded?: number;
   paginationPagesBlocked?: number;
   indexesExhausted?: number;
+  /** Deep-verification queue telemetry (see detail-queue.ts). */
+  detailQueue?: DetailQueueTelemetry;
 }
+
 
 interface Decision {
   fingerprint: string;
@@ -619,6 +630,44 @@ export async function runRadarCycle(
       .update({ ...patch, heartbeat_at: new Date().toISOString() })
       .eq("id", runId);
   };
+
+  /**
+   * Live per-candidate progress: the already-visible provisional finding for a
+   * candidate is updated the moment its state changes, so the user watches the
+   * queue advance instead of waiting for the whole sweep to end.
+   */
+  const markCandidateStates = async (changed: CandidateProgress[]): Promise<void> => {
+    for (const entry of changed) {
+      const patch: Database["public"]["Tables"]["findings"]["Update"] = {
+        detail_status: entry.state,
+        ...(entry.state === "fetched" ? { detail_fetched_at: new Date().toISOString() } : {}),
+      };
+      const { data: rows } = await db
+        .from("findings")
+        .select("id, fingerprint, snapshot")
+        .eq("radar_id", radar.id)
+        .or(`url.eq.${entry.url},primary_url.eq.${entry.url}`)
+        .limit(2);
+      for (const row of rows ?? []) {
+        const provisional = row.fingerprint.startsWith("provisional:");
+        const snapshot =
+          provisional && isUnopenable(entry.state)
+            ? {
+                ...((row.snapshot as Record<string, unknown> | null) ?? {}),
+                match_status: "unverified",
+                match_reason: "Kan inte öppna annonsen",
+                unopenable_reason: entry.reason,
+              }
+            : null;
+        await db
+          .from("findings")
+          .update(snapshot ? { ...patch, snapshot: snapshot as never } : patch)
+          .eq("id", row.id);
+      }
+    }
+  };
+
+
 
   try {
     if (runId) {
@@ -1039,6 +1088,20 @@ export async function runRadarCycle(
   let unknownPrices = 0;
   let detailFetchBudget = 0;
   let budgetReason = "detail stage not reached";
+  /** Live counters of the deep-verification queue (persisted after each chunk). */
+  let detailQueueTelemetry: DetailQueueTelemetry = {
+    detail_queue_created: 0,
+    detail_candidates_started: 0,
+    detail_candidates_completed: 0,
+    detail_candidates_failed: 0,
+    detail_candidates_blocked: 0,
+    detail_candidates_timeout: 0,
+    detail_candidates_cached: 0,
+    detail_candidates_remaining: 0,
+  };
+  /** Final per-candidate state, used for honest reporting and persistence. */
+  const candidateStateByUrl = new Map<string, CandidateState>();
+
   const imageByUrl = new Map<string, { url: string; source: string; images: string[] }>();
   /** Per-item evidence: what is known, how strongly, and from which surface. */
   const attributeEvidenceByUrl = new Map<string, Record<string, AttributeEvidence>>();
@@ -1246,9 +1309,52 @@ export async function runRadarCycle(
 
       if (selected.length > 0) {
         await phase("fetching_details");
-        const fetched = await step("detail_pages", () =>
-          fetchDetailPages(selected.map((c) => c.url!)),
-        );
+        // ---------- DEEP-VERIFICATION QUEUE ----------
+        // Every candidate is queued and read in small, individually
+        // checkpointed chunks. One dead site can no longer consume the sweep,
+        // and an interrupted worker resumes at the exact chunk it stopped on
+        // instead of paying for the whole batch again.
+        const networkFetched = new Set<string>();
+        const queued = await runDetailQueue<FetchedPage>({
+          urls: selected.map((c) => c.url!),
+          step,
+          fetchPages: (urls) => {
+            for (const u of urls) networkFetched.add(u);
+            return fetchDetailPages(urls);
+          },
+          onProgress: async ({ telemetry, changed }) => {
+            detailQueueTelemetry = { ...telemetry };
+            await patchRun({
+              ...telemetry,
+              detail_fetches_ok: telemetry.detail_candidates_completed,
+              detail_fetches_failed:
+                telemetry.detail_candidates_failed +
+                telemetry.detail_candidates_blocked +
+                telemetry.detail_candidates_timeout,
+            });
+            await markCandidateStates(changed);
+          },
+        });
+        const fetched = {
+          pages: queued.pages,
+          failures: queued.failures,
+          costEstimate: queued.costEstimate,
+        };
+        for (const c of queued.classified) candidateStateByUrl.set(c.url, c.state);
+        // Chunks served from a checkpoint never touched the network — that is
+        // exactly what "reused, not re-fetched" means for this run.
+        detailQueueTelemetry = {
+          ...queued.telemetry,
+          detail_candidates_cached:
+            queued.telemetry.detail_candidates_cached +
+            Math.max(0, queued.telemetry.detail_candidates_started - networkFetched.size),
+        };
+        if (queued.remaining.length > 0) {
+          console.warn(
+            `[radar:detail] ${queued.remaining.length} candidate(s) left unread — ${queued.budgetExhausted ? "deep-verification budget reached" : "queue not exhausted"}`,
+          );
+        }
+
         // Real listing imagery only — captured from the item's own page, with
         // its provenance. A missing image is left missing; nothing is invented.
         for (const p of fetched.pages) {
@@ -1705,9 +1811,15 @@ export async function runRadarCycle(
         }
       }
     } catch (err) {
+      // Control flow is NOT an error: swallowing a paused slice here made the
+      // run continue past its deadline and leave the radar locked, which is
+      // what produced endless abort/resume cycles with nothing to show.
+      const name = (err as Error).name;
+      if (name === "SweepPaused" || name === "CheckpointWriteError") throw err;
       console.error(`[radar:detail] detail pipeline failed — ${(err as Error).message}`);
       extractionsFailed += 1;
     }
+
   }
 
   if (detailDocs.length > 0) {
@@ -2577,6 +2689,8 @@ ${eligible
     candidates_selected: selected.length,
     detail_fetches_ok: detailFetchesOk,
     detail_fetches_failed: detailFetchesFailed,
+    ...detailQueueTelemetry,
+
     extractions_ok: extractionsOk,
     extractions_failed: extractionsFailed,
     attributes_extracted: attributesExtracted,
@@ -2703,6 +2817,8 @@ ${eligible
     paginationPagesSucceeded: indexTelemetry.pages_succeeded,
     paginationPagesBlocked: indexTelemetry.pages_blocked,
     indexesExhausted: indexTelemetry.indexes_exhausted,
+    detailQueue: detailQueueTelemetry,
+
   };
 }
 }
