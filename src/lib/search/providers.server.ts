@@ -389,16 +389,30 @@ export interface ResearchResult {
   rawResults: number;
   duplicatesRemoved: number;
   errors: string[];
+  /** Every provider touched this call, with its outcome. */
+  attempts?: ProviderAttempt[];
+  /** True when the primary provider could not answer and another one did. */
+  fallbackUsed?: boolean;
+  /**
+   * True when every configured discovery provider failed. Zero documents then
+   * means "discovery could not run", never "the market is empty".
+   */
+  discoveryFailed?: boolean;
 }
 
-/** Runs every query through the active provider and deduplicates by URL. */
+/**
+ * Runs every query through the discovery chain and deduplicates by URL.
+ *
+ * The chain stops at the first provider that answers, so a healthy Exa means
+ * exactly one paid request per query — identical to previous behaviour.
+ */
 export async function researchQueries(
   queries: string[],
   perQuery = 8,
   maxQueries = 8,
 ): Promise<ResearchResult> {
-  const provider = activeProvider();
-  if (!provider) {
+  const chain = providers.filter((p) => p.isConfigured());
+  if (chain.length === 0) {
     return {
       configured: false,
       provider: null,
@@ -416,47 +430,77 @@ export async function researchQueries(
   const seen = new Set<string>();
   const documents: SearchDocument[] = [];
   const errors: string[] = [];
+  const attempts: ProviderAttempt[] = [];
   let requests = 0;
   let successes = 0;
   let failures = 0;
   let rawResults = 0;
   let duplicates = 0;
+  let cost = 0;
+  let fallbackUsed = false;
+  let answeringProvider: string | null = null;
+  let allFailed = 0;
 
   for (const query of queries.slice(0, maxQueries)) {
     requests += 1;
     console.info(`[radar:search] query -> ${query}`);
-    try {
-      const results = await searchWithRetry(provider, query, perQuery);
-      successes += 1;
-      rawResults += results.length;
-      for (const r of results) console.info(`[radar:search]   result ${r.url} — ${r.title.slice(0, 90)}`);
-      for (const doc of results) {
-        const key = doc.url.split("#")[0]!;
-        if (seen.has(key)) {
-          duplicates += 1;
-          continue;
-        }
-        seen.add(key);
-        documents.push({ ...doc, url: key });
+    const outcome = await searchWithFailover<SearchDocument>({
+      providers: chain,
+      query,
+      limit: perQuery,
+      cooldowns: discoveryCooldowns,
+      execute: (provider, q, limit) => searchWithRetry(provider as SearchProvider, q, limit),
+    });
+    attempts.push(...outcome.attempts);
+    cost += outcome.cost;
+    for (const attempt of outcome.attempts) {
+      if (attempt.status === "failed") {
+        errors.push(`${query}: [${attempt.errorClass}] ${attempt.provider}: ${attempt.message ?? ""}`.trim());
       }
-    } catch (err) {
+    }
+
+    if (!outcome.provider) {
       failures += 1;
-      const message = err instanceof Error ? err.message : String(err);
-      errors.push(`${query}: ${message}`);
-      console.error(`[radar:search] ${provider.id} query failed — ${message}`);
+      allFailed += 1;
+      console.error(`[radar:discovery] all providers failed for query "${query.slice(0, 120)}"`);
+      continue;
+    }
+    successes += 1;
+    answeringProvider = outcome.provider;
+    if (outcome.fallbackUsed) fallbackUsed = true;
+    rawResults += outcome.documents.length;
+    console.info(
+      `[radar:discovery] results_before_gate=${outcome.documents.length} provider=${outcome.provider}`,
+    );
+    for (const doc of outcome.documents) {
+      const key = doc.url.split("#")[0]!;
+      if (seen.has(key)) {
+        duplicates += 1;
+        continue;
+      }
+      seen.add(key);
+      documents.push({ ...doc, url: key });
     }
   }
 
+  console.info(
+    `[radar:discovery] duplicates_removed=${duplicates} documents=${documents.length} fallback_triggered=${fallbackUsed} fallback_provider=${fallbackUsed ? answeringProvider : "none"}`,
+  );
+
   return {
     configured: true,
-    provider: provider.id,
+    provider: answeringProvider ?? chain[0]!.id,
     documents,
     requests,
     successes,
     failures,
-    costEstimate: Number((requests * provider.costPerRequest).toFixed(4)),
+    costEstimate: Number(cost.toFixed(4)),
     rawResults,
     duplicatesRemoved: duplicates,
     errors,
+    attempts,
+    fallbackUsed,
+    discoveryFailed: successes === 0 && allFailed > 0,
   };
 }
+
