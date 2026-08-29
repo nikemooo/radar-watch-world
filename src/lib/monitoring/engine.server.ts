@@ -1427,7 +1427,9 @@ export async function runRadarCycle(
                       ? "opengraph"
                       : t === "search_snippet"
                         ? "snippet"
-                        : "text";
+                        : t === "detail_text"
+                          ? "description"
+                          : "text";
             const semanticSurfaces: SemanticSurface[] = docs.map((d) => ({
               url: d.url,
               kind: surfaceKind(d.sourceType),
@@ -1436,8 +1438,10 @@ export async function runRadarCycle(
                 .join("\n")
                 .slice(0, 20000),
             }));
+            surfacesByUrl.set(page.url, semanticSurfaces);
             const phrases = [...config.important_criteria, ...config.preferences].filter(Boolean);
             const semantic = evaluateSemanticCriteria(phrases, semanticSurfaces);
+            semanticVerdictsByUrl.set(page.url, semantic);
             // Requested places are verified against stated address data, never
             // against marketing copy that merely mentions a neighbourhood.
             const placeVerdicts = (config.locations ?? []).map((place) => {
@@ -1449,12 +1453,68 @@ export async function runRadarCycle(
                 snippet: v.matched,
                 source_url: page.url,
                 reason: v.reason,
+                source_kind: "description" as const,
+                source_label: "listing address",
+                method: "vocabulary" as const,
               } satisfies StoredSemantic;
             });
+            placeVerdictsByUrl.set(page.url, placeVerdicts);
             const stored = [...storableSemantics(semantic), ...placeVerdicts];
             if (stored.length > 0) semanticByUrl.set(page.url, stored);
 
           }
+
+          // ---------- DEEP AI READING OF THE LISTING TEXT ----------
+          // Word lists settle the easy cases. Everything they left open is read
+          // by a model FROM THE PAGE WE ACTUALLY FETCHED, with each verdict
+          // required to quote the page verbatim. Cached per page content, so a
+          // returning, unchanged listing is never re-read at cost.
+          {
+            const openPages = fetched.pages.filter((p) => {
+              const verdicts = semanticVerdictsByUrl.get(p.url) ?? [];
+              return verdicts.some((v) => v.status === "unknown" || v.status === "probable");
+            });
+            const budget = Math.min(openPages.length, isBaseline ? 12 : 8);
+            for (const page of openPages.slice(0, budget)) {
+              const surfaces = surfacesByUrl.get(page.url) ?? [];
+              const verdicts = semanticVerdictsByUrl.get(page.url) ?? [];
+              const open = verdicts.filter((v) => v.status === "unknown" || v.status === "probable");
+              const hash = contentHash(page.text);
+              const cached = cachedSemanticFor(page.url, hash);
+              let aiVerdicts: SemanticVerdict[] = [];
+              if (cached) {
+                aiVerdicts = cached.filter((c) => open.some((o) => o.phrase === c.phrase));
+              } else {
+                try {
+                  aiVerificationCalls += 1;
+                  aiVerdicts = await step(`semantic_ai:${page.url}`, () =>
+                    readCriteriaWithAi({ url: page.url, phrases: open.map((o) => o.phrase), surfaces }),
+                  );
+                } catch (err) {
+                  console.warn(`[radar:verify] AI reading skipped for ${page.url} — ${(err as Error).message}`);
+                  aiVerdicts = [];
+                }
+              }
+              if (aiVerdicts.length === 0) continue;
+              aiVerificationVerdicts += aiVerdicts.length;
+              const byPhrase = new Map(aiVerdicts.map((v) => [v.phrase, v]));
+              const merged = verdicts.map((v) => {
+                const ai = byPhrase.get(v.phrase);
+                // The model may only STRENGTHEN an open verdict, never weaken a
+                // deterministic confirmation or contradiction.
+                if (!ai || (v.status !== "unknown" && v.status !== "probable")) return v;
+                if (ai.status === "probable" && v.status === "probable") return v;
+                return ai;
+              });
+              semanticVerdictsByUrl.set(page.url, merged);
+              contentHashByUrl.set(page.url, hash);
+              semanticByUrl.set(page.url, [
+                ...storableSemantics(merged),
+                ...(placeVerdictsByUrl.get(page.url) ?? []),
+              ]);
+            }
+          }
+
 
           // AI extraction runs ONLY for pages that still miss attributes.
           const needsAi = fetched.pages.filter(
