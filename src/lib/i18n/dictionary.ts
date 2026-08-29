@@ -93,7 +93,10 @@ export const en = {
   "detail.interrupted.retry": "Search again",
   "detail.progress.live":
     "{sources} sources read · {candidates} listings found · {details} listings read in detail.",
+  "detail.progress.queue":
+    "{done} of {total} listings read · {failed} could not be opened · {remaining} in queue.",
   "detail.progress.idle": "Finding current listings · reading listing details · comparing prices.",
+
   "detail.progress.tail": "It takes a few minutes and continues even if you leave the page.",
   "detail.progress.resumed":
     "The search was interrupted and resumed {count} time(s) — already-fetched data is reused, nothing is redone unnecessarily.",
