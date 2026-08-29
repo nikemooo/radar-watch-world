@@ -1916,7 +1916,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
         .filter((a) => a.raw && (a.confidence === "stated" || a.confidence === "structured"))
         .map((a) => ({ sourceType: "detail_field", url: a.source_url, text: `${a.key}: ${a.raw}` })),
     ];
-    const verdict = evaluateCriteria(
+    const attributeVerdict = evaluateCriteria(
       {
         title: item.title,
         attributes,
@@ -1926,6 +1926,16 @@ ${documentBlock(allDocs.slice(0, 45))}`,
       },
       constraints,
     );
+
+    // Deep verification: what the attribute gate could not settle is decided
+    // from what the listing itself SAYS — with the verbatim quote attached, and
+    // with an unreachable page reported as unreachable, never as "unknown".
+    const verdict = deepVerify(
+      attributeVerdict,
+      semanticByUrl.get(item.url) ?? [],
+      fetchStateByUrl.get(item.url) ?? { status: "not_attempted" },
+    );
+    requirementsByUrl.set(item.url, storableRequirements(verdict.requirements));
 
     verdicts.set(item.fingerprint, verdict);
     if (verdict.status === "match") criteriaMatched += 1;
