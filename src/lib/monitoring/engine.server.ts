@@ -1045,6 +1045,45 @@ export async function runRadarCycle(
   const requirementsByUrl = new Map<string, VerifiedRequirement[]>();
   let aiVerificationCalls = 0;
   let aiVerificationVerdicts = 0;
+  /** Raw semantic verdicts and the surfaces they were read from, per item URL. */
+  const semanticVerdictsByUrl = new Map<string, SemanticVerdict[]>();
+  const placeVerdictsByUrl = new Map<string, StoredSemantic[]>();
+  const surfacesByUrl = new Map<string, SemanticSurface[]>();
+  /** Content fingerprint of the fetched page, so unchanged pages are not re-read. */
+  const contentHashByUrl = new Map<string, string>();
+  /** Cheap, stable content fingerprint (no crypto needed — this is a cache key). */
+  const contentHash = (text: string): string => {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i += 1) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return `${(h >>> 0).toString(36)}:${text.length}`;
+  };
+  /**
+   * Verifications already paid for on an identical page. Re-verification only
+   * happens when the page content itself changed.
+   */
+  const cachedSemanticFor = (url: string, hash: string): SemanticVerdict[] | null => {
+    const row = (existingRows ?? []).find((f) => f.primary_url === url || f.url === url);
+    const snap = (row?.snapshot ?? null) as
+      | { content_hash?: string; semantic_criteria?: StoredSemantic[] }
+      | null;
+    if (!snap || snap.content_hash !== hash || !Array.isArray(snap.semantic_criteria)) return null;
+    const ai = snap.semantic_criteria.filter((s) => s.method === "ai");
+    if (ai.length === 0) return null;
+    return ai.map((s) => ({
+      phrase: s.phrase,
+      status: s.status,
+      confidence: s.confidence,
+      matched: s.snippet,
+      snippet: s.snippet,
+      source_url: s.source_url,
+      source_kind: s.source_kind ?? "description",
+      reason: s.reason,
+      method: "ai" as const,
+    }));
+  };
   /** Every retrieved surface per item URL, used for canonical identity resolution. */
   const identitySourcesByUrl = new Map<string, IdentitySource[]>();
 
