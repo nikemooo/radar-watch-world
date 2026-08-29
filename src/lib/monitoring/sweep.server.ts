@@ -55,6 +55,11 @@ export type SweepStatus = {
   sourcesRetrieved: number;
   candidates: number;
   detailFetches: number;
+  /** Deep-verification queue, as the user should see it progress. */
+  detailQueued: number;
+  detailFailed: number;
+  detailRemaining: number;
+
   startedAt: string | null;
   finishedAt: string | null;
   /** Which worker invocation is currently carrying the run (1 = the first). */
