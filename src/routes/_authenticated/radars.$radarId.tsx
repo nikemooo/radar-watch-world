@@ -394,6 +394,17 @@ function RadarDetail() {
               {t("detail.progress.resumed", { count: sweepStatus.continuations })}
             </p>
           )}
+          {!isMarket && !!sweepStatus?.detailQueued && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("detail.progress.queue", {
+                done: sweepStatus.detailFetches,
+                total: sweepStatus.detailQueued,
+                failed: sweepStatus.detailFailed,
+                remaining: sweepStatus.detailRemaining,
+              })}
+            </p>
+          )}
+
           {!isMarket && (
             <p className="mt-2 text-sm">
               {t("detail.counts", {
