@@ -679,7 +679,14 @@ export async function runRadarCycle(
       search_failures: failures,
       sources_retrieved: sources,
       cost_estimate: Number(cost.toFixed(4)),
-      error: researchParts.flatMap((item) => item.errors).join(" | ").slice(0, 800) || null,
+      // A provider failure that the fallback recovered from is technical
+      // information, not a run error: the user still gets real results.
+      error:
+        successes > 0
+          ? researchParts.some((item) => item.fallbackUsed)
+            ? `Primary discovery provider unavailable — answered by fallback provider ${part.provider}.`
+            : null
+          : researchParts.flatMap((item) => item.errors).join(" | ").slice(0, 800) || null,
     });
 
     if (uniquePartDocs.length > 0) {
@@ -773,7 +780,18 @@ export async function runRadarCycle(
     rawResults: researchParts.reduce((sum, part) => sum + part.rawResults, 0),
     duplicatesRemoved: researchParts.reduce((sum, part) => sum + part.duplicatesRemoved, 0),
     errors: researchParts.flatMap((part) => part.errors),
+    attempts: researchParts.flatMap((part) => part.attempts ?? []),
+    fallbackUsed: researchParts.some((part) => part.fallbackUsed),
+    // Only "discovery is down" when NO query was answered by ANY provider.
+    discoveryFailed:
+      researchParts.length > 0 && researchParts.every((part) => part.discoveryFailed === true),
   };
+
+  if (research.fallbackUsed) {
+    console.info(
+      `[radar:discovery] ${radar.id} primary provider unavailable — answered by fallback provider ${research.provider}`,
+    );
+  }
 
   if (!research.configured) {
     await patchRun({
@@ -1538,7 +1556,11 @@ export async function runRadarCycle(
     const failedAll = research.requests > 0 && research.successes === 0;
     await finishRun({
       status: failedAll ? "failed" : "completed",
-      error: failedAll ? research.errors.join(" | ").slice(0, 800) : null,
+      error: failedAll
+        ? (research.discoveryFailed
+            ? "Discovery unavailable — no search provider could be reached. This is not an empty market; Radar retries automatically. "
+            : "") + research.errors.join(" | ").slice(0, 600)
+        : null,
       finished_at: new Date().toISOString(),
     });
     // A failed initial scan is never marked complete — it must be retried.
@@ -1557,7 +1579,9 @@ export async function runRadarCycle(
       status: failedAll ? "error" : "ok",
       runType,
       message: failedAll
-        ? `Search provider error: ${research.errors[0] ?? "unknown error"}`
+        ? research.discoveryFailed
+          ? "Market discovery could not be completed right now — every search provider was unavailable. This does not mean there are no listings; Radar will retry automatically."
+          : `Search provider error: ${research.errors[0] ?? "unknown error"}`
         : "No sources could be retrieved for this radar — nothing could be verified, so no alert was created.",
       itemsFound: 0,
       newItems: 0,

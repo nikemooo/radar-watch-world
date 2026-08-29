@@ -15,6 +15,12 @@
  * or written to logs.
  */
 
+import {
+  ProviderCooldowns,
+  searchWithFailover,
+  type ProviderAttempt,
+} from "./provider-failover";
+
 export interface SearchDocument {
   title: string;
   url: string;
@@ -167,22 +173,192 @@ const braveProvider: SearchProvider = {
   },
 };
 
-/** Exa is primary; Brave is only used when Exa is not configured. */
-const providers: SearchProvider[] = [exaProvider, braveProvider];
+/**
+ * OpenAI hosted web search — discovery FALLBACK only.
+ *
+ * Never used while Exa answers, so it adds no cost to a normal sweep. It
+ * returns only URLs the model actually cited from its web_search tool; nothing
+ * is invented, and every result still goes through the candidate gate.
+ */
+const openAiProvider: SearchProvider = {
+  id: "openai-web-search",
+  label: "OpenAI web search (fallback)",
+  credential: "OPENAI_API_KEY",
+  costPerRequest: 0.03,
+  isConfigured: () => Boolean(process.env["OPENAI_API_KEY"]),
+  async search(query, limit) {
+    const retrieved_at = new Date().toISOString();
+    let res: Response;
+    try {
+      res = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env["OPENAI_API_KEY"]!}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          tools: [{ type: "web_search" }],
+          tool_choice: "required",
+          input:
+            `Search the live web for: ${query}\n` +
+            `Return up to ${limit} concrete result pages. For each, give the exact page URL and its title. ` +
+            `Do not invent URLs — only report pages the search tool actually returned.`,
+        }),
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+      });
+    } catch (err) {
+      throw new SearchProviderError(0, `OpenAI web search request failed: ${(err as Error).message}`);
+    }
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => "")).slice(0, 300);
+      throw new SearchProviderError(res.status, `OpenAI web search failed (${res.status}) ${detail}`);
+    }
+    const data = (await res.json()) as {
+      output?: {
+        type?: string;
+        content?: {
+          type?: string;
+          text?: string;
+          annotations?: { type?: string; url?: string; title?: string; start_index?: number; end_index?: number }[];
+        }[];
+      }[];
+    };
+
+    const documents = new Map<string, SearchDocument>();
+    for (const item of data.output ?? []) {
+      for (const content of item.content ?? []) {
+        const text = content.text ?? "";
+        for (const annotation of content.annotations ?? []) {
+          if (annotation.type !== "url_citation" || !annotation.url?.startsWith("http")) continue;
+          const url = annotation.url.split("#")[0]!;
+          if (documents.has(url)) continue;
+          documents.set(url, {
+            title: annotation.title ?? url,
+            url,
+            snippet: text.slice(0, 2000),
+            publisher: hostOf(url),
+            retrieved_at,
+            query,
+          });
+        }
+      }
+    }
+    return [...documents.values()].slice(0, limit);
+  },
+};
+
+/**
+ * DuckDuckGo HTML endpoint — keyless last-resort discovery. No credential is
+ * required, so Radar keeps a working discovery path even when every paid
+ * provider is exhausted. Results are plain organic web results.
+ */
+const duckDuckGoProvider: SearchProvider = {
+  id: "duckduckgo",
+  label: "DuckDuckGo (last-resort fallback)",
+  credential: "(none)",
+  costPerRequest: 0,
+  isConfigured: () => true,
+  async search(query, limit) {
+    const retrieved_at = new Date().toISOString();
+    let res: Response;
+    try {
+      res = await fetch("https://html.duckduckgo.com/html/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Mozilla/5.0 (compatible; RadarBot/1.0)",
+        },
+        body: new URLSearchParams({ q: query }).toString(),
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+      });
+    } catch (err) {
+      throw new SearchProviderError(0, `DuckDuckGo request failed: ${(err as Error).message}`);
+    }
+    if (!res.ok) throw new SearchProviderError(res.status, `DuckDuckGo search failed (${res.status})`);
+    const html = await res.text();
+    const documents = parseDuckDuckGoHtml(html, query, limit, retrieved_at);
+    // A parse yielding nothing means we were served an anti-bot page, not that
+    // the market is empty. Report it as a provider failure so the run is
+    // honest about discovery instead of claiming zero listings exist.
+    if (documents.length === 0) {
+      throw new SearchProviderError(0, "DuckDuckGo returned no parsable results (blocked or empty response)");
+    }
+    return documents;
+  },
+};
+
+const stripTags = (value: string) =>
+  value
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** Exported for tests: turn the DDG HTML result list into real documents. */
+export function parseDuckDuckGoHtml(
+  html: string,
+  query: string,
+  limit: number,
+  retrieved_at = new Date().toISOString(),
+): SearchDocument[] {
+  const out: SearchDocument[] = [];
+  const seen = new Set<string>();
+  const anchor = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  let match: RegExpExecArray | null;
+  while ((match = anchor.exec(html)) && out.length < limit) {
+    let href = match[1]!.replace(/&amp;/g, "&");
+    if (href.startsWith("//")) href = `https:${href}`;
+    try {
+      const parsed = new URL(href, "https://duckduckgo.com");
+      const redirected = parsed.searchParams.get("uddg");
+      const url = (redirected ?? parsed.toString()).split("#")[0]!;
+      if (!url.startsWith("http") || url.includes("duckduckgo.com")) continue;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      out.push({
+        title: stripTags(match[2]!) || url,
+        url,
+        snippet: "",
+        publisher: hostOf(url),
+        retrieved_at,
+        query,
+      });
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+/**
+ * Discovery chain, in priority order. Exa stays primary; the rest are only
+ * reached when the one before it fails or is in cooldown.
+ */
+const providers: SearchProvider[] = [exaProvider, braveProvider, openAiProvider, duckDuckGoProvider];
+
+export const discoveryCooldowns = new ProviderCooldowns();
 
 export function activeProvider(): SearchProvider | null {
   return providers.find((p) => p.isConfigured()) ?? null;
 }
 
 export function providerStatus() {
+  const cooling = new Map(discoveryCooldowns.snapshot().map((c) => [c.provider, c.secondsRemaining]));
   return providers.map((p) => ({
     id: p.id,
     label: p.label,
     credential: p.credential,
     configured: p.isConfigured(),
     primary: p.id === "exa",
+    cooldownSeconds: cooling.get(p.id) ?? 0,
   }));
 }
+
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -226,16 +402,30 @@ export interface ResearchResult {
   rawResults: number;
   duplicatesRemoved: number;
   errors: string[];
+  /** Every provider touched this call, with its outcome. */
+  attempts?: ProviderAttempt[];
+  /** True when the primary provider could not answer and another one did. */
+  fallbackUsed?: boolean;
+  /**
+   * True when every configured discovery provider failed. Zero documents then
+   * means "discovery could not run", never "the market is empty".
+   */
+  discoveryFailed?: boolean;
 }
 
-/** Runs every query through the active provider and deduplicates by URL. */
+/**
+ * Runs every query through the discovery chain and deduplicates by URL.
+ *
+ * The chain stops at the first provider that answers, so a healthy Exa means
+ * exactly one paid request per query — identical to previous behaviour.
+ */
 export async function researchQueries(
   queries: string[],
   perQuery = 8,
   maxQueries = 8,
 ): Promise<ResearchResult> {
-  const provider = activeProvider();
-  if (!provider) {
+  const chain = providers.filter((p) => p.isConfigured());
+  if (chain.length === 0) {
     return {
       configured: false,
       provider: null,
@@ -253,47 +443,77 @@ export async function researchQueries(
   const seen = new Set<string>();
   const documents: SearchDocument[] = [];
   const errors: string[] = [];
+  const attempts: ProviderAttempt[] = [];
   let requests = 0;
   let successes = 0;
   let failures = 0;
   let rawResults = 0;
   let duplicates = 0;
+  let cost = 0;
+  let fallbackUsed = false;
+  let answeringProvider: string | null = null;
+  let allFailed = 0;
 
   for (const query of queries.slice(0, maxQueries)) {
     requests += 1;
     console.info(`[radar:search] query -> ${query}`);
-    try {
-      const results = await searchWithRetry(provider, query, perQuery);
-      successes += 1;
-      rawResults += results.length;
-      for (const r of results) console.info(`[radar:search]   result ${r.url} — ${r.title.slice(0, 90)}`);
-      for (const doc of results) {
-        const key = doc.url.split("#")[0]!;
-        if (seen.has(key)) {
-          duplicates += 1;
-          continue;
-        }
-        seen.add(key);
-        documents.push({ ...doc, url: key });
+    const outcome = await searchWithFailover<SearchDocument>({
+      providers: chain,
+      query,
+      limit: perQuery,
+      cooldowns: discoveryCooldowns,
+      execute: (provider, q, limit) => searchWithRetry(provider as SearchProvider, q, limit),
+    });
+    attempts.push(...outcome.attempts);
+    cost += outcome.cost;
+    for (const attempt of outcome.attempts) {
+      if (attempt.status === "failed") {
+        errors.push(`${query}: [${attempt.errorClass}] ${attempt.provider}: ${attempt.message ?? ""}`.trim());
       }
-    } catch (err) {
+    }
+
+    if (!outcome.provider) {
       failures += 1;
-      const message = err instanceof Error ? err.message : String(err);
-      errors.push(`${query}: ${message}`);
-      console.error(`[radar:search] ${provider.id} query failed — ${message}`);
+      allFailed += 1;
+      console.error(`[radar:discovery] all providers failed for query "${query.slice(0, 120)}"`);
+      continue;
+    }
+    successes += 1;
+    answeringProvider = outcome.provider;
+    if (outcome.fallbackUsed) fallbackUsed = true;
+    rawResults += outcome.documents.length;
+    console.info(
+      `[radar:discovery] results_before_gate=${outcome.documents.length} provider=${outcome.provider}`,
+    );
+    for (const doc of outcome.documents) {
+      const key = doc.url.split("#")[0]!;
+      if (seen.has(key)) {
+        duplicates += 1;
+        continue;
+      }
+      seen.add(key);
+      documents.push({ ...doc, url: key });
     }
   }
 
+  console.info(
+    `[radar:discovery] duplicates_removed=${duplicates} documents=${documents.length} fallback_triggered=${fallbackUsed} fallback_provider=${fallbackUsed ? answeringProvider : "none"}`,
+  );
+
   return {
     configured: true,
-    provider: provider.id,
+    provider: answeringProvider ?? chain[0]!.id,
     documents,
     requests,
     successes,
     failures,
-    costEstimate: Number((requests * provider.costPerRequest).toFixed(4)),
+    costEstimate: Number(cost.toFixed(4)),
     rawResults,
     duplicatesRemoved: duplicates,
     errors,
+    attempts,
+    fallbackUsed,
+    discoveryFailed: successes === 0 && allFailed > 0,
   };
 }
+
