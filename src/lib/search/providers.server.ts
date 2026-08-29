@@ -15,6 +15,12 @@
  * or written to logs.
  */
 
+import {
+  ProviderCooldowns,
+  searchWithFailover,
+  type ProviderAttempt,
+} from "./provider-failover";
+
 export interface SearchDocument {
   title: string;
   url: string;
