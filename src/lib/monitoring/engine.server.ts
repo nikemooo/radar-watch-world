@@ -628,6 +628,44 @@ export async function runRadarCycle(
       .eq("id", runId);
   };
 
+  /**
+   * Live per-candidate progress: the already-visible provisional finding for a
+   * candidate is updated the moment its state changes, so the user watches the
+   * queue advance instead of waiting for the whole sweep to end.
+   */
+  const markCandidateStates = async (changed: CandidateProgress[]): Promise<void> => {
+    for (const entry of changed) {
+      const patch: Database["public"]["Tables"]["findings"]["Update"] = {
+        detail_status: entry.state,
+        ...(entry.state === "fetched" ? { detail_fetched_at: new Date().toISOString() } : {}),
+      };
+      const { data: rows } = await db
+        .from("findings")
+        .select("id, fingerprint, snapshot")
+        .eq("radar_id", radar.id)
+        .or(`url.eq.${entry.url},primary_url.eq.${entry.url}`)
+        .limit(2);
+      for (const row of rows ?? []) {
+        const provisional = row.fingerprint.startsWith("provisional:");
+        const snapshot =
+          provisional && isUnopenable(entry.state)
+            ? {
+                ...((row.snapshot as Record<string, unknown> | null) ?? {}),
+                match_status: "unverified",
+                match_reason: "Kan inte öppna annonsen",
+                unopenable_reason: entry.reason,
+              }
+            : null;
+        await db
+          .from("findings")
+          .update(snapshot ? { ...patch, snapshot: snapshot as never } : patch)
+          .eq("id", row.id);
+      }
+    }
+  };
+
+
+
   try {
     if (runId) {
       await db
