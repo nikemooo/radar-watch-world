@@ -2686,6 +2686,8 @@ ${eligible
     candidates_selected: selected.length,
     detail_fetches_ok: detailFetchesOk,
     detail_fetches_failed: detailFetchesFailed,
+    ...detailQueueTelemetry,
+
     extractions_ok: extractionsOk,
     extractions_failed: extractionsFailed,
     attributes_extracted: attributesExtracted,
