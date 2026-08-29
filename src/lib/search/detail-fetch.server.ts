@@ -105,13 +105,14 @@ async function fetchViaExa(urls: string[], maxChars: number): Promise<DetailFetc
       published_at: r.publishedDate,
       fetched_at,
       via: "exa",
-      image: pickImage(r.image ?? r.extras?.imageLinks?.[0], r.url),
+      // Ranked, deduplicated, chrome-free photos from the item's own page.
+      image: mergeImageSets(r.url, [
+        { urls: [r.image, ...(r.extras?.imageLinks ?? [])].filter((i): i is string => !!i), origin: "provider" },
+      ]).primary,
       image_source: r.url,
-      images: [r.image, ...(r.extras?.imageLinks ?? [])]
-        .map((i) => pickImage(i, r.url))
-        .filter((i): i is string => !!i)
-        .filter((i, idx, all) => all.indexOf(i) === idx)
-        .slice(0, 8),
+      images: mergeImageSets(r.url, [
+        { urls: [r.image, ...(r.extras?.imageLinks ?? [])].filter((i): i is string => !!i), origin: "provider" },
+      ]).images.slice(0, 10),
     });
   }
   const failures = urls
