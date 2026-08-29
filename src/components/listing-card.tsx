@@ -401,6 +401,34 @@ export function ListingCard({
             ) : (
               snapshot.match_reason && <p className="text-sm text-muted-foreground">{snapshot.match_reason}</p>
             )}
+            {deepRequirements.length > 0 && (
+              <div className="space-y-1">
+                <p className="mono-label">{t("listing.requirements")}</p>
+                <ul className="space-y-2 text-sm">
+                  {deepRequirements.map((r) => (
+                    <li key={`deep-${r.attribute}-${r.label}`} className="flex gap-2">
+                      <span aria-hidden>{statusIcon[r.status]}</span>
+                      <span className={r.status === "match" ? "" : "text-muted-foreground"}>
+                        <span className={r.status === "reject" ? "text-critical" : undefined}>{r.label}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {r.verdict === "unfetchable" ? t("listing.requirement.unreachable") : r.reason}
+                        </span>
+                        {r.evidence?.snippet && (
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            “{r.evidence.snippet}”
+                            {r.evidence.source_label && (
+                              <span className="block">
+                                {t("listing.requirement.source")}: {r.evidence.source_label}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {semantic.length > 0 && (
               <div className="space-y-1">
                 <p className="mono-label">{t("listing.criteriaEvidence")}</p>
