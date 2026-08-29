@@ -131,7 +131,7 @@ const PRICE_LABELS: { re: RegExp; type: PriceType }[] = [
   { re: /(accepterat\s*pris|begärt\s*pris|begart\s*pris|asking\s*price|prisid[ée]|förhandspris)/i, type: "asking_price" },
   { re: /(slutpris|såld\s*för|sold\s*for|hammer\s*price|auktion|auction|budgivning|current\s*bid|högsta\s*bud)/i, type: "auction_price" },
   { re: /(ord(?:inarie)?\.?\s*pris|tidigare\s*pris|f[öo]rr|was\b|list\s*price|rek\.?\s*pris|jämförpris)/i, type: "original_price" },
-  { re: /(rea(?:pris)?|nu\s*(?:endast|bara)?|kampanjpris|erbjudande|sale\s*price|now\b|discounted)/i, type: "sale_price" },
+  { re: /(\brea(?:pris)?\b|nu\s*(?:endast|bara)?|kampanjpris|erbjudande|sale\s*price|now\b|discounted)/i, type: "sale_price" },
   { re: /(hyra|hyres(?:kostnad)?|månadshyra|rent\b|per\s*month|\/\s*m[åa]n|\/\s*mo\b|kr\/m[åa]n)/i, type: "rent" },
   { re: /(månadsavgift|m[åa]nadsavg|avgift|driftkostnad|driftskostnad|service\s*charge|monthly\s*fee|hoa)/i, type: "fee" },
   { re: /(pris|price|preis|prix|precio|prezzo|prijs|koster|cost)/i, type: "asking_price" },
@@ -148,7 +148,7 @@ const NON_PRICE_UNIT_AFTER =
   /^\s*(?:kvm|kvadratmeter|m²|m2|sqm|sq\s?ft|ft²|rum|rok|r\.o\.k|hk|hp|bhp|kw|nm|km\/h|mph|km|mil\b|miles|mi\b|tum|mm|cm|st\b|kg|g\b|liter|l\b|%|år\b|years?\b|hastigheter|watt|w\b|ah|kwh|mah|px|dpi|mm\b)/i;
 
 const NON_PRICE_LABEL_BEFORE =
-  /(telefon|tel\.?|mobil|phone|kontakt(?:a)?|ring\b|fax|postnummer|post\s*nr|postal\s*code|zip|org\.?\s*nr|organisationsnummer|person\s*nr|vin\b|chassi(?:nummer)?|serienummer|serial|referens(?:nummer)?|reference|ref\.?\s*nr|artikel(?:nummer)?|art\.?\s*nr|sku|ean|isbn|gtin|objekt(?:s?nummer|id)|annons(?:id|nummer)|modell(?:nummer)?|model\s*(?:no|number)|årsmodell|modellår|model\s*year|byggår|registreringsnummer|reg\.?\s*nr|boarea|boyta|yta|area|storlek|antal\s*rum|rum\b|våning|floor|miltal|mätarställning|mileage|effekt|hästkrafter|bredd|höjd|längd|vikt|weight|zoom|kod|code)\s*[:：\-–—]?\s*$/i;
+  /(telefon|tel\.?|mobil|phone|kontakt(?:a)?|ring\b|fax|postnummer|post\s*nr|postal\s*code|zip|org\.?\s*nr|organisationsnummer|person\s*nr|vin\b|chassi(?:nummer)?|serienummer|serial|referens(?:nummer)?|reference|ref\.?\s*nr|artikel(?:nummer)?|art\.?\s*nr|sku|ean|isbn|gtin|objekt(?:s?nummer|id)|annons(?:id|nummer)|modell(?:nummer)?|model\s*(?:no|number)|årsmodell|modellår|model\s*year|byggår|registreringsnummer|reg\.?\s*nr|boarea|boyta|yta|area|storlek|andel(?:stal)?|f[öo]reningen|insats|nettoskuld|antal\s*rum|rum\b|våning|floor|miltal|mätarställning|mileage|effekt|hästkrafter|bredd|höjd|längd|vikt|weight|zoom|kod|code)\s*[:：\-–—]?\s*$/i;
 
 const PHONE_LIKE = /(?:\+\d{1,3}[\s-]?)?(?:0\d{1,3}[\s-]?)\d{2,3}[\s-]?\d{2}[\s-]?\d{2}$/;
 
@@ -215,9 +215,10 @@ export function marketCurrencyForUrl(url: string | null | undefined): string | n
 
 const NUMBER = "\\d{1,3}(?:[ \\u00a0.,']\\d{3})+(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,3})?";
 
-const SUFFIX_RE = new RegExp(`(${NUMBER})\\s*(${MULT_ALT})?\\s*(${CURRENCY_ALT})`, "gi");
-const PREFIX_RE = new RegExp(`(${CURRENCY_ALT})\\s*(${NUMBER})\\s*(${MULT_ALT})?`, "gi");
-const BARE_RE = new RegExp(`(${NUMBER})\\s*(${MULT_ALT})?`, "gi");
+const MULT_END = "(?![A-Za-zÅÄÖåäöÜü])";
+const SUFFIX_RE = new RegExp(`(${NUMBER})\\s*(${MULT_ALT})?${MULT_END}\\s*(${CURRENCY_ALT})`, "gi");
+const PREFIX_RE = new RegExp(`(${CURRENCY_ALT})\\s*(${NUMBER})\\s*(${MULT_ALT})?${MULT_END}`, "gi");
+const BARE_RE = new RegExp(`(${NUMBER})\\s*(${MULT_ALT})?${MULT_END}`, "gi");
 
 interface RawHit {
   start: number;
@@ -297,6 +298,8 @@ export function extractPricesFromText(text: string, options: TextPriceOptions = 
     if (rejected(clean, { start, end, text: numeric }, !!cur || factor > 1)) return;
     const amount = parseMoneyNumber(numeric, factor);
     if (amount === null || amount <= 0) return;
+    // A ratio like "0,8927" is not money unless the page writes a currency.
+    if (!cur && factor === 1 && !Number.isInteger(amount)) return;
     hits.push({
       start,
       end,
@@ -442,6 +445,7 @@ export function extractPriceFromFields(
   const out: ExtractedPrice[] = [];
   for (const [label, value] of Object.entries(fields)) {
     if (!value || !/\d/.test(value)) continue;
+    if (NON_PRICE_LABEL_BEFORE.test(`${label.replace(/[:：\s]+$/, "")}:`)) continue;
     if (!PRICE_LABELS.some(({ re }) => re.test(label))) continue;
     const prices = extractPricesFromText(`${label}: ${value}`, { ...options, sourceLocation: "detail_field" });
     for (const p of prices) out.push({ ...p, confidence: Math.min(0.98, p.confidence + 0.02) });
