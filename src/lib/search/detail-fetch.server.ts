@@ -108,7 +108,7 @@ async function fetchViaExa(urls: string[], maxChars: number): Promise<DetailFetc
       // Ranked, deduplicated, chrome-free photos from the item's own page.
       image: mergeImageSets(r.url, [
         { urls: [r.image, ...(r.extras?.imageLinks ?? [])].filter((i): i is string => !!i), origin: "provider" },
-      ]).primary,
+      ]).primary ?? undefined,
       image_source: r.url,
       images: mergeImageSets(r.url, [
         { urls: [r.image, ...(r.extras?.imageLinks ?? [])].filter((i): i is string => !!i), origin: "provider" },
@@ -181,6 +181,9 @@ async function fetchViaHttp(url: string, maxChars: number): Promise<FetchedPage 
     const html = (await res.text()).slice(0, 400_000);
     const { title, text } = stripHtml(html);
     const structured = parseStructured(html, res.url || url);
+    // Deep image discovery: og/JSON-LD/preload/picture/lazy-img/embedded JSON,
+    // ranked and integrity-checked against the listing's own host.
+    const gallery = extractListingImages(html, res.url || url);
     // A client-rendered page can still carry every fact in its metadata: keep
     // it when structured signals exist, instead of discarding the whole page.
     const hasStructured =
@@ -197,9 +200,9 @@ async function fetchViaHttp(url: string, maxChars: number): Promise<FetchedPage 
       text: text.slice(0, maxChars),
       fetched_at: new Date().toISOString(),
       via: "http",
-      image: metaImage(html, res.url || url) ?? structured.images[0],
+      image: gallery.primary ?? metaImage(html, res.url || url) ?? structured.images[0],
       image_source: res.url || url,
-      images: structured.images,
+      images: gallery.images.length > 0 ? gallery.images : structured.images,
       structured,
     };
   } catch (err) {
