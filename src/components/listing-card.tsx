@@ -140,6 +140,7 @@ const semanticIcon: Record<StoredSemantic["status"], string> = {
   probable: "~",
   contradicted: "✕",
   unknown: "–",
+  unfetchable: "⚠",
 };
 
 const semanticTone: Record<StoredSemantic["status"], string> = {
@@ -147,6 +148,7 @@ const semanticTone: Record<StoredSemantic["status"], string> = {
   probable: "text-muted-foreground",
   contradicted: "text-critical",
   unknown: "text-muted-foreground",
+  unfetchable: "text-warning",
 };
 
 /** Image gallery for one listing — only photos read from its own page. */
