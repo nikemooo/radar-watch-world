@@ -24,7 +24,7 @@
  *   - when several unlabelled, equally plausible values compete, the result is
  *     UNKNOWN with a reason — never a coin flip.
  */
-import { marketForUrl } from "./geo";
+import { marketOfHost } from "./geo";
 
 export type PriceType =
   | "asking_price"
