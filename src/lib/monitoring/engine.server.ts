@@ -1085,6 +1085,20 @@ export async function runRadarCycle(
   let unknownPrices = 0;
   let detailFetchBudget = 0;
   let budgetReason = "detail stage not reached";
+  /** Live counters of the deep-verification queue (persisted after each chunk). */
+  let detailQueueTelemetry: DetailQueueTelemetry = {
+    detail_queue_created: 0,
+    detail_candidates_started: 0,
+    detail_candidates_completed: 0,
+    detail_candidates_failed: 0,
+    detail_candidates_blocked: 0,
+    detail_candidates_timeout: 0,
+    detail_candidates_cached: 0,
+    detail_candidates_remaining: 0,
+  };
+  /** Final per-candidate state, used for honest reporting and persistence. */
+  const candidateStateByUrl = new Map<string, CandidateState>();
+
   const imageByUrl = new Map<string, { url: string; source: string; images: string[] }>();
   /** Per-item evidence: what is known, how strongly, and from which surface. */
   const attributeEvidenceByUrl = new Map<string, Record<string, AttributeEvidence>>();
