@@ -453,7 +453,10 @@ const sv: Dictionary = {
   "detail.interrupted.retry": "Sök igen",
   "detail.progress.live":
     "{sources} källor lästa · {candidates} annonser hittade · {details} annonser lästa i detalj.",
+  "detail.progress.queue":
+    "{done} av {total} annonser lästa · {failed} kunde inte öppnas · {remaining} i kö.",
   "detail.progress.idle": "Hittar aktuella annonser · läser annonsdetaljer · jämför priser.",
+
   "detail.progress.tail": "Det tar några minuter och fortsätter även om du lämnar sidan.",
   "detail.progress.resumed":
     "Sökningen avbröts och återupptogs {count} gång(er) — redan hämtad data återanvänds, inget görs om i onödan.",
