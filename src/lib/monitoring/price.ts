@@ -148,7 +148,7 @@ const NON_PRICE_UNIT_AFTER =
   /^\s*(?:kvm|kvadratmeter|m²|m2|sqm|sq\s?ft|ft²|rum|rok|r\.o\.k|hk|hp|bhp|kw|nm|km\/h|mph|km|mil\b|miles|mi\b|tum|mm|cm|st\b|kg|g\b|liter|l\b|%|år\b|years?\b|hastigheter|watt|w\b|ah|kwh|mah|px|dpi|mm\b)/i;
 
 const NON_PRICE_LABEL_BEFORE =
-  /(telefon|tel\.?|mobil|phone|kontakt(?:a)?|ring\b|fax|postnummer|post\s*nr|postal\s*code|zip|org\.?\s*nr|organisationsnummer|person\s*nr|vin\b|chassi(?:nummer)?|serienummer|serial|referens(?:nummer)?|reference|ref\.?\s*nr|artikel(?:nummer)?|art\.?\s*nr|sku|ean|isbn|gtin|objekt(?:s?nummer|id)|annons(?:id|nummer)|modell(?:nummer)?|model\s*(?:no|number)|årsmodell|modellår|model\s*year|byggår|registreringsnummer|reg\.?\s*nr|boarea|boyta|yta|area|storlek|andel(?:stal)?|f[öo]reningen|insats|nettoskuld|antal\s*rum|rum\b|våning|floor|miltal|mätarställning|mileage|effekt|hästkrafter|bredd|höjd|längd|vikt|weight|zoom|kod|code)\s*[:：\-–—]?\s*$/i;
+  /(telefon|tel\.?|mobil|phone|kontakt(?:a)?|ring\b|fax|postnummer|post\s*nr|postal\s*code|zip|org\.?\s*nr|organisationsnummer|person\s*nr|vin\b|chassi(?:nummer)?|serienummer|serial|referens(?:nummer)?|reference|ref\.?\s*nr|artikel(?:nummer)?|art\.?\s*nr|sku|ean|isbn|gtin|objekt(?:s?nummer|id)|annons(?:id|nummer)|modell(?:nummer)?|model\s*(?:no|number)|årsmodell|modellår|model\s*year|byggår|registreringsnummer|reg\.?\s*nr|boarea|boyta|yta|area|storlek|[a-zåäöé]*nummer|andel(?:stal)?|f[öo]reningen|insats|nettoskuld|antal\s*rum|rum\b|våning|floor|miltal|mätarställning|mileage|effekt|hästkrafter|bredd|höjd|längd|vikt|weight|zoom|kod|code)\s*[:：\-–—]?\s*$/i;
 
 const PHONE_LIKE = /(?:\+\d{1,3}[\s-]?)?(?:0\d{1,3}[\s-]?)\d{2,3}[\s-]?\d{2}[\s-]?\d{2}$/;
 
@@ -265,6 +265,10 @@ function rejected(text: string, hit: { start: number; end: number; text: string 
     if (digits.length < 3) return true;
     if (PHONE_LIKE.test(`${before.trim().slice(-6)}${hit.text}`.replace(/\s+/g, " ").trim())) return true;
   }
+  // Registration and organisation numbers are written as digit groups joined
+  // by a hyphen or slash: "559201-4798", "1202-3".
+  if (/\d\s*[-/]\s*$/.test(text.slice(Math.max(0, hit.start - 8), hit.start))) return true;
+  if (!hasCurrency && /^\s*[-/]\s*\d/.test(after)) return true;
   // Reference/part numbers glue letters to digits: "EPY76G", "126610LN".
   if (/[A-Za-z]$/.test(text.slice(Math.max(0, hit.start - 1), hit.start))) return true;
   if (/^[A-Za-z]/.test(text.slice(hit.end, hit.end + 1)) && !hasCurrency) return true;
