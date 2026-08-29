@@ -679,7 +679,14 @@ export async function runRadarCycle(
       search_failures: failures,
       sources_retrieved: sources,
       cost_estimate: Number(cost.toFixed(4)),
-      error: researchParts.flatMap((item) => item.errors).join(" | ").slice(0, 800) || null,
+      // A provider failure that the fallback recovered from is technical
+      // information, not a run error: the user still gets real results.
+      error:
+        successes > 0
+          ? researchParts.some((item) => item.fallbackUsed)
+            ? `Primary discovery provider unavailable — answered by fallback provider ${part.provider}.`
+            : null
+          : researchParts.flatMap((item) => item.errors).join(" | ").slice(0, 800) || null,
     });
 
     if (uniquePartDocs.length > 0) {
