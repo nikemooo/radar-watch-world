@@ -167,22 +167,185 @@ const braveProvider: SearchProvider = {
   },
 };
 
-/** Exa is primary; Brave is only used when Exa is not configured. */
-const providers: SearchProvider[] = [exaProvider, braveProvider];
+/**
+ * OpenAI hosted web search — discovery FALLBACK only.
+ *
+ * Never used while Exa answers, so it adds no cost to a normal sweep. It
+ * returns only URLs the model actually cited from its web_search tool; nothing
+ * is invented, and every result still goes through the candidate gate.
+ */
+const openAiProvider: SearchProvider = {
+  id: "openai-web-search",
+  label: "OpenAI web search (fallback)",
+  credential: "OPENAI_API_KEY",
+  costPerRequest: 0.03,
+  isConfigured: () => Boolean(process.env["OPENAI_API_KEY"]),
+  async search(query, limit) {
+    const retrieved_at = new Date().toISOString();
+    let res: Response;
+    try {
+      res = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env["OPENAI_API_KEY"]!}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          tools: [{ type: "web_search" }],
+          tool_choice: "required",
+          input:
+            `Search the live web for: ${query}\n` +
+            `Return up to ${limit} concrete result pages. For each, give the exact page URL and its title. ` +
+            `Do not invent URLs — only report pages the search tool actually returned.`,
+        }),
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+      });
+    } catch (err) {
+      throw new SearchProviderError(0, `OpenAI web search request failed: ${(err as Error).message}`);
+    }
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => "")).slice(0, 300);
+      throw new SearchProviderError(res.status, `OpenAI web search failed (${res.status}) ${detail}`);
+    }
+    const data = (await res.json()) as {
+      output?: {
+        type?: string;
+        content?: {
+          type?: string;
+          text?: string;
+          annotations?: { type?: string; url?: string; title?: string; start_index?: number; end_index?: number }[];
+        }[];
+      }[];
+    };
+
+    const documents = new Map<string, SearchDocument>();
+    for (const item of data.output ?? []) {
+      for (const content of item.content ?? []) {
+        const text = content.text ?? "";
+        for (const annotation of content.annotations ?? []) {
+          if (annotation.type !== "url_citation" || !annotation.url?.startsWith("http")) continue;
+          const url = annotation.url.split("#")[0]!;
+          if (documents.has(url)) continue;
+          documents.set(url, {
+            title: annotation.title ?? url,
+            url,
+            snippet: text.slice(0, 2000),
+            publisher: hostOf(url),
+            retrieved_at,
+            query,
+          });
+        }
+      }
+    }
+    return [...documents.values()].slice(0, limit);
+  },
+};
+
+/**
+ * DuckDuckGo HTML endpoint — keyless last-resort discovery. No credential is
+ * required, so Radar keeps a working discovery path even when every paid
+ * provider is exhausted. Results are plain organic web results.
+ */
+const duckDuckGoProvider: SearchProvider = {
+  id: "duckduckgo",
+  label: "DuckDuckGo (last-resort fallback)",
+  credential: "(none)",
+  costPerRequest: 0,
+  isConfigured: () => true,
+  async search(query, limit) {
+    const retrieved_at = new Date().toISOString();
+    let res: Response;
+    try {
+      res = await fetch("https://html.duckduckgo.com/html/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Mozilla/5.0 (compatible; RadarBot/1.0)",
+        },
+        body: new URLSearchParams({ q: query }).toString(),
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+      });
+    } catch (err) {
+      throw new SearchProviderError(0, `DuckDuckGo request failed: ${(err as Error).message}`);
+    }
+    if (!res.ok) throw new SearchProviderError(res.status, `DuckDuckGo search failed (${res.status})`);
+    const html = await res.text();
+    return parseDuckDuckGoHtml(html, query, limit, retrieved_at);
+  },
+};
+
+const stripTags = (value: string) =>
+  value
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** Exported for tests: turn the DDG HTML result list into real documents. */
+export function parseDuckDuckGoHtml(
+  html: string,
+  query: string,
+  limit: number,
+  retrieved_at = new Date().toISOString(),
+): SearchDocument[] {
+  const out: SearchDocument[] = [];
+  const seen = new Set<string>();
+  const anchor = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  let match: RegExpExecArray | null;
+  while ((match = anchor.exec(html)) && out.length < limit) {
+    let href = match[1]!.replace(/&amp;/g, "&");
+    if (href.startsWith("//")) href = `https:${href}`;
+    try {
+      const parsed = new URL(href, "https://duckduckgo.com");
+      const redirected = parsed.searchParams.get("uddg");
+      const url = (redirected ?? parsed.toString()).split("#")[0]!;
+      if (!url.startsWith("http") || url.includes("duckduckgo.com")) continue;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      out.push({
+        title: stripTags(match[2]!) || url,
+        url,
+        snippet: "",
+        publisher: hostOf(url),
+        retrieved_at,
+        query,
+      });
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+/**
+ * Discovery chain, in priority order. Exa stays primary; the rest are only
+ * reached when the one before it fails or is in cooldown.
+ */
+const providers: SearchProvider[] = [exaProvider, braveProvider, openAiProvider, duckDuckGoProvider];
+
+export const discoveryCooldowns = new ProviderCooldowns();
 
 export function activeProvider(): SearchProvider | null {
   return providers.find((p) => p.isConfigured()) ?? null;
 }
 
 export function providerStatus() {
+  const cooling = new Map(discoveryCooldowns.snapshot().map((c) => [c.provider, c.secondsRemaining]));
   return providers.map((p) => ({
     id: p.id,
     label: p.label,
     credential: p.credential,
     configured: p.isConfigured(),
     primary: p.id === "exa",
+    cooldownSeconds: cooling.get(p.id) ?? 0,
   }));
 }
+
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
