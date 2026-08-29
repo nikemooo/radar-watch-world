@@ -291,15 +291,19 @@ export function extractPricesFromText(text: string, options: TextPriceOptions = 
   const push = (start: number, end: number, numeric: string, mult: string | undefined, cur: string | undefined) => {
     if (overlaps(hits, start, end)) return;
     const raw = clean.slice(start, end).trim();
-    if (rejected(clean, { start, end, text: numeric }, !!cur)) return;
-    const amount = parseMoneyNumber(numeric, multiplierFor(mult));
+    const factor = multiplierFor(mult);
+    if (rejected(clean, { start, end, text: numeric }, !!cur || factor > 1)) return;
+    const amount = parseMoneyNumber(numeric, factor);
     if (amount === null || amount <= 0) return;
     hits.push({
       start,
       end,
       text: raw,
       amount,
-      currency: currencyFor(cur, marketCurrency),
+      // A money multiplier ("Mkr", "tkr", "MSEK") states the currency family
+      // itself; a bare "M"/"k" only states magnitude.
+      currency: currencyFor(cur, marketCurrency) ?? (/(kr|sek|eur|usd)$/i.test(mult ?? "") ? marketCurrency : null),
+      monetary: !!cur || factor > 1,
       labelled: !!labelBefore(clean, start),
     });
   };
