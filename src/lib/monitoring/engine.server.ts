@@ -1442,60 +1442,62 @@ export async function runRadarCycle(
           extractionsOk = details.filter((d) => d.extracted > 0).length;
           extractionsFailed = aiFailures.filter((f) => (deterministic.get(f.url) ?? {}) && !details.some((d) => d.url === f.url && d.extracted > 0)).length;
 
-          // Index-row price provenance: when a detail page is client-rendered
-          // and states no value, the value printed in that item's own card on
-          // the index page it was discovered on may be used. The join is by
-          // exact item URL only, and only when that card held exactly one
-          // price — otherwise the value stays unknown.
+          // Generic price pipeline: structured data → labelled fields → page
+          // text → the item's own index card. Nothing site-specific, and a
+          // value is only ever produced when a source literally states it.
           const valueSpec = valueKey ? specs.find((s) => s.key === valueKey) : undefined;
           if (valueSpec) {
-            const structuredByUrl = new Map(fetched.pages.map((p) => [p.url, p.structured]));
+            const pageByUrl = new Map(fetched.pages.map((p) => [p.url, p]));
             for (const d of details) {
               const current = d.attributes[valueSpec.key];
-              if (current?.raw) {
+              if (current?.raw && current.value !== null) {
                 console.info(`[radar:price] ${d.url} — price from detail page (${current.raw})`);
                 continue;
               }
-              // Structured commerce metadata states a price far more often than
-              // the prose does on client-rendered marketplaces.
-              const st = structuredByUrl.get(d.url);
-              const fromStructured = st
-                ? structuredPrice({ ...st.jsonld, ...st.og, ...st.meta, ...st.fields })
-                : null;
-              if (fromStructured) {
-                d.attributes[valueSpec.key] = normalizeAttribute(
+              const page = pageByUrl.get(d.url);
+              const st = page?.structured;
+              const card = indexCards.get(d.url) ?? indexCards.get(`${d.url}/`);
+              const extractedPrice = extractPrice({
+                url: d.url,
+                structured: { ...(st?.jsonld ?? {}), ...(st?.og ?? {}), ...(st?.meta ?? {}) },
+                fields: st?.fields,
+                text: `${page?.title ?? ""}\n${page?.text ?? ""}`,
+                cardText: card?.text ?? null,
+              });
+              const price = extractedPrice.primary;
+              if (price) {
+                const fromIndex = price.source_location === "index_card";
+                const raw = price.currency && !/[A-Za-z€$£¥]/.test(price.original_text)
+                  ? `${price.original_text} ${price.currency}`
+                  : price.original_text;
+                const normalized = normalizeAttribute(
                   valueSpec,
-                  fromStructured.raw,
-                  "structured",
-                  d.url,
+                  raw,
+                  price.confidence >= 0.9 ? "structured" : "stated",
+                  fromIndex ? (card?.sourceUrl ?? d.url) : d.url,
                 );
-                structuredPricesApplied += 1;
-                d.extracted += 1;
-                d.missing = Math.max(0, d.missing - 1);
-                console.info(`[radar:price] ${d.url} — price from structured metadata (${fromStructured.raw})`);
-                continue;
-              }
-              const hint = indexPriceHints.get(d.url) ?? indexPriceHints.get(`${d.url}/`);
-
-              if (hint && hint.value !== null) {
                 d.attributes[valueSpec.key] = {
-                  ...normalizeAttribute(valueSpec, hint.raw, "structured", hint.sourceUrl),
-                  origin: "index",
+                  ...normalized,
+                  // The engine trusts the extractor's own reading of the
+                  // amount and currency over a re-parse of the raw string.
+                  value: price.amount,
+                  currency: price.currency ?? normalized.currency,
+                  ...(fromIndex ? { origin: "index" as const } : {}),
                 };
-                indexPricesApplied += 1;
+                if (fromIndex) indexPricesApplied += 1;
+                else structuredPricesApplied += 1;
                 d.extracted += 1;
                 d.missing = Math.max(0, d.missing - 1);
                 console.info(
-                  `[radar:price] ${d.url} — price joined from index row "${hint.raw}" (source ${hint.sourceUrl})`,
+                  `[radar:price] ${d.url} — ${explainPrice(price)} (${price.price_type})`,
                 );
               } else {
                 unknownPrices += 1;
                 const ambiguous = ambiguousPriceList.find((a) => a.itemUrl === d.url);
                 console.info(
                   `[radar:price] ${d.url} — price unknown (` +
-                    (ambiguous
-                      ? `ambiguous index row: ${ambiguous.values.join(" / ")}`
-                      : "no price on detail page and no unambiguous index row") +
+                    (extractedPrice.reason ??
+                      (ambiguous ? `ambiguous index row: ${ambiguous.values.join(" / ")}` : "no price stated")) +
                     ")",
                 );
               }
