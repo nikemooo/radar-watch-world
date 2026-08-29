@@ -49,11 +49,11 @@ import {
   collectAttributeEvidence,
   imageEvidence,
   storableEvidence,
-  structuredPrice,
   type AttributeEvidence,
   type ImageEvidence,
   type StoredEvidence,
 } from "./evidence";
+import { extractPrice, explainPrice } from "./price";
 import { detectIdentifiers, mergeIdentifiers, presentableIdentifiers, type Identifier } from "./identifiers";
 import { comparableIdentity, parseIdentity, type IdentitySource } from "./identity";
 import { dedupeListings } from "./dedupe";
