@@ -225,6 +225,8 @@ interface RawHit {
   text: string;
   amount: number;
   currency: string | null;
+  /** The page marked this number as money (currency token or multiplier). */
+  monetary: boolean;
   labelled: boolean;
 }
 
@@ -329,15 +331,15 @@ export function extractPricesFromText(text: string, options: TextPriceOptions = 
     const periodic = PERIODIC_AFTER.test(after);
     let type: PriceType = label?.type ?? "unknown";
     if (periodic && type !== "fee") type = type === "rent" ? "rent" : "monthly_price";
-    if (type === "unknown" && hit.currency) type = "current_price";
+    if (type === "unknown" && hit.monetary) type = "current_price";
 
-    const currency = hit.currency ?? (label || hit.currency ? marketCurrency : null);
+    const currency = hit.currency ?? (label || hit.monetary ? marketCurrency : null);
     const inferredCurrency = !hit.currency && !!currency;
 
     let confidence = 0.5;
     if (hit.currency && label) confidence = 0.96;
     else if (hit.currency) confidence = 0.9;
-    else if (label) confidence = 0.8;
+    else if (label || hit.monetary) confidence = 0.8;
     if (inferredCurrency) confidence -= 0.06;
     if (location === "index_card") confidence -= 0.15;
 
