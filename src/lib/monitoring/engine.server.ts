@@ -27,7 +27,15 @@ import { reapStaleRuns, releaseRadar } from "./reaper.server";
 import { createCheckpointStore, type CheckpointStore } from "./checkpoints.server";
 
 import { discoverCandidates, harvestLinks, type CandidateItem } from "./candidates.server";
-import { fetchDetailPages } from "../search/detail-fetch.server";
+import { fetchDetailPages, type FetchedPage } from "../search/detail-fetch.server";
+import {
+  isUnopenable,
+  runDetailQueue,
+  type CandidateProgress,
+  type CandidateState,
+  type DetailQueueTelemetry,
+} from "./detail-queue";
+
 import { resolveListingUrl, type ResolvedListingUrl } from "../search/listing-url";
 import { detectItemFamilies, looksLikeItemUrl } from "../search/url-shape";
 import {
