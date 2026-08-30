@@ -49,6 +49,14 @@ export interface StructuredSignals {
   images: string[];
   /** "Label: value" pairs read from spec tables / definition lists. */
   fields: Record<string, string>;
+  /** Best listing description published by the page itself. */
+  description?: string | null;
+  /** Visible section headings, in document order. */
+  headings?: string[];
+  /** Visible feature/specification list items. */
+  features?: string[];
+  /** Listing-bound image captions and alt text. */
+  image_text?: string[];
 }
 
 /* ------------------------------------------------------------------ *
@@ -145,6 +153,9 @@ export function parseStructured(html: string, pageUrl: string): StructuredSignal
   const jsonld: Record<string, string> = {};
   const fields: Record<string, string> = {};
   const images: string[] = [];
+  const headings: string[] = [];
+  const features: string[] = [];
+  const imageText: string[] = [];
 
   for (const m of html.matchAll(/<meta\b[^>]*>/gi)) {
     const tag = m[0];
@@ -228,7 +239,10 @@ export function parseStructured(html: string, pageUrl: string): StructuredSignal
     const alt = tag.match(/\balt\s*=\s*["']([^"']+)["']/i)?.[1];
     if (alt) {
       const text = decode(alt);
-      if (text.length > 3 && !fields["image_alt"]) fields["image_alt"] = text.slice(0, 300);
+      if (text.length > 3) {
+        if (!fields["image_alt"]) fields["image_alt"] = text.slice(0, 300);
+        if (!imageText.includes(text)) imageText.push(text.slice(0, 300));
+      }
     }
     if (images.length >= 12) break;
   }
@@ -245,7 +259,36 @@ export function parseStructured(html: string, pageUrl: string): StructuredSignal
     if (label && value && label.length < 60 && value.length < 120) fields[label.toLowerCase()] ??= value;
   }
 
-  return { jsonld, og, meta, canonical, images: images.slice(0, 12), fields };
+  // Preserve page structure before the general HTML-to-text pass flattens it.
+  // These are generic HTML semantics, not marketplace-specific selectors.
+  for (const m of html.matchAll(/<h[1-4]\b[^>]*>([\s\S]{0,500}?)<\/h[1-4]>/gi)) {
+    const heading = decode(m[1]!.replace(/<[^>]+>/g, " "));
+    if (heading.length >= 2 && !headings.includes(heading)) headings.push(heading.slice(0, 300));
+  }
+  for (const m of html.matchAll(/<li\b[^>]*>([\s\S]{0,600}?)<\/li>/gi)) {
+    const feature = decode(m[1]!.replace(/<[^>]+>/g, " "));
+    if (feature.length >= 3 && feature.length <= 300 && !features.includes(feature)) features.push(feature);
+  }
+  for (const m of html.matchAll(/<(?:figcaption|caption)\b[^>]*>([\s\S]{0,500}?)<\/(?:figcaption|caption)>/gi)) {
+    const caption = decode(m[1]!.replace(/<[^>]+>/g, " "));
+    if (caption.length >= 3 && !imageText.includes(caption)) imageText.push(caption.slice(0, 300));
+  }
+
+  const description =
+    og["description"] ?? meta["description"] ?? meta["twitter:description"] ?? jsonld["description"] ?? null;
+
+  return {
+    jsonld,
+    og,
+    meta,
+    canonical,
+    images: images.slice(0, 12),
+    fields,
+    description,
+    headings: headings.slice(0, 30),
+    features: features.slice(0, 80),
+    image_text: imageText.slice(0, 20),
+  };
 }
 
 /* ------------------------------------------------------------------ *

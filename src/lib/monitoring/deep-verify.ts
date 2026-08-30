@@ -35,6 +35,9 @@ export interface VerificationEvidence {
   /** which part of the page the quote came from */
   source_label: string | null;
   method: string;
+  confidence: number | null;
+  /** Short normalized meaning of the quoted evidence. */
+  interpretation: string | null;
 }
 
 /** One requirement, as it should be shown to the user. */
@@ -92,6 +95,8 @@ function evidenceOf(s: StoredSemantic): VerificationEvidence {
     source_url: s.source_url,
     source_label: s.source_label ?? null,
     method: s.method ?? "vocabulary",
+    confidence: s.confidence,
+    interpretation: s.interpretation ?? s.reason,
   };
 }
 
@@ -123,7 +128,7 @@ export function deepVerify(
         status: outcome.status,
         verdict: outcome.status === "match" ? "verified" : "rejected",
         reason: outcome.reason,
-        evidence: outcome.observedRaw ? { snippet: outcome.observedRaw, source_url: null, source_label: "stated attribute", method: "attribute" } : null,
+        evidence: outcome.observedRaw ? { snippet: outcome.observedRaw, source_url: null, source_label: "stated attribute", method: "attribute", confidence: 0.95, interpretation: outcome.reason } : null,
         source: "attribute",
       });
       continue;

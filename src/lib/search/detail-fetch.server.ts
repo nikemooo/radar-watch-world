@@ -33,6 +33,11 @@ export interface FetchedPage {
   images?: string[] | undefined;
   /** Structured signals (JSON-LD, OpenGraph, meta, spec tables) when served. */
   structured?: StructuredSignals | undefined;
+  /** First-class page sections used by semantic verification. */
+  description?: string | null | undefined;
+  headings?: string[] | undefined;
+  features?: string[] | undefined;
+  image_text?: string[] | undefined;
 }
 
 export interface DetailFetchResult {
@@ -204,6 +209,10 @@ async function fetchViaHttp(url: string, maxChars: number): Promise<FetchedPage 
       image_source: res.url || url,
       images: gallery.images.length > 0 ? gallery.images : structured.images,
       structured,
+      description: structured.description,
+      headings: structured.headings,
+      features: structured.features,
+      image_text: structured.image_text,
     };
   } catch (err) {
     return { url, reason: (err as Error).message.slice(0, 200) };
@@ -258,6 +267,10 @@ export async function fetchDetailPages(urls: string[], maxChars = 6000): Promise
       const target = pages.find((p) => p.url === result.url);
       if (!target) continue;
       target.structured = result.structured;
+      target.description = result.description;
+      target.headings = result.headings;
+      target.features = result.features;
+      target.image_text = result.image_text;
       target.images = Array.from(new Set([...(target.images ?? []), ...(result.images ?? [])])).slice(0, 8);
       target.image = target.image ?? result.image;
       target.image_source = target.image_source ?? result.image_source;

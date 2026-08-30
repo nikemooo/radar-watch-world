@@ -15,7 +15,7 @@
  * carries the layer it came from so the UI can explain itself.
  */
 
-export type FactLayer = "jsonld" | "opengraph" | "meta" | "field" | "title" | "text";
+export type FactLayer = "jsonld" | "opengraph" | "meta" | "field" | "title" | "description" | "heading" | "text";
 
 export type FactConfidence = "structured" | "stated" | "inferred";
 
@@ -64,6 +64,8 @@ export interface ListingSurfaces {
   og?: Record<string, string> | undefined;
   meta?: Record<string, string> | undefined;
   fields?: Record<string, string> | undefined;
+  description?: string | null | undefined;
+  headings?: string[] | undefined;
 }
 
 /* ------------------------------------------------------------------ *
@@ -299,6 +301,17 @@ export function extractListingFacts(surfaces: ListingSurfaces): ListingExtractio
   };
   for (const fact of Object.values(location)) if (fact) facts[fact.key] = fact;
 
+  if (surfaces.title?.trim()) {
+    facts["title"] = {
+      key: "title",
+      raw: surfaces.title.trim().slice(0, 300),
+      value: null,
+      unit: null,
+      layer: "title",
+      confidence: "stated",
+      source_url: surfaces.url,
+    };
+  }
   return { facts, location, status: statusFrom(surfaces), item_type: itemTypeFrom(surfaces) };
 }
 
@@ -329,6 +342,32 @@ function hasPhrase(haystack: string, phrase: string): boolean {
   return new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRe(p)}([^\\p{L}\\p{N}]|$)`, "u").test(h);
 }
 
+function placeTerms(wanted: string): string[] {
+  const cleaned = wanted
+    .replace(/^(?:bel[aä]gen(?:het)?\s+i|located\s+in|in)\s+/i, "")
+    .trim();
+  return Array.from(
+    new Set(
+      [cleaned, ...cleaned.split(/\s*(?:\/|,|\bor\b|\beller\b)\s*/i)]
+        .map((part) => part.trim())
+        .filter((part) => part.length >= 2),
+    ),
+  );
+}
+
+function matchingPlace(haystack: string, wanted: string): string | null {
+  return placeTerms(wanted).find((part) => hasPhrase(haystack, part)) ?? null;
+}
+
+function proximityOnly(text: string, place: string): boolean {
+  const folded = fold(text);
+  const p = fold(place);
+  const at = folded.indexOf(p);
+  if (at < 0) return false;
+  const before = folded.slice(Math.max(0, at - 35), at);
+  return /(?:nara|närhet till|intill|close to|near|minutes? from)\s*$/.test(before);
+}
+
 /**
  * Does this listing live in the place the user asked for?
  *
@@ -354,7 +393,8 @@ export function verifyPlace(
   ].filter((f): f is ListingFact => !!f);
 
   for (const fact of addressFacts) {
-    if (hasPhrase(fact.raw, place)) {
+    const matchedPlace = matchingPlace(fact.raw, place);
+    if (matchedPlace) {
       return {
         status: "confirmed",
         reason: `the listing's stated ${fact.key.replace(/_/g, " ")} is "${fact.raw}"`,
@@ -364,8 +404,23 @@ export function verifyPlace(
     }
   }
 
+
+  // A listing title/H1 identifies the offered item itself and is therefore
+  // property-bound evidence. Unlike body copy, it is not a loose neighbourhood
+  // mention. Proximity wording stays probable rather than being promoted.
+  const title = extraction.facts["title"]?.raw ?? "";
+  const titleMatch = title ? matchingPlace(title, place) : null;
+  if (titleMatch && !proximityOnly(title, titleMatch)) {
+    return {
+      status: "confirmed",
+      reason: `the listing title identifies the item as being in ${titleMatch}`,
+      matched: title,
+      layer: "title",
+    };
+  }
+
   const locality = extraction.location.locality ?? extraction.location.address;
-  if (locality && !hasPhrase(`${locality.raw} ${pageText.slice(0, 2000)}`, place)) {
+  if (locality && !matchingPlace(`${locality.raw} ${pageText.slice(0, 2000)}`, place)) {
     return {
       status: "contradicted",
       reason: `the listing states another location ("${locality.raw}") and never mentions ${place}`,
@@ -374,11 +429,12 @@ export function verifyPlace(
     };
   }
 
-  if (hasPhrase(pageText, place)) {
+  const pageMatch = matchingPlace(pageText, place);
+  if (pageMatch) {
     return {
       status: "probable",
       reason: `${place} is mentioned on the listing page but not in a stated address field`,
-      matched: place,
+      matched: pageMatch,
       layer: "text",
     };
   }

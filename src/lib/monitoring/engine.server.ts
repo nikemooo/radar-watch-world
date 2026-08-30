@@ -68,6 +68,7 @@ import { dedupeListings } from "./dedupe";
 import { extractListingFacts, verifyPlace, type ListingExtraction } from "./listing-extract";
 import {
   evaluateSemanticCriteria,
+  fold,
   storableSemantics,
   unfetchableVerdict,
   type SemanticSurface,
@@ -1123,6 +1124,18 @@ export async function runRadarCycle(
   const surfacesByUrl = new Map<string, SemanticSurface[]>();
   /** Content fingerprint of the fetched page, so unchanged pages are not re-read. */
   const contentHashByUrl = new Map<string, string>();
+  /** Per-candidate diagnostics persisted with the finding for explainability. */
+  const detailTelemetryByUrl = new Map<string, {
+    detail_fetch_started: boolean;
+    detail_fetch_completed: boolean;
+    detail_content_length: number;
+    detail_description_found: boolean;
+    detail_structured_data_found: boolean;
+    detail_address_found: boolean;
+    detail_facts_extracted: number;
+    criteria: { attribute: string; verdict: string; source: string | null; snippet: string | null; confidence: number | null }[];
+    final_listing_verdict: string;
+  }>();
   /** Cheap, stable content fingerprint (no crypto needed — this is a cache key). */
   const contentHash = (text: string): string => {
     let h = 2166136261;
@@ -1315,6 +1328,20 @@ export async function runRadarCycle(
         // and an interrupted worker resumes at the exact chunk it stopped on
         // instead of paying for the whole batch again.
         const networkFetched = new Set<string>();
+        for (const candidate of selected) {
+          if (!candidate.url) continue;
+          detailTelemetryByUrl.set(candidate.url, {
+            detail_fetch_started: true,
+            detail_fetch_completed: false,
+            detail_content_length: 0,
+            detail_description_found: false,
+            detail_structured_data_found: false,
+            detail_address_found: false,
+            detail_facts_extracted: 0,
+            criteria: [],
+            final_listing_verdict: "pending",
+          });
+        }
         const queued = await runDetailQueue<FetchedPage>({
           urls: selected.map((c) => c.url!),
           step,
@@ -1460,7 +1487,7 @@ export async function runRadarCycle(
           });
         }
 
-        if (specs.length > 0 && fetched.pages.length > 0) {
+        if (fetched.pages.length > 0) {
           // ---------- STRUCTURED EXTRACTION + EVIDENCE MERGING ----------
           // Every retrieved surface for the same item is read deterministically
           // first: JSON-LD, OpenGraph/meta, spec tables, page title, page text,
@@ -1576,8 +1603,23 @@ export async function runRadarCycle(
               og: st?.og,
               meta: st?.meta,
               fields: st?.fields,
+              description: page.description,
+              headings: page.headings,
             });
             listingFactsByUrl.set(page.url, listing);
+            detailTelemetryByUrl.set(page.url, {
+              detail_fetch_started: true,
+              detail_fetch_completed: true,
+              detail_content_length: page.text.length,
+              detail_description_found: Boolean(page.description?.trim()),
+              detail_structured_data_found: Boolean(
+                st && (Object.keys(st.jsonld).length || Object.keys(st.og).length || Object.keys(st.meta).length || Object.keys(st.fields).length),
+              ),
+              detail_address_found: Boolean(listing.location.address || listing.location.locality || listing.location.region),
+              detail_facts_extracted: Object.keys(listing.facts).filter((key) => key !== "title").length,
+              criteria: [],
+              final_listing_verdict: "pending",
+            });
 
             // ---------- SEMANTIC CRITERIA ----------
             // The user's own wording, judged against every retrieved surface:
@@ -1605,6 +1647,18 @@ export async function runRadarCycle(
                 .join("\n")
                 .slice(0, 20000),
             }));
+            if (page.description?.trim()) {
+              semanticSurfaces.push({ url: page.url, kind: "description", text: page.description });
+            }
+            for (const heading of page.headings ?? []) {
+              semanticSurfaces.push({ url: page.url, kind: "heading", text: heading });
+            }
+            for (const feature of page.features ?? []) {
+              semanticSurfaces.push({ url: page.url, kind: "feature", text: feature });
+            }
+            for (const imageText of page.image_text ?? []) {
+              semanticSurfaces.push({ url: page.url, kind: "image_metadata", text: imageText });
+            }
             surfacesByUrl.set(page.url, semanticSurfaces);
             const phrases = [...config.important_criteria, ...config.preferences].filter(Boolean);
             const semantic = evaluateSemanticCriteria(phrases, semanticSurfaces);
@@ -1620,9 +1674,10 @@ export async function runRadarCycle(
                 snippet: v.matched,
                 source_url: page.url,
                 reason: v.reason,
-                source_kind: "description" as const,
-                source_label: "listing address",
+                source_kind: (v.layer === "title" ? "title" : v.layer === "field" || v.layer === "jsonld" ? "field" : "description") as SemanticSurface["kind"],
+                source_label: v.layer === "title" ? "listing title" : "listing address",
                 method: "vocabulary" as const,
+                interpretation: v.matched ? `the listing identifies the item with ${v.matched}` : null,
               } satisfies StoredSemantic;
             });
             placeVerdictsByUrl.set(page.url, placeVerdicts);
@@ -1638,13 +1693,13 @@ export async function runRadarCycle(
           // returning, unchanged listing is never re-read at cost.
           {
             const openPages = fetched.pages.filter((p) => {
-              const verdicts = semanticVerdictsByUrl.get(p.url) ?? [];
+              const verdicts = semanticByUrl.get(p.url) ?? [];
               return verdicts.some((v) => v.status === "unknown" || v.status === "probable");
             });
             const budget = Math.min(openPages.length, isBaseline ? 12 : 8);
             for (const page of openPages.slice(0, budget)) {
               const surfaces = surfacesByUrl.get(page.url) ?? [];
-              const verdicts = semanticVerdictsByUrl.get(page.url) ?? [];
+              const verdicts = semanticByUrl.get(page.url) ?? [];
               const open = verdicts.filter((v) => v.status === "unknown" || v.status === "probable");
               const hash = contentHash(page.text);
               const cached = cachedSemanticFor(page.url, hash);
@@ -1664,21 +1719,17 @@ export async function runRadarCycle(
               }
               if (aiVerdicts.length === 0) continue;
               aiVerificationVerdicts += aiVerdicts.length;
-              const byPhrase = new Map(aiVerdicts.map((v) => [v.phrase, v]));
+              const byPhrase = new Map(storableSemantics(aiVerdicts).map((v) => [fold(v.phrase), v]));
               const merged = verdicts.map((v) => {
-                const ai = byPhrase.get(v.phrase);
+                const ai = byPhrase.get(fold(v.phrase));
                 // The model may only STRENGTHEN an open verdict, never weaken a
                 // deterministic confirmation or contradiction.
                 if (!ai || (v.status !== "unknown" && v.status !== "probable")) return v;
                 if (ai.status === "probable" && v.status === "probable") return v;
                 return ai;
               });
-              semanticVerdictsByUrl.set(page.url, merged);
               contentHashByUrl.set(page.url, hash);
-              semanticByUrl.set(page.url, [
-                ...storableSemantics(merged),
-                ...(placeVerdictsByUrl.get(page.url) ?? []),
-              ]);
+              semanticByUrl.set(page.url, merged);
             }
           }
 
@@ -2048,6 +2099,18 @@ ${documentBlock(allDocs.slice(0, 45))}`,
       fetchStateByUrl.get(item.url) ?? { status: "not_attempted" },
     );
     requirementsByUrl.set(item.url, storableRequirements(verdict.requirements));
+    candidateStateByUrl.set(item.url, fetchStateByUrl.get(item.url)?.status === "ok" ? "verified" : candidateStateByUrl.get(item.url) ?? "skipped");
+    const detailTelemetry = detailTelemetryByUrl.get(item.url);
+    if (detailTelemetry) {
+      detailTelemetry.criteria = verdict.requirements.map((requirement) => ({
+        attribute: requirement.attribute,
+        verdict: requirement.verdict,
+        source: requirement.evidence?.source_label ?? null,
+        snippet: requirement.evidence?.snippet ?? null,
+        confidence: requirement.evidence?.confidence ?? null,
+      }));
+      detailTelemetry.final_listing_verdict = verdict.status;
+    }
 
     verdicts.set(item.fingerprint, verdict);
     if (verdict.status === "match") criteriaMatched += 1;
@@ -2578,6 +2641,9 @@ ${eligible
             fetch_error: ((fetchStateByUrl.get(item.url) as { reason?: string } | undefined)?.reason ??
               (prev?.snapshot as { fetch_error?: string } | null)?.fetch_error ??
               null) as never,
+            detail_telemetry: (detailTelemetryByUrl.get(item.url) ??
+              (prev?.snapshot as { detail_telemetry?: unknown } | null)?.detail_telemetry ??
+              null) as never,
             identity: ((verdicts.get(item.fingerprint)?.outcomes ?? [])
               .map((o) => o.identity)
               .filter(Boolean)[0] ??
@@ -2593,7 +2659,7 @@ ${eligible
           discovery_url: discoveryUrl,
           secondary_sources: secondary as never,
           detail_status: detail
-            ? "fetched"
+            ? (candidateStateByUrl.get(item.url) ?? "verified")
             : selected.some((c) => c.url === item.url)
               ? "failed"
               : (prev?.detail_status ?? "not_attempted"),

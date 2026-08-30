@@ -68,6 +68,16 @@ export interface FindingSnapshot {
   requirements?: VerifiedRequirement[];
   fetch_status?: "ok" | "failed" | "not_attempted" | null;
   fetch_error?: string | null;
+  detail_telemetry?: {
+    detail_fetch_started?: boolean;
+    detail_fetch_completed?: boolean;
+    detail_content_length?: number;
+    detail_description_found?: boolean;
+    detail_structured_data_found?: boolean;
+    detail_address_found?: boolean;
+    detail_facts_extracted?: number;
+    final_listing_verdict?: string;
+  } | null;
 
   /** "direct" when the stored URL provably addresses the advert itself. */
   link_status?: "direct" | "unverified";
@@ -425,6 +435,14 @@ export function ListingCard({
                             )}
                           </span>
                         )}
+                        {r.evidence?.interpretation && (
+                          <span className="block text-xs text-muted-foreground">
+                            {r.evidence.interpretation}
+                            {r.evidence.confidence !== null
+                              ? ` · ${Math.round(r.evidence.confidence * 100)}%`
+                              : ""}
+                          </span>
+                        )}
                       </span>
                     </li>
                   ))}
@@ -502,12 +520,22 @@ export function ListingCard({
               </dl>
             )}
             <BaselinePanel baseline={finding.baseline} />
+            {snapshot.detail_telemetry && (
+              <dl className="grid gap-x-6 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground sm:grid-cols-2">
+                <div><dt className="mono-label">Page read</dt><dd>{snapshot.detail_telemetry.detail_fetch_completed ? "completed" : "not completed"}</dd></div>
+                <div><dt className="mono-label">Content</dt><dd>{snapshot.detail_telemetry.detail_content_length ?? 0} characters</dd></div>
+                <div><dt className="mono-label">Description</dt><dd>{snapshot.detail_telemetry.detail_description_found ? "found" : "not found"}</dd></div>
+                <div><dt className="mono-label">Structured data</dt><dd>{snapshot.detail_telemetry.detail_structured_data_found ? "found" : "not found"}</dd></div>
+                <div><dt className="mono-label">Address</dt><dd>{snapshot.detail_telemetry.detail_address_found ? "found" : "not found"}</dd></div>
+                <div><dt className="mono-label">Facts</dt><dd>{snapshot.detail_telemetry.detail_facts_extracted ?? 0}</dd></div>
+              </dl>
+            )}
             <p className="mono-label">
               {t("listing.seen", {
                 first: new Date(finding.first_seen_at).toLocaleDateString(locale),
                 last: new Date(finding.last_seen_at).toLocaleDateString(locale),
                 detail:
-                  finding.detail_status === "fetched"
+                  finding.detail_status === "fetched" || finding.detail_status === "verified"
                     ? t("listing.detailRead")
                     : t("listing.detailListingOnly"),
               })}
