@@ -29,7 +29,7 @@ export type SemanticStatus = "confirmed" | "probable" | "contradicted" | "unknow
 export interface SemanticSurface {
   url: string;
   /** How strong this surface is as a statement of fact. */
-  kind: "jsonld" | "field" | "title" | "opengraph" | "description" | "text" | "snippet";
+  kind: "jsonld" | "field" | "title" | "opengraph" | "description" | "heading" | "feature" | "image_metadata" | "text" | "snippet";
   text: string;
 }
 
@@ -184,7 +184,7 @@ const CONCEPTS: Concept[] = [
 ];
 
 /** Surfaces that state facts rather than describe them. */
-const STRONG_SURFACES: SemanticSurface["kind"][] = ["jsonld", "field", "title", "opengraph"];
+const STRONG_SURFACES: SemanticSurface["kind"][] = ["jsonld", "field", "title", "opengraph", "heading", "feature"];
 /** The listing's own body copy — a first-class source, not a fallback. */
 const BODY_SURFACES: SemanticSurface["kind"][] = ["description", "text"];
 
@@ -268,6 +268,12 @@ function surfaceLabel(kind: SemanticSurface["kind"]): string {
       return "listing title";
     case "description":
       return "listing description";
+    case "heading":
+      return "listing heading";
+    case "feature":
+      return "feature or specification";
+    case "image_metadata":
+      return "listing image metadata";
     case "snippet":
       return "search snippet";
     default:
@@ -455,6 +461,7 @@ export interface StoredSemantic {
   source_kind?: SemanticSurface["kind"] | null;
   source_label?: string | null;
   method?: SemanticVerdict["method"];
+  interpretation?: string | null;
 }
 
 export function storableSemantics(verdicts: SemanticVerdict[]): StoredSemantic[] {
@@ -468,6 +475,7 @@ export function storableSemantics(verdicts: SemanticVerdict[]): StoredSemantic[]
     source_kind: v.source_kind ?? null,
     source_label: v.source_kind ? surfaceLabel(v.source_kind) : null,
     method: v.method ?? "vocabulary",
+    interpretation: v.matched ? `“${v.matched.trim()}” supports ${v.phrase}` : null,
   }));
 }
 
