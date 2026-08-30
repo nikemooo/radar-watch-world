@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { parseStructured } from "@/lib/monitoring/enrichment";
 
+const PAGE = "https://example.se/bostad/14a";
+
 describe("generic listing page surfaces", () => {
   it("preserves metadata, headings, feature lists, specs and image text", () => {
     const html = `
