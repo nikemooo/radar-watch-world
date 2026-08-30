@@ -68,6 +68,7 @@ import { dedupeListings } from "./dedupe";
 import { extractListingFacts, verifyPlace, type ListingExtraction } from "./listing-extract";
 import {
   evaluateSemanticCriteria,
+  fold,
   storableSemantics,
   unfetchableVerdict,
   type SemanticSurface,
