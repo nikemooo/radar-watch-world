@@ -72,6 +72,20 @@ describe("place verification", () => {
     expect(verifyPlace("Nacka", stated, "Adress: Finnboda Kajväg 13B, Nacka").status).toBe("confirmed");
   });
 
+  it("verifies a compound place from the listing title without a labelled field", () => {
+    const title = "Finnboda varvsväg 14A, 5 tr, Finnboda Hamn, Nacka";
+    const stated = extractListingFacts({ url: PAGE, title, text: "Välkommen till bostaden." });
+    const verdict = verifyPlace("Nacka / Finnboda", stated, "Välkommen till bostaden.");
+    expect(verdict.status).toBe("confirmed");
+    expect(verdict.matched).toBe(title);
+    expect(verdict.layer).toBe("title");
+  });
+
+  it("contradicts a requested place when the stated address is elsewhere", () => {
+    const stated = extractListingFacts({ url: PAGE, text: "Adress: Hornsgatan 10, Södermalm, Stockholm" });
+    expect(verifyPlace("Nacka", stated, "Adress: Hornsgatan 10, Södermalm, Stockholm").status).toBe("contradicted");
+  });
+
   it("does not verify from area marketing copy alone", () => {
     const mentioned = extractListingFacts({ url: PAGE, text: "Nacka är en populär kommun att bo i." });
     expect(verifyPlace("Nacka", mentioned, "Nacka är en populär kommun att bo i.").status).not.toBe("confirmed");
@@ -154,6 +168,42 @@ describe("end-to-end verification", () => {
     expect(view.evidence?.snippet).toContain("Stockholms inlopp");
     expect(view.evidence?.source_label).toBe("listing description");
     expect(deep.requirements.find((r) => r.attribute === "price")?.status).toBe("match");
+  });
+
+  it("matches the exact Finnboda title and Saltsjön description criterion by criterion", () => {
+    const title = "Finnboda varvsväg 14A, 5 tr, Finnboda Hamn, Nacka";
+    const description = "Välkommen till denna ljusa lägenhet med fantastisk utsikt över Saltsjön.";
+    const listing = extractListingFacts({ url: PAGE, title, text: description });
+    const location = verifyPlace("Nacka / Finnboda", listing, description);
+    const semantic = storableSemantics([
+      {
+        phrase: "Nacka",
+        status: location.status,
+        confidence: 0.95,
+        matched: location.matched,
+        snippet: location.matched,
+        source_url: PAGE,
+        source_kind: "title",
+        reason: location.reason,
+        method: "literal",
+      },
+      evaluateSemanticCriterion("havsutsikt", surfaces(description)),
+    ]);
+    const exactConstraints: HardConstraint[] = [
+      { attribute: "location", op: "includes", value: "Nacka", kind: "geo", label: "Belägen i Nacka / Finnboda" },
+      { attribute: "view_type", op: "includes", value: "havsutsikt", label: "Havs- eller sjöutsikt" },
+    ];
+    const deep = deepVerify(evaluateCriteria({ ...subject, title }, exactConstraints), semantic, { status: "ok" });
+    expect(deep.requirements.find((r) => r.attribute === "location")?.status).toBe("match");
+    expect(deep.requirements.find((r) => r.attribute === "view_type")?.status).toBe("match");
+    expect(deep.requirements.find((r) => r.attribute === "view_type")?.evidence?.snippet).toContain("Saltsjön");
+    expect(deep.status).toBe("match");
+  });
+
+  it("never verifies water proximity or an explicitly absent view as a view", () => {
+    expect(evaluateSemanticCriterion("havsutsikt", surfaces("Nära vattnet.")).status).not.toBe("confirmed");
+    expect(evaluateSemanticCriterion("havsutsikt", surfaces("Sjönära men ingen utsikt.")).status).toBe("contradicted");
+    expect(evaluateSemanticCriterion("havsutsikt", surfaces("Utsikt över Saltsjön.")).status).toBe("confirmed");
   });
 
   it("keeps a requirement open when the wording is only adjacent", () => {
