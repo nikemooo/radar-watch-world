@@ -38,8 +38,19 @@ export interface HardConstraint {
   kind?: "identity" | "geo" | "text";
   /** Human-readable form used in reasons ("price < 600 000 SEK"). */
   label?: string;
-
+  /**
+   * Whether the user made this a REQUIREMENT or only a PREFERENCE. Wording such
+   * as "helst", "gärna", "preferably", "nice to have" is a preference: it ranks
+   * results, it never excludes them. Missing value means required.
+   */
+  priority?: "required" | "preferred";
 }
+
+/** A preference ranks a listing; only a requirement can block or reject it. */
+export function isPreferred(c: HardConstraint): boolean {
+  return c.priority === "preferred";
+}
+
 
 export type MatchStatus = "match" | "reject" | "unverified";
 
