@@ -316,13 +316,20 @@ export function evaluateCriteria(subject: MatchSubject, constraints: HardConstra
     return { status: "unverified", reason: "no machine-checkable constraints defined for this radar", outcomes: [] };
   }
   const outcomes = constraints.map((c) => evaluateConstraint(subject, c));
-  const rejected = outcomes.find((o) => o.status === "reject");
+  // Preferences rank, requirements decide. A preferred criterion that fails or
+  // stays open never turns a listing into a rejection or a "needs verification".
+  const deciding = outcomes.filter((o) => !isPreferred(o.constraint));
+  if (deciding.length === 0) {
+    return { status: "match", reason: outcomes.map((o) => o.reason).join("; ") || "no requirements stated", outcomes };
+  }
+  const rejected = deciding.find((o) => o.status === "reject");
   if (rejected) return { status: "reject", reason: rejected.reason, outcomes };
-  const unverified = outcomes.filter((o) => o.status === "unverified");
+  const unverified = deciding.filter((o) => o.status === "unverified");
   if (unverified.length > 0) {
     return { status: "unverified", reason: unverified.map((o) => o.reason).join("; "), outcomes };
   }
-  return { status: "match", reason: outcomes.map((o) => o.reason).join("; "), outcomes };
+  return { status: "match", reason: deciding.map((o) => o.reason).join("; "), outcomes };
+
 }
 
 /** Constraints usable for a radar: explicit ones, else the stated value range. */
