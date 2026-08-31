@@ -50,13 +50,18 @@ export interface VerifiedRequirement {
   reason: string;
   evidence: VerificationEvidence | null;
   source: "attribute" | "semantic" | "fetch_failure";
+  /** Requirement or preference. Preferences rank, they never block. */
+  priority: "required" | "preferred";
 }
 
 export interface DeepVerdict extends MatchVerdict {
   requirements: VerifiedRequirement[];
   /** True when at least one requirement is open only because of a fetch error. */
   blockedByFetch: boolean;
+  /** 0-100 quality score. Never overrides a hard requirement. */
+  score: number;
 }
+
 
 function textOfConstraint(c: HardConstraint): string[] {
   return [String(c.value ?? ""), ...(c.aliases ?? []), c.label ?? "", c.attribute]
