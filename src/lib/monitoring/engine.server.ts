@@ -1660,8 +1660,21 @@ export async function runRadarCycle(
               semanticSurfaces.push({ url: page.url, kind: "image_metadata", text: imageText });
             }
             surfacesByUrl.set(page.url, semanticSurfaces);
-            const phrases = [...config.important_criteria, ...config.preferences].filter(Boolean);
+            // Every machine-checkable text requirement is ALSO read semantically
+            // from the page, using the user's own wording plus its aliases. A
+            // requirement is therefore never left open just because no attribute
+            // field happened to carry it.
+            const constraintPhrases = constraints
+              .filter((c) => (c.op === "includes" || c.op === "excludes") && !isGeoAttribute(c))
+              .flatMap((c) => [String(c.value ?? ""), ...(c.aliases ?? [])])
+              .filter(Boolean);
+            const phrases = [
+              ...new Set(
+                [...config.important_criteria, ...config.preferences, ...constraintPhrases].filter(Boolean),
+              ),
+            ];
             const semantic = evaluateSemanticCriteria(phrases, semanticSurfaces);
+
             semanticVerdictsByUrl.set(page.url, semantic);
             // Requested places are verified against stated address data, never
             // against marketing copy that merely mentions a neighbourhood.
