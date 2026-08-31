@@ -22,9 +22,9 @@ const subject = {
   title: "Finnboda kajväg 8, Nacka — Lägenhet",
   text: "Ljus lägenhet i Nacka med fantastisk utsikt över havet.",
   attributes: {
-    property_type: { key: "property_type", raw: "lägenhet", value: null, unit: null, confidence: "stated" as const, source_url: null },
-    location: { key: "location", raw: "Nacka", value: null, unit: null, confidence: "stated" as const, source_url: null },
-    view: { key: "view", raw: "havsutsikt", value: null, unit: null, confidence: "stated" as const, source_url: null },
+    property_type: { key: "property_type", raw: "lägenhet", value: null, unit: null, confidence: "stated" as const, source_url: null, currency: null },
+    location: { key: "location", raw: "Nacka", value: null, unit: null, confidence: "stated" as const, source_url: null, currency: null },
+    view: { key: "view", raw: "havsutsikt", value: null, unit: null, confidence: "stated" as const, source_url: null, currency: null },
   },
   numericValue: 5_795_000,
   currency: "SEK",
@@ -43,12 +43,12 @@ describe("requirements versus preferences", () => {
   });
 
   it("still rejects when a real requirement is contradicted", () => {
-    const elsewhere = { ...subject, attributes: { ...subject.attributes, location: { key: "location", raw: "Solna", value: null, unit: null, confidence: "stated" as const, source_url: null } } };
+    const elsewhere = { ...subject, attributes: { ...subject.attributes, location: { key: "location", raw: "Solna", value: null, unit: null, confidence: "stated" as const, source_url: null, currency: null } } };
     expect(evaluateCriteria(elsewhere, constraints).status).toBe("reject");
   });
 
   it("scores a fully satisfied listing at 100", () => {
-    const perfect = { ...subject, numericValue: 4_500_000, attributes: { ...subject.attributes, balcony: { key: "balcony", raw: "balkong", value: null, unit: null, confidence: "stated" as const, source_url: null } } };
+    const perfect = { ...subject, numericValue: 4_500_000, attributes: { ...subject.attributes, balcony: { key: "balcony", raw: "balkong", value: null, unit: null, confidence: "stated" as const, source_url: null, currency: null } } };
     const deep = deepVerify(evaluateCriteria(perfect, constraints), []);
     expect(deep.status).toBe("match");
     expect(deep.score).toBe(100);
