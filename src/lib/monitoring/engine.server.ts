@@ -83,7 +83,7 @@ import {
   type VerifiedRequirement,
 } from "./deep-verify";
 
-import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
+import { evaluateCriteria, isGeoConstraint, radarConstraints, type MatchVerdict } from "./criteria";
 import { classifyCandidateUrl, gateCandidates, marketAllowed } from "./candidate-gate";
 import { SweepPaused } from "./slice";
 
@@ -1665,7 +1665,7 @@ export async function runRadarCycle(
             // requirement is therefore never left open just because no attribute
             // field happened to carry it.
             const constraintPhrases = constraints
-              .filter((c) => (c.op === "includes" || c.op === "excludes") && !isGeoAttribute(c))
+              .filter((c) => (c.op === "includes" || c.op === "excludes") && !isGeoConstraint(c))
               .flatMap((c) => [String(c.value ?? ""), ...(c.aliases ?? [])])
               .filter(Boolean);
             const phrases = [
