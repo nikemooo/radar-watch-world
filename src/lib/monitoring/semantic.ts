@@ -152,7 +152,9 @@ const CONCEPTS: Concept[] = [
     ],
     patterns: [/\blagenhet\w*\b/i, /\bbostadsratt\w*\b/i, /\bapartments?\b/i],
     weak: ["boende", "bostad", "hem", "residence", "home"],
-    against: ["villa", "radhus", "kedjehus", "fritidshus", "tomt", "parhus", "detached house", "townhouse", "plot"],
+    // No "against" list: a page that also advertises houses must not be read
+    // as a contradiction of the flat it is actually selling.
+    against: [],
   },
   {
     key: "elevator",
