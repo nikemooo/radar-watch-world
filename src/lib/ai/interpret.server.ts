@@ -120,7 +120,7 @@ const configSchema = {
           items: {
             type: "object",
             additionalProperties: false,
-            required: ["attribute", "op", "value", "aliases", "currency", "label"],
+            required: ["attribute", "op", "value", "aliases", "currency", "label", "priority"],
             properties: {
               attribute: { type: "string" },
               op: { type: "string", enum: ["lte", "lt", "gte", "gt", "eq", "neq", "includes", "excludes"] },
@@ -128,6 +128,7 @@ const configSchema = {
               aliases: { type: "array", items: { type: "string" } },
               currency: { type: ["string", "null"] },
               label: { type: "string" },
+              priority: { type: "string", enum: ["required", "preferred"] },
             },
           },
         },
@@ -193,8 +194,12 @@ export async function interpretRequest(request: string): Promise<InterpretedRada
       "numeric bounds use lte/lt/gte/gt/eq/neq with a numeric value (and currency for money), text requirements use includes/excludes " +
       "with a single token value. For every text token, list aliases with the equivalent spellings and local-language words a listing " +
       "may use (for colour black: black, svart, schwarz, noir, nero; for a variant: the exact variant spellings). " +
-      "label is a short human-readable form of the rule. Never invent a constraint the user did not state, and never turn a soft " +
-      "preference into a hard constraint — if the user only said they prefer something, leave it in preferences. " +
+      "label is a short human-readable form of the rule. Never invent a constraint the user did not state. " +
+      "priority separates what the user REQUIRES from what they only PREFER: 'required' when the request states it as a must " +
+      "(\"i Nacka\", \"med havsutsikt\", \"måste ha\"), 'preferred' whenever the wording is soft — 'helst', 'gärna', 'om möjligt', " +
+      "'preferably', 'ideally', 'nice to have', or a budget the user says they would like to stay under but is willing to exceed " +
+      "(\"helst under 5 miljoner, annars det billigaste\"). A preferred rule ranks results and is shown to the user, it never " +
+      "excludes a listing. When in doubt about a price ceiling expressed softly, use 'preferred'. " +
       "Every request is exactly one kind. 'product_discovery' (the default) hunts items, listings or offers — vehicles, watches, " +
       "real estate, jobs, products, collectibles, flights to buy. 'market_monitoring' tracks a measurable datapoint over time: " +
       "exchange rates, share prices, crypto, commodities, index levels, interest rates, housing or market statistics. A request is " +

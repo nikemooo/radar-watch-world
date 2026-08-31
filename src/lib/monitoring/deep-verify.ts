@@ -20,7 +20,7 @@
  *  - if the page could not be opened, the requirement is reported as
  *    "could not be verified — page unreachable", never as "not mentioned".
  */
-import type { CriterionOutcome, HardConstraint, MatchStatus, MatchVerdict } from "./criteria";
+import { isPreferred, type CriterionOutcome, type HardConstraint, type MatchStatus, type MatchVerdict } from "./criteria";
 import { fold, type SemanticStatus, type StoredSemantic } from "./semantic";
 
 export type FetchOutcome =
@@ -50,13 +50,18 @@ export interface VerifiedRequirement {
   reason: string;
   evidence: VerificationEvidence | null;
   source: "attribute" | "semantic" | "fetch_failure";
+  /** Requirement or preference. Preferences rank, they never block. */
+  priority: "required" | "preferred";
 }
 
 export interface DeepVerdict extends MatchVerdict {
   requirements: VerifiedRequirement[];
   /** True when at least one requirement is open only because of a fetch error. */
   blockedByFetch: boolean;
+  /** 0-100 quality score. Never overrides a hard requirement. */
+  score: number;
 }
+
 
 function textOfConstraint(c: HardConstraint): string[] {
   return [String(c.value ?? ""), ...(c.aliases ?? []), c.label ?? "", c.attribute]
@@ -130,6 +135,7 @@ export function deepVerify(
         reason: outcome.reason,
         evidence: outcome.observedRaw ? { snippet: outcome.observedRaw, source_url: null, source_label: "stated attribute", method: "attribute", confidence: 0.95, interpretation: outcome.reason } : null,
         source: "attribute",
+        priority: isPreferred(c) ? "preferred" : "required",
       });
       continue;
     }
@@ -157,6 +163,7 @@ export function deepVerify(
         reason,
         evidence: evidenceOf(semantic),
         source: "semantic",
+        priority: isPreferred(c) ? "preferred" : "required",
       });
       continue;
     }
@@ -173,30 +180,43 @@ export function deepVerify(
         reason,
         evidence: semantic ? evidenceOf(semantic) : null,
         source: "fetch_failure",
+        priority: isPreferred(c) ? "preferred" : "required",
       });
       continue;
     }
 
     outcomes.push(outcome);
+    // Never "could not be verified" on its own: say WHY it is still open.
+    const openReason = semantic
+      ? semantic.status === "probable"
+        ? `${labelOf(c)} — only adjacent wording was found on the page ("${semantic.snippet ?? semantic.reason}"), which does not state it`
+        : `${labelOf(c)} — the listing page was read, but it never states this`
+      : fetch.status === "not_attempted"
+        ? `${labelOf(c)} — the listing page was never opened, so nothing about it was read`
+        : `${labelOf(c)} — no evidence for it was found anywhere on the listing page`;
     requirements.push({
       attribute: c.attribute,
       label: labelOf(c),
       status: "unverified",
       verdict: semantic?.status ?? "unknown",
-      reason: semantic?.reason ?? outcome.reason,
+      reason: openReason,
       evidence: semantic ? evidenceOf(semantic) : null,
       source: semantic ? "semantic" : "attribute",
+      priority: isPreferred(c) ? "preferred" : "required",
     });
   }
 
+  const score = matchScore(requirements);
   if (outcomes.length === 0) {
-    return { ...base, outcomes, requirements, blockedByFetch };
+    return { ...base, outcomes, requirements, blockedByFetch, score };
   }
-  const rejected = outcomes.find((o) => o.status === "reject");
+  // Requirements decide the verdict; preferences only move the score.
+  const deciding = outcomes.filter((o) => !isPreferred(o.constraint));
+  const rejected = deciding.find((o) => o.status === "reject");
   if (rejected) {
-    return { status: "reject", reason: rejected.reason, outcomes, requirements, blockedByFetch };
+    return { status: "reject", reason: rejected.reason, outcomes, requirements, blockedByFetch, score };
   }
-  const open = outcomes.filter((o) => o.status === "unverified");
+  const open = deciding.filter((o) => o.status === "unverified");
   if (open.length > 0) {
     return {
       status: "unverified",
@@ -204,15 +224,33 @@ export function deepVerify(
       outcomes,
       requirements,
       blockedByFetch,
+      score,
     };
   }
   return {
     status: "match",
-    reason: outcomes.map((o) => o.reason).join("; "),
+    reason: (deciding.length > 0 ? deciding : outcomes).map((o) => o.reason).join("; "),
     outcomes,
     requirements,
     blockedByFetch,
+    score,
   };
+}
+
+/**
+ * 0-100 quality score. Hard requirements carry most of the weight and a failed
+ * one is fatal to the score, exactly as it is fatal to the verdict; preferences
+ * add the rest. The score never decides match/reject — it only ranks.
+ */
+export function matchScore(requirements: VerifiedRequirement[]): number {
+  const required = requirements.filter((r) => r.priority !== "preferred");
+  const preferred = requirements.filter((r) => r.priority === "preferred");
+  if (required.length === 0 && preferred.length === 0) return 0;
+  const value = (r: VerifiedRequirement) => (r.status === "match" ? 1 : r.status === "reject" ? 0 : 0.35);
+  const hardPart = required.length === 0 ? 1 : required.reduce((sum, r) => sum + value(r), 0) / required.length;
+  const softPart = preferred.length === 0 ? null : preferred.reduce((sum, r) => sum + value(r), 0) / preferred.length;
+  const combined = softPart === null ? hardPart : hardPart * 0.75 + softPart * 0.25;
+  return Math.round(combined * 100);
 }
 
 /** Storable, UI-safe requirement rows. */

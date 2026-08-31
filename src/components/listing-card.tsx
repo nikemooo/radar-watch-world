@@ -66,6 +66,8 @@ export interface FindingSnapshot {
   semantic_criteria?: StoredSemantic[];
   /** Deep verification: one row per requirement, with verbatim evidence. */
   requirements?: VerifiedRequirement[];
+  /** 0-100 ranking score; requirements decide the verdict, this only ranks. */
+  match_score?: number | null;
   fetch_status?: "ok" | "failed" | "not_attempted" | null;
   fetch_error?: string | null;
   detail_telemetry?: {
@@ -415,13 +417,21 @@ export function ListingCard({
             )}
             {deepRequirements.length > 0 && (
               <div className="space-y-1">
-                <p className="mono-label">{t("listing.requirements")}</p>
+                <p className="mono-label">
+                  {t("listing.requirements")}
+                  {typeof snapshot.match_score === "number" && (
+                    <span className="ml-2 text-foreground">{snapshot.match_score}/100</span>
+                  )}
+                </p>
                 <ul className="space-y-2 text-sm">
                   {deepRequirements.map((r) => (
                     <li key={`deep-${r.attribute}-${r.label}`} className="flex gap-2">
                       <span aria-hidden>{statusIcon[r.status]}</span>
                       <span className={r.status === "match" ? "" : "text-muted-foreground"}>
                         <span className={r.status === "reject" ? "text-critical" : undefined}>{r.label}</span>
+                        {r.priority === "preferred" && (
+                          <span className="ml-1 text-xs text-muted-foreground">({t("listing.preferred")})</span>
+                        )}
                         <span className="block text-xs text-muted-foreground">
                           {r.verdict === "unfetchable" ? t("listing.requirement.unreachable") : r.reason}
                         </span>

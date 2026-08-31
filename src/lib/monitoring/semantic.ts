@@ -134,6 +134,29 @@ const CONCEPTS: Concept[] = [
     against: ["ingen balkong", "saknar balkong", "no balcony", "without balcony", "utan balkong"],
   },
   {
+    // Dwelling type. A flat is a flat whether the listing calls it "lägenhet",
+    // "bostadsrätt" or "apartment"; a house or a plot is a different thing.
+    key: "apartment",
+    strong: [
+      "lagenhet",
+      "lagenheten",
+      "bostadsratt",
+      "bostadsratten",
+      "brf",
+      "apartment",
+      "flat",
+      "condo",
+      "condominium",
+      "etagelagenhet",
+      "hornlagenhet",
+    ],
+    patterns: [/\blagenhet\w*\b/i, /\bbostadsratt\w*\b/i, /\bapartments?\b/i],
+    weak: ["boende", "bostad", "hem", "residence", "home"],
+    // No "against" list: a page that also advertises houses must not be read
+    // as a contradiction of the flat it is actually selling.
+    against: [],
+  },
+  {
     key: "elevator",
     strong: ["hiss", "elevator", "lift", "aufzug"],
     weak: ["hiss planeras", "hiss kan installeras", "elevator planned"],

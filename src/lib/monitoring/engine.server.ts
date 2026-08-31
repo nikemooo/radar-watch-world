@@ -83,7 +83,7 @@ import {
   type VerifiedRequirement,
 } from "./deep-verify";
 
-import { evaluateCriteria, radarConstraints, type MatchVerdict } from "./criteria";
+import { evaluateCriteria, isGeoConstraint, radarConstraints, type MatchVerdict } from "./criteria";
 import { classifyCandidateUrl, gateCandidates, marketAllowed } from "./candidate-gate";
 import { SweepPaused } from "./slice";
 
@@ -1116,6 +1116,8 @@ export async function runRadarCycle(
   const fetchStateByUrl = new Map<string, FetchOutcome>();
   /** Per-requirement verification rows shown in the UI. */
   const requirementsByUrl = new Map<string, VerifiedRequirement[]>();
+  /** 0-100 ranking score per item URL (see deep-verify.matchScore). */
+  const scoreByUrl = new Map<string, number>();
   let aiVerificationCalls = 0;
   let aiVerificationVerdicts = 0;
   /** Raw semantic verdicts and the surfaces they were read from, per item URL. */
@@ -1660,8 +1662,21 @@ export async function runRadarCycle(
               semanticSurfaces.push({ url: page.url, kind: "image_metadata", text: imageText });
             }
             surfacesByUrl.set(page.url, semanticSurfaces);
-            const phrases = [...config.important_criteria, ...config.preferences].filter(Boolean);
+            // Every machine-checkable text requirement is ALSO read semantically
+            // from the page, using the user's own wording plus its aliases. A
+            // requirement is therefore never left open just because no attribute
+            // field happened to carry it.
+            const constraintPhrases = constraints
+              .filter((c) => (c.op === "includes" || c.op === "excludes") && !isGeoConstraint(c))
+              .flatMap((c) => [String(c.value ?? ""), ...(c.aliases ?? [])])
+              .filter(Boolean);
+            const phrases = [
+              ...new Set(
+                [...config.important_criteria, ...config.preferences, ...constraintPhrases].filter(Boolean),
+              ),
+            ];
             const semantic = evaluateSemanticCriteria(phrases, semanticSurfaces);
+
             semanticVerdictsByUrl.set(page.url, semantic);
             // Requested places are verified against stated address data, never
             // against marketing copy that merely mentions a neighbourhood.
@@ -2112,13 +2127,31 @@ ${documentBlock(allDocs.slice(0, 45))}`,
       detailTelemetry.final_listing_verdict = verdict.status;
     }
 
+    scoreByUrl.set(item.url, verdict.score);
     verdicts.set(item.fingerprint, verdict);
     if (verdict.status === "match") criteriaMatched += 1;
     else if (verdict.status === "reject") criteriaRejected += 1;
     else criteriaUnverified += 1;
+    // Full per-candidate trace: what was opened, what was read and how every
+    // single requirement was decided. This is the debugging surface for real
+    // sweeps — never only "could not be verified".
+    const telemetry = detailTelemetryByUrl.get(item.url);
+    const fetchState = fetchStateByUrl.get(item.url) ?? { status: "not_attempted" as const };
     console.info(
-      `[radar:criteria] ${verdict.status.toUpperCase()} ${item.url} — ${verdict.reason}`,
+      `[radar:candidate] url=${item.url} canonical=${linkByUrl.get(item.url)?.canonical ?? item.url} ` +
+        `fetch=${fetchState.status}${fetchState.status === "failed" ? `(${fetchState.reason})` : ""} ` +
+        `content_length=${telemetry?.detail_content_length ?? 0} description=${telemetry?.detail_description_found ?? false} ` +
+        `address=${telemetry?.detail_address_found ?? false} facts=${telemetry?.detail_facts_extracted ?? 0} ` +
+        `price=${item.numeric_value ?? "none"} images=${imageByUrl.get(item.url)?.url ? 1 : 0} ` +
+        `score=${verdict.score} verdict=${verdict.status.toUpperCase()}`,
     );
+    for (const requirement of verdict.requirements) {
+      console.info(
+        `[radar:criterion] url=${item.url} ${requirement.priority} ${requirement.attribute}=${requirement.status}/${requirement.verdict} ` +
+          `source=${requirement.evidence?.source_label ?? "none"} quote=${JSON.stringify(requirement.evidence?.snippet?.slice(0, 120) ?? null)} ` +
+          `reason=${JSON.stringify(requirement.reason.slice(0, 160))}`,
+      );
+    }
   }
   if (markets.length > 0) {
     console.info(
@@ -2628,6 +2661,10 @@ ${eligible
               []) as never,
             // One row per requirement: verdict, reason, verbatim evidence and
             // which part of the page it was read from.
+            match_score:
+              scoreByUrl.get(item.url) ??
+              (prev?.snapshot as { match_score?: number } | null)?.match_score ??
+              null,
             requirements: (requirementsByUrl.get(item.url) ??
               (prev?.snapshot as { requirements?: VerifiedRequirement[] } | null)?.requirements ??
               []) as never,
