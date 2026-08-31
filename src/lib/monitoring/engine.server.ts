@@ -1116,6 +1116,8 @@ export async function runRadarCycle(
   const fetchStateByUrl = new Map<string, FetchOutcome>();
   /** Per-requirement verification rows shown in the UI. */
   const requirementsByUrl = new Map<string, VerifiedRequirement[]>();
+  /** 0-100 ranking score per item URL (see deep-verify.matchScore). */
+  const scoreByUrl = new Map<string, number>();
   let aiVerificationCalls = 0;
   let aiVerificationVerdicts = 0;
   /** Raw semantic verdicts and the surfaces they were read from, per item URL. */
@@ -2125,13 +2127,31 @@ ${documentBlock(allDocs.slice(0, 45))}`,
       detailTelemetry.final_listing_verdict = verdict.status;
     }
 
+    scoreByUrl.set(item.url, verdict.score);
     verdicts.set(item.fingerprint, verdict);
     if (verdict.status === "match") criteriaMatched += 1;
     else if (verdict.status === "reject") criteriaRejected += 1;
     else criteriaUnverified += 1;
+    // Full per-candidate trace: what was opened, what was read and how every
+    // single requirement was decided. This is the debugging surface for real
+    // sweeps — never only "could not be verified".
+    const telemetry = detailTelemetryByUrl.get(item.url);
+    const fetchState = fetchStateByUrl.get(item.url) ?? { status: "not_attempted" as const };
     console.info(
-      `[radar:criteria] ${verdict.status.toUpperCase()} ${item.url} — ${verdict.reason}`,
+      `[radar:candidate] url=${item.url} canonical=${canonicalByUrl.get(item.url) ?? item.url} ` +
+        `fetch=${fetchState.status}${fetchState.status === "failed" ? `(${fetchState.reason})` : ""} ` +
+        `content_length=${telemetry?.detail_content_length ?? 0} description=${telemetry?.detail_description_found ?? false} ` +
+        `address=${telemetry?.detail_address_found ?? false} facts=${telemetry?.detail_facts_extracted ?? 0} ` +
+        `price=${item.numeric_value ?? "none"} images=${imageByUrl.get(item.url)?.url ? 1 : 0} ` +
+        `score=${verdict.score} verdict=${verdict.status.toUpperCase()}`,
     );
+    for (const requirement of verdict.requirements) {
+      console.info(
+        `[radar:criterion] url=${item.url} ${requirement.priority} ${requirement.attribute}=${requirement.status}/${requirement.verdict} ` +
+          `source=${requirement.evidence?.source_label ?? "none"} quote=${JSON.stringify(requirement.evidence?.snippet?.slice(0, 120) ?? null)} ` +
+          `reason=${JSON.stringify(requirement.reason.slice(0, 160))}`,
+      );
+    }
   }
   if (markets.length > 0) {
     console.info(
