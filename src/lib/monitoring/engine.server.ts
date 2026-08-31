@@ -2138,7 +2138,7 @@ ${documentBlock(allDocs.slice(0, 45))}`,
     const telemetry = detailTelemetryByUrl.get(item.url);
     const fetchState = fetchStateByUrl.get(item.url) ?? { status: "not_attempted" as const };
     console.info(
-      `[radar:candidate] url=${item.url} canonical=${canonicalByUrl.get(item.url) ?? item.url} ` +
+      `[radar:candidate] url=${item.url} canonical=${linkByUrl.get(item.url)?.canonical ?? item.url} ` +
         `fetch=${fetchState.status}${fetchState.status === "failed" ? `(${fetchState.reason})` : ""} ` +
         `content_length=${telemetry?.detail_content_length ?? 0} description=${telemetry?.detail_description_found ?? false} ` +
         `address=${telemetry?.detail_address_found ?? false} facts=${telemetry?.detail_facts_extracted ?? 0} ` +
@@ -2661,6 +2661,10 @@ ${eligible
               []) as never,
             // One row per requirement: verdict, reason, verbatim evidence and
             // which part of the page it was read from.
+            match_score:
+              scoreByUrl.get(item.url) ??
+              (prev?.snapshot as { match_score?: number } | null)?.match_score ??
+              null,
             requirements: (requirementsByUrl.get(item.url) ??
               (prev?.snapshot as { requirements?: VerifiedRequirement[] } | null)?.requirements ??
               []) as never,
