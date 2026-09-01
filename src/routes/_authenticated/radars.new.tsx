@@ -32,6 +32,11 @@ import { useFormatDateTime, useT, type TranslationKey } from "@/lib/i18n";
 
 
 export const Route = createFileRoute("/_authenticated/radars/new")({
+  // The home screen can hand over a natural-language request directly.
+  validateSearch: (search: Record<string, unknown>): { q?: string } => {
+    const q = typeof search["q"] === "string" ? search["q"].trim() : "";
+    return q ? { q } : {};
+  },
   head: () => ({
     meta: [
       { title: "New radar — Radar" },
@@ -54,12 +59,13 @@ const suggestions = [
 
 function NewRadar() {
   const navigate = useNavigate();
+  const { q } = Route.useSearch();
   const t = useT();
   const formatDateTime = useFormatDateTime();
   const interpret = useServerFn(interpretRadarRequest);
   const createRadarFn = useServerFn(createRadar);
   const startSweep = useServerFn(runRadarNow);
-  const [request, setRequest] = useState("");
+  const [request, setRequest] = useState(q ?? "");
   const [name, setName] = useState("");
   const [category, setCategory] = useState("general");
   const [frequency, setFrequency] = useState<RadarFrequency>("smart");

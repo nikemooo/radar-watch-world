@@ -27,7 +27,7 @@ const configSchema = {
     market: {
       type: ["object", "null"],
       additionalProperties: false,
-      required: ["instrument", "rules"],
+      required: ["instrument", "rules", "impact"],
       properties: {
         instrument: {
           type: "object",
@@ -58,6 +58,16 @@ const configSchema = {
             quote_currency: { type: ["string", "null"] },
             stooq_symbol: { type: ["string", "null"] },
             coingecko_id: { type: ["string", "null"] },
+          },
+        },
+        impact: {
+          type: ["object", "null"],
+          additionalProperties: false,
+          required: ["topics", "queries", "entities"],
+          properties: {
+            topics: { type: "array", items: { type: "string" } },
+            queries: { type: "array", items: { type: "string" } },
+            entities: { type: "array", items: { type: "string" } },
           },
         },
         rules: {
@@ -205,7 +215,9 @@ export async function interpretRequest(request: string): Promise<InterpretedRada
       "exchange rates, share prices, crypto, commodities, index levels, interest rates, housing or market statistics. A request is " +
       "market_monitoring ONLY when the subject is the value itself, watched over time (e.g. 'bevaka USD/EUR', 'alert me when NVIDIA " +
       "drops 5%', 'track the gold price'); wanting to FIND or BUY a specific item is always product_discovery, even when the item has " +
-      "a price. When kind is market_monitoring, fill market: the instrument (canonical symbol like 'USD/EUR' or 'NVDA', human name, " +
+      "a price. Wanting to know what is HAPPENING around an asset or market ('bevaka allt som kan påverka guldpriset', 'keep me " +
+      "posted on anything that moves NVIDIA', 'watch the oil market') is also market_monitoring: the instrument is the asset and the " +
+      "world events are monitored alongside its value. When kind is market_monitoring, fill market: the instrument (canonical symbol like 'USD/EUR' or 'NVDA', human name, " +
       "kind, snake_case metric like exchange_rate/price/spot_price/index_level, currency and unit where applicable, base_currency and " +
       "quote_currency for forex, stooq_symbol only when you are confident of the Stooq ticker — US stocks '<ticker>.us', forex " +
       "'usdeur', gold 'xauusd', S&P 500 '^spx', Nasdaq 100 '^ndx' — else null, coingecko_id for crypto like 'bitcoin' else null) and " +
@@ -214,7 +226,12 @@ export async function interpretRequest(request: string): Promise<InterpretedRada
       "'compared to today' to window 'baseline'; an unspecified move window means 'baseline'. label restates the rule in the user's " +
       "own language ('under 1.15', 'faller mer än 10 % från nu'). Leave operator/value null on pct_change rules and direction/pct/" +
       "window null on threshold rules, and give each rule a stable id ('rule_1', 'rule_2'). With no stated condition, rules is an " +
-      "empty array — never invent one. When kind is market_monitoring: search_queries, attribute_schema and hard_constraints stay " +
+      "empty array — never invent one. impact describes the WORLD EVENTS that could move this instrument, and is always filled for " +
+      "market_monitoring: topics lists 3-6 plain-language event subjects that historically move it (central bank decisions, " +
+      "inflation data, conflicts, supply disruptions, regulation, earnings), entities lists 3-6 named actors whose news moves it " +
+      "(Federal Reserve, ECB, OPEC, the issuing company, key suppliers), and queries lists 2-4 concrete news search queries that " +
+      "would surface such events. Derive them from the instrument itself; when the user says what they care about, put that first. " +
+      "When kind is product_discovery, impact is null. When kind is market_monitoring: search_queries, attribute_schema and hard_constraints stay " +
       "empty, category is a short slug ('forex', 'stock', 'commodity', 'crypto', 'index'), and monitored_events lists the rule " +
       "labels. When kind is product_discovery, market is null.",
     user: request,

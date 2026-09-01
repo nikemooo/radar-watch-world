@@ -2,7 +2,7 @@ import { useT } from "@/lib/i18n";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Activity, Bell, Plus, Radar as RadarIcon, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getOnboardingState } from "@/lib/onboarding.functions";
@@ -10,6 +10,7 @@ import { AlertCard, type AlertRow } from "@/components/alert-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RadarMark } from "@/components/radar-mark";
+import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -22,6 +23,39 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   }),
   component: Dashboard,
 });
+
+/** Natural-language entry point: describe it here, refine it on the next screen. */
+function QuickCreate() {
+  const t = useT();
+  const navigate = useNavigate();
+  const [request, setRequest] = useState("");
+  const submit = () => {
+    const q = request.trim();
+    if (!q) return;
+    void navigate({ to: "/radars/new", search: { q } });
+  };
+  return (
+    <section className="panel p-5">
+      <h2 className="text-lg font-medium">{t("dashboard.quick.title")}</h2>
+      <Textarea
+        value={request}
+        onChange={(e) => setRequest(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+        }}
+        placeholder={t("dashboard.quick.placeholder")}
+        rows={3}
+        className="mt-3 resize-none"
+      />
+      <div className="mt-3 flex justify-end">
+        <Button onClick={submit} disabled={!request.trim()} className="gap-2">
+          <Sparkles className="size-4" />
+          {t("dashboard.quick.cta")}
+        </Button>
+      </div>
+    </section>
+  );
+}
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -96,6 +130,8 @@ function Dashboard() {
           </Link>
         </Button>
       </header>
+
+      <QuickCreate />
 
       {empty ? (
         <div className="panel px-5 py-10 text-center sm:px-8 sm:py-14">

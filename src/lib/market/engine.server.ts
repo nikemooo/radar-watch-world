@@ -31,6 +31,8 @@ import { asMarketSpec } from "./types";
 import { collectMarketQuotes, consensusFromQuotes, refineInstrumentSources } from "./sources.server";
 import { computeMarketChanges, type MarketPoint } from "./history";
 import { describeTrigger, evaluateMarketRules, type MarketRuleStateMap } from "./rules";
+import { discoverImpactEvents } from "./events.server";
+import { eventImportance, severityRank, shouldAlertOnEvent } from "./events";
 
 type Db = SupabaseClient<Database>;
 type RadarRow = Database["public"]["Tables"]["radars"]["Row"];
@@ -246,6 +248,114 @@ export async function runMarketCycle(
       }
     }
 
+    // 5b. World events — what happened that could move this instrument.
+    await phase("analyzing_events");
+    let eventsDetected = 0;
+    let eventsSignificant = 0;
+    let eventCost = 0;
+    try {
+      const { data: knownRows } = await db
+        .from("market_events")
+        .select("event_key")
+        .eq("radar_id", radar.id)
+        .limit(500);
+      const knownKeys = new Set((knownRows ?? []).map((r) => r.event_key));
+      // Only look back as far as the previous sweep (7 days on a baseline):
+      // the timeline collects history forward, it never backfills the past.
+      const lastEventSweep =
+        typeof memory["market_events_swept_at"] === "string"
+          ? (memory["market_events_swept_at"] as string)
+          : null;
+      const sinceIso =
+        lastEventSweep ?? new Date(Date.now() - 7 * 864e5).toISOString();
+
+      const discovery = await step("market:events", () =>
+        discoverImpactEvents({
+          spec,
+          rawRequest: radar.raw_request,
+          sinceIso,
+          knownKeys,
+          points,
+        }),
+      );
+      eventCost = discovery.costEstimate;
+      eventsDetected = discovery.events.length;
+
+      for (const event of discovery.events) {
+        const alertable =
+          shouldAlertOnEvent({ severity: event.severity, relevance: event.relevance, isBaseline }) &&
+          (alertBudget === null || alertsCreated < alertBudget);
+        if (severityRank(event.severity) >= severityRank("high")) eventsSignificant += 1;
+
+        let alerted = false;
+        if (alertable) {
+          const { error: eventAlertError } = await db.from("alerts").insert({
+            radar_id: radar.id,
+            user_id: radar.user_id,
+            title: event.title,
+            summary: event.factSummary,
+            what_changed: event.correlation.observed
+              ? `${spec.instrument.symbol} ${
+                  (event.correlation.changePct ?? 0) >= 0 ? "+" : ""
+                }${(event.correlation.changePct ?? 0).toFixed(2)}% around this event`
+              : `New ${event.severity} event detected for ${spec.instrument.symbol}`,
+            why_it_matters: event.aiAnalysis,
+            importance: eventImportance(event.severity),
+            confidence: event.confidence,
+            sources: event.sources.map((s) => ({
+              title: s.title,
+              url: s.url,
+              publisher: s.publisher ?? undefined,
+            })) as never,
+            event_type: "world_event",
+            status: "new",
+            baseline: {
+              instrument: spec.instrument.symbol,
+              metric: spec.instrument.metric,
+              value: consensus.value,
+              event_key: event.key,
+              severity: event.severity,
+              correlation: event.correlation,
+            } as never,
+          });
+          alerted = !eventAlertError;
+          if (alerted) alertsCreated += 1;
+        }
+
+        await db.from("market_events").upsert(
+          {
+            radar_id: radar.id,
+            user_id: radar.user_id,
+            run_id: runId,
+            event_key: event.key,
+            title: event.title,
+            fact_summary: event.factSummary,
+            ai_analysis: event.aiAnalysis,
+            severity: event.severity,
+            relevance: event.relevance,
+            confidence: event.confidence,
+            categories: event.categories,
+            sources: event.sources as never,
+            source_count: event.sources.length,
+            published_at: event.publishedAt,
+            instrument: spec.instrument.symbol,
+            metric: spec.instrument.metric,
+            market_value: consensus.value,
+            market_change_pct: event.correlation.changePct,
+            correlation: event.correlation as never,
+            alerted,
+          },
+          { onConflict: "radar_id,event_key", ignoreDuplicates: true },
+        );
+      }
+      memory["market_events_swept_at"] = nowIso;
+    } catch (err) {
+      if (err instanceof SweepPaused) throw err;
+      // Event discovery is additive: a failure must never fail the numeric sweep.
+      console.error(`[radar:market-events] sweep failed: ${(err as Error).message}`);
+    }
+
+
     // 6. Persist + schedule.
     await phase("persisting_results");
     const finishedAt = new Date().toISOString();
@@ -254,14 +364,14 @@ export async function runMarketCycle(
     await patchRun({
       status: "completed",
       current_phase: "completed",
-      items_found: 1,
+      items_found: 1 + eventsDetected,
       new_items: 0,
       alerts_created: alertsCreated,
       sources_retrieved: consensus.quotes.length,
       search_requests: collection.searchRequests,
       search_successes: collection.searchSuccesses,
       search_failures: collection.searchFailures,
-      cost_estimate: collection.costEstimate,
+      cost_estimate: collection.costEstimate + eventCost,
       provider: collection.provider,
       finished_at: finishedAt,
       worker_finished_at: finishedAt,
@@ -295,11 +405,14 @@ export async function runMarketCycle(
       message: isBaseline
         ? `Baseline established — ${spec.instrument.symbol} is ${formatValue(consensus.value)} (${
             spec.instrument.currency ?? spec.instrument.unit ?? ""
-          }). The radar now watches it and alerts when your rules fire.`
+          }). ${eventsDetected} event${eventsDetected === 1 ? "" : "s"} on the timeline. The radar now watches it and alerts when your rules fire or a significant event hits.`
         : alertsCreated > 0
-          ? `${alertsCreated} rule${alertsCreated === 1 ? "" : "s"} fired for ${spec.instrument.symbol}.`
-          : undefined,
-      itemsFound: 1,
+          ? `${alertsCreated} alert${alertsCreated === 1 ? "" : "s"} for ${spec.instrument.symbol} — ${eventsSignificant} significant event${eventsSignificant === 1 ? "" : "s"} detected.`
+          : eventsDetected > 0
+            ? `${eventsDetected} new event${eventsDetected === 1 ? "" : "s"} added to the timeline.`
+            : undefined,
+      itemsFound: 1 + eventsDetected,
+
       newItems: 0,
       alertsCreated,
       provider: collection.provider,
