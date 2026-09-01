@@ -33,9 +33,10 @@ import { useFormatDateTime, useT, type TranslationKey } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/radars/new")({
   // The home screen can hand over a natural-language request directly.
-  validateSearch: (search: Record<string, unknown>) => ({
-    q: typeof search["q"] === "string" && search["q"].trim() ? (search["q"] as string) : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>): { q?: string } => {
+    const q = typeof search["q"] === "string" ? search["q"].trim() : "";
+    return q ? { q } : {};
+  },
   head: () => ({
     meta: [
       { title: "New radar — Radar" },
