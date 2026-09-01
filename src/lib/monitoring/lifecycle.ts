@@ -37,6 +37,7 @@ export type RunPhase =
   | "resolving_instrument"
   | "collecting_observations"
   | "evaluating_rules"
+  | "analyzing_events"
   | "completed";
 
 export type FailureReason = "worker_lost" | "heartbeat_timeout" | "run_timeout" | "start_failed";
@@ -89,6 +90,7 @@ export const PHASE_LABELS: Record<RunPhase, string> = {
   resolving_instrument: "Kopplar datakällor",
   collecting_observations: "Hämtar marknadsdata",
   evaluating_rules: "Utvärderar regler",
+  analyzing_events: "Analyserar världshändelser",
   completed: "Klar",
 };
 

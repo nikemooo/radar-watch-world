@@ -31,6 +31,8 @@ import { asMarketSpec } from "./types";
 import { collectMarketQuotes, consensusFromQuotes, refineInstrumentSources } from "./sources.server";
 import { computeMarketChanges, type MarketPoint } from "./history";
 import { describeTrigger, evaluateMarketRules, type MarketRuleStateMap } from "./rules";
+import { discoverImpactEvents } from "./events.server";
+import { eventImportance, severityRank, shouldAlertOnEvent } from "./events";
 
 type Db = SupabaseClient<Database>;
 type RadarRow = Database["public"]["Tables"]["radars"]["Row"];
@@ -362,14 +364,14 @@ export async function runMarketCycle(
     await patchRun({
       status: "completed",
       current_phase: "completed",
-      items_found: 1,
+      items_found: 1 + eventsDetected,
       new_items: 0,
       alerts_created: alertsCreated,
       sources_retrieved: consensus.quotes.length,
       search_requests: collection.searchRequests,
       search_successes: collection.searchSuccesses,
       search_failures: collection.searchFailures,
-      cost_estimate: collection.costEstimate,
+      cost_estimate: collection.costEstimate + eventCost,
       provider: collection.provider,
       finished_at: finishedAt,
       worker_finished_at: finishedAt,
