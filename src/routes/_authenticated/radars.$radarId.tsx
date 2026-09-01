@@ -25,6 +25,7 @@ import { ListingRail, snapshotOf, type FindingLike } from "@/components/listing-
 import { VerifyDialog } from "@/components/verify-dialog";
 import { EditCriteriaDialog } from "@/components/edit-criteria-dialog";
 import { MarketRadarView } from "@/components/market-radar-view";
+import { MarketEventTimeline, type MarketEventRow } from "@/components/market-event-timeline";
 import { asMarketSpec } from "@/lib/market/types";
 import type { MarketRuleStateMap } from "@/lib/market/rules";
 import {
@@ -80,7 +81,7 @@ function RadarDetail() {
     refetchInterval: sweepStatus?.state === "running" ? 4000 : false,
 
     queryFn: async () => {
-      const [radar, alerts, runs, decisions, findings, changes, verifications, observations] = await Promise.all([
+      const [radar, alerts, runs, decisions, findings, changes, verifications, observations, marketEvents] = await Promise.all([
         supabase.from("radars").select("*").eq("id", radarId).maybeSingle(),
         supabase
           .from("alerts")
@@ -119,6 +120,12 @@ function RadarDetail() {
           .eq("radar_id", radarId)
           .order("observed_at", { ascending: true })
           .limit(500),
+        supabase
+          .from("market_events")
+          .select("*")
+          .eq("radar_id", radarId)
+          .order("published_at", { ascending: false, nullsFirst: false })
+          .limit(100),
       ]);
       if (radar.error) throw radar.error;
       return {
@@ -130,6 +137,7 @@ function RadarDetail() {
         changes: changes.data ?? [],
         verifications: verifications.data ?? [],
         observations: observations.data ?? [],
+        marketEvents: (marketEvents.data ?? []) as MarketEventRow[],
       };
     },
   });
