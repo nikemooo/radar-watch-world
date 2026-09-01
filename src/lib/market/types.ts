@@ -167,13 +167,43 @@ export function asMarketRules(value: unknown): MarketRule[] {
   });
 }
 
+function stringList(value: unknown, max = 12): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const item of value) {
+    const s = asString(item);
+    if (s && !out.includes(s)) out.push(s);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+export function asImpactProfile(value: unknown): MarketImpactProfile | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const profile: MarketImpactProfile = {
+    topics: stringList(raw["topics"]),
+    queries: stringList(raw["queries"], 8),
+    entities: stringList(raw["entities"]),
+  };
+  if (profile.topics.length === 0 && profile.queries.length === 0 && profile.entities.length === 0) {
+    return null;
+  }
+  return profile;
+}
+
 export function asMarketSpec(value: unknown): MarketMonitorSpec | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
   const instrument = asInstrument(raw["instrument"]);
   if (!instrument) return null;
-  return { instrument, rules: asMarketRules(raw["rules"]) };
+  return {
+    instrument,
+    rules: asMarketRules(raw["rules"]),
+    impact: asImpactProfile(raw["impact"]),
+  };
 }
+
 
 /** Short operator words for UI labels. */
 export const OPERATOR_LABEL: Record<ThresholdOperator, string> = {
