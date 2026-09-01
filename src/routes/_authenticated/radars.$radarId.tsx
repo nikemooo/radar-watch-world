@@ -429,12 +429,16 @@ function RadarDetail() {
       )}
 
       {isMarket && (
-        <MarketRadarView
-          spec={marketSpec}
-          observations={data.observations}
-          ruleState={marketRuleState}
-        />
+        <>
+          <MarketRadarView
+            spec={marketSpec}
+            observations={data.observations}
+            ruleState={marketRuleState}
+          />
+          <MarketEventTimeline events={data.marketEvents} />
+        </>
       )}
+
 
       {!isMarket && (
       <section>
