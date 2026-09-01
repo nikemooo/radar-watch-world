@@ -215,7 +215,9 @@ export async function interpretRequest(request: string): Promise<InterpretedRada
       "exchange rates, share prices, crypto, commodities, index levels, interest rates, housing or market statistics. A request is " +
       "market_monitoring ONLY when the subject is the value itself, watched over time (e.g. 'bevaka USD/EUR', 'alert me when NVIDIA " +
       "drops 5%', 'track the gold price'); wanting to FIND or BUY a specific item is always product_discovery, even when the item has " +
-      "a price. When kind is market_monitoring, fill market: the instrument (canonical symbol like 'USD/EUR' or 'NVDA', human name, " +
+      "a price. Wanting to know what is HAPPENING around an asset or market ("bevaka allt som kan påverka guldpriset", "keep me posted " +
+      "on anything that moves NVIDIA", "watch the oil market") is also market_monitoring: the instrument is the asset and the " +
+      "world events are monitored alongside its value. When kind is market_monitoring, fill market: the instrument (canonical symbol like 'USD/EUR' or 'NVDA', human name, " +
       "kind, snake_case metric like exchange_rate/price/spot_price/index_level, currency and unit where applicable, base_currency and " +
       "quote_currency for forex, stooq_symbol only when you are confident of the Stooq ticker — US stocks '<ticker>.us', forex " +
       "'usdeur', gold 'xauusd', S&P 500 '^spx', Nasdaq 100 '^ndx' — else null, coingecko_id for crypto like 'bitcoin' else null) and " +
