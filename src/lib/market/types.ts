@@ -61,10 +61,27 @@ export type MarketRule =
       window: RuleWindow;
     };
 
+/**
+ * What world events matter for this instrument. Purely descriptive — the
+ * event engine turns it into search queries and relevance judgements, and it
+ * never affects the numeric collection path.
+ */
+export interface MarketImpactProfile {
+  /** Plain-language subjects to watch: "central bank decisions", "war in the Middle East". */
+  topics: string[];
+  /** Concrete news search queries. */
+  queries: string[];
+  /** Entities whose news moves this instrument: "Federal Reserve", "TSMC". */
+  entities: string[];
+}
+
 export interface MarketMonitorSpec {
   instrument: MarketInstrument;
   rules: MarketRule[];
+  /** Null when the radar only tracks the number and no events. */
+  impact: MarketImpactProfile | null;
 }
+
 
 const INSTRUMENT_KINDS: InstrumentKind[] = [
   "forex",
