@@ -405,11 +405,14 @@ export async function runMarketCycle(
       message: isBaseline
         ? `Baseline established — ${spec.instrument.symbol} is ${formatValue(consensus.value)} (${
             spec.instrument.currency ?? spec.instrument.unit ?? ""
-          }). The radar now watches it and alerts when your rules fire.`
+          }). ${eventsDetected} event${eventsDetected === 1 ? "" : "s"} on the timeline. The radar now watches it and alerts when your rules fire or a significant event hits.`
         : alertsCreated > 0
-          ? `${alertsCreated} rule${alertsCreated === 1 ? "" : "s"} fired for ${spec.instrument.symbol}.`
-          : undefined,
-      itemsFound: 1,
+          ? `${alertsCreated} alert${alertsCreated === 1 ? "" : "s"} for ${spec.instrument.symbol} — ${eventsSignificant} significant event${eventsSignificant === 1 ? "" : "s"} detected.`
+          : eventsDetected > 0
+            ? `${eventsDetected} new event${eventsDetected === 1 ? "" : "s"} added to the timeline.`
+            : undefined,
+      itemsFound: 1 + eventsDetected,
+
       newItems: 0,
       alertsCreated,
       provider: collection.provider,
