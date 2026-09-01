@@ -399,6 +399,95 @@ export type Database = {
           },
         ]
       }
+      market_events: {
+        Row: {
+          ai_analysis: string
+          alerted: boolean
+          categories: string[]
+          confidence: number
+          correlation: Json
+          created_at: string
+          detected_at: string
+          event_key: string
+          fact_summary: string
+          id: string
+          instrument: string | null
+          market_change_pct: number | null
+          market_value: number | null
+          metric: string | null
+          published_at: string | null
+          radar_id: string
+          relevance: number
+          run_id: string | null
+          severity: string
+          source_count: number
+          sources: Json
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_analysis?: string
+          alerted?: boolean
+          categories?: string[]
+          confidence?: number
+          correlation?: Json
+          created_at?: string
+          detected_at?: string
+          event_key: string
+          fact_summary?: string
+          id?: string
+          instrument?: string | null
+          market_change_pct?: number | null
+          market_value?: number | null
+          metric?: string | null
+          published_at?: string | null
+          radar_id: string
+          relevance?: number
+          run_id?: string | null
+          severity?: string
+          source_count?: number
+          sources?: Json
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_analysis?: string
+          alerted?: boolean
+          categories?: string[]
+          confidence?: number
+          correlation?: Json
+          created_at?: string
+          detected_at?: string
+          event_key?: string
+          fact_summary?: string
+          id?: string
+          instrument?: string | null
+          market_change_pct?: number | null
+          market_value?: number | null
+          metric?: string | null
+          published_at?: string | null
+          radar_id?: string
+          relevance?: number
+          run_id?: string | null
+          severity?: string
+          source_count?: number
+          sources?: Json
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_events_radar_id_fkey"
+            columns: ["radar_id"]
+            isOneToOne: false
+            referencedRelation: "radars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       market_observations: {
         Row: {
           base_currency: string | null
