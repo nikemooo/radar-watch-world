@@ -24,7 +24,7 @@ const day = "2026-03-04T10:00:00.000Z";
 describe("event typing", () => {
   it("recognises monetary policy, conflict and earnings wording", () => {
     expect(classifyEventType("Fed holds interest rate steady")).toBe("monetary_policy");
-    expect(classifyEventType("Missile attack on shipping lane")).toBe("conflict");
+    expect(classifyEventType("Missile attack on shipping lane")).toBe("military_conflict");
     expect(classifyEventType("NVIDIA Q4 earnings beat revenue guidance")).toBe("earnings");
     expect(classifyEventType("A quiet day in the park")).toBe("other");
   });
