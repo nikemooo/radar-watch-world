@@ -43,7 +43,12 @@ export interface EventCluster {
   sources: EventSource[];
   /** Earliest credible publication time across the cluster. */
   published_at: string | null;
+  /** Coarse event type, used for clustering and as a UI facet. */
+  type: EventType;
+  /** Distinctive tokens (names, numbers) shared by the cluster's reports. */
+  entities: string[];
 }
+
 
 const STOPWORDS = new Set([
   "the", "a", "an", "of", "to", "in", "on", "for", "and", "as", "at", "by", "with", "from",
@@ -107,11 +112,104 @@ function hostOf(url: string): string | null {
 }
 
 /**
- * Group documents that report the SAME happening. Similarity is title-based
- * and language-agnostic; a same-day requirement keeps recurring headlines
+ * Coarse, language-agnostic event typing from the wording itself. The type is
+ * a clustering signal (a rate decision and a war report are never the same
+ * story) and a UI facet — it is never used to fabricate impact.
+ */
+export type EventType =
+  | "monetary_policy"
+  | "macro_data"
+  | "geopolitics"
+  | "conflict"
+  | "supply"
+  | "regulation"
+  | "earnings"
+  | "corporate"
+  | "legal"
+  | "energy"
+  | "market_move"
+  | "other";
+
+const TYPE_PATTERNS: [EventType, RegExp][] = [
+  ["monetary_policy", /\b(fed|federal reserve|fomc|ecb|riksbank|boj|bank of england|rate (cut|hike|decision)|räntebesked|styrränta|interest rate|quantitative)\b/i],
+  ["macro_data", /\b(inflation|cpi|ppi|gdp|bnp|jobs report|payrolls|unemployment|arbetslöshet|pmi|retail sales|konsumentpris)\b/i],
+  ["conflict", /\b(war|krig|strike[sd]?|missile|attack|invasion|ceasefire|militar|troops|drone)\b/i],
+  ["geopolitics", /\b(sanction|tariff|tull|trade war|election|val\b|summit|treaty|diplomat|opec|embargo)\b/i],
+  ["supply", /\b(supply|shortage|production cut|output|mine|harvest|inventory|lager|shipment|logistic|brist)\b/i],
+  ["regulation", /\b(regulat|sec |etf approval|ban\b|law\b|lagförslag|approval|compliance|antitrust)\b/i],
+  ["earnings", /\b(earnings|results|quarterly|q[1-4] |guidance|revenue|profit|kvartalsrapport|omsättning)\b/i],
+  ["corporate", /\b(acquisition|merger|ceo|layoff|varsel|partnership|contract|launch|recall|uppköp)\b/i],
+  ["legal", /\b(lawsuit|court|indict|fine\b|settlement|domstol|åtal|böter)\b/i],
+  ["energy", /\b(oil|crude|opec\+|gas|lng|refinery|pipeline|electricity|elpris|olja)\b/i],
+  ["market_move", /\b(rally|selloff|sell-off|plunge|surge|record high|all-time high|crash|rasar|stiger|faller)\b/i],
+];
+
+/**
+ * The type with the most distinct signals in the text wins — first-match order
+ * would label every gold story "monetary_policy" the moment "Fed" appears.
+ */
+export function classifyEventType(text: string): EventType {
+  let best: { type: EventType; hits: number } | null = null;
+  for (const [type, pattern] of TYPE_PATTERNS) {
+    const hits = (text.match(new RegExp(pattern.source, "gi")) ?? []).length;
+    if (hits > 0 && (!best || hits > best.hits)) best = { type, hits };
+  }
+  return best?.type ?? "other";
+}
+
+/**
+ * Distinctive tokens: numbers, percentages and capitalised words. Two reports
+ * of the same happening nearly always share these even when the headlines are
+ * worded completely differently.
+ */
+export function strongTokens(text: string): string[] {
+  const out = new Set<string>();
+  for (const raw of text.split(/\s+/)) {
+    const word = raw.replace(/[^\p{L}\p{N}%.,-]/gu, "");
+    if (!word) continue;
+    if (/\d/.test(word)) out.add(word.toLowerCase().replace(/[.,]$/, ""));
+    else if (/^\p{Lu}[\p{L}-]{2,}$/u.test(word) && !STOPWORDS.has(word.toLowerCase())) {
+      out.add(word.toLowerCase());
+    }
+  }
+  return [...out];
+}
+
+function overlap(a: string[], b: string[]): number {
+  const A = new Set(a);
+  const B = new Set(b);
+  if (A.size === 0 || B.size === 0) return 0;
+  let shared = 0;
+  for (const w of A) if (B.has(w)) shared += 1;
+  return shared / Math.min(A.size, B.size);
+}
+
+/**
+ * Multi-signal similarity between two happenings: wording overlap, shared
+ * entities/numbers and event type. Cross-source paraphrases score high; two
+ * unrelated stories about the same asset do not.
+ */
+export function eventSimilarity(
+  a: { title: string; entities?: string[]; type?: EventType },
+  b: { title: string; entities?: string[]; type?: EventType },
+): number {
+  const words = titleSimilarity(a.title, b.title);
+  const ents = overlap(a.entities ?? strongTokens(a.title), b.entities ?? strongTokens(b.title));
+  const typeA = a.type ?? classifyEventType(a.title);
+  const typeB = b.type ?? classifyEventType(b.title);
+  const typeScore = typeA === typeB ? 1 : 0;
+  const score = words * 0.5 + ents * 0.35 + typeScore * 0.15;
+  // Different event types are a hard brake: never merge a rate decision into a war.
+  if (typeA !== typeB && typeA !== "other" && typeB !== "other") return Math.min(score, 0.35);
+  return score;
+}
+
+/**
+ * Group documents that report the SAME happening. Similarity is multi-signal
+ * and language-agnostic; a bounded time window keeps recurring headlines
  * ("Fed holds rates") from collapsing across months.
  */
-export function clusterDocuments(docs: ClusterInput[], threshold = 0.45): EventCluster[] {
+export function clusterDocuments(docs: ClusterInput[], threshold = 0.4): EventCluster[] {
   const clusters: EventCluster[] = [];
   const seenUrls = new Set<string>();
 
@@ -127,19 +225,24 @@ export function clusterDocuments(docs: ClusterInput[], threshold = 0.45): EventC
       publisher: doc.publisher ?? hostOf(doc.url),
       published_at: published,
     };
+    const type = classifyEventType(`${title} ${doc.snippet ?? ""}`);
+    const entities = strongTokens(title);
 
-    const match = clusters.find((c) => {
-      if (titleSimilarity(c.title, title) < threshold) return false;
+    let best: { cluster: EventCluster; score: number } | null = null;
+    for (const c of clusters) {
       if (c.published_at && published) {
         const days = Math.abs(Date.parse(c.published_at) - Date.parse(published)) / 864e5;
-        if (days > 3) return false;
+        if (days > 3) continue;
       }
-      return true;
-    });
+      const score = eventSimilarity({ title, entities, type }, c);
+      if (score >= threshold && (!best || score > best.score)) best = { cluster: c, score };
+    }
 
-    if (match) {
+    if (best) {
+      const match = best.cluster;
       if (!match.sources.some((s) => s.url === doc.url)) match.sources.push(source);
       if ((doc.snippet ?? "").length > match.text.length) match.text = doc.snippet ?? "";
+      match.entities = [...new Set([...match.entities, ...entities])].slice(0, 20);
       if (published && (!match.published_at || published < match.published_at)) {
         match.published_at = published;
       }
@@ -152,12 +255,15 @@ export function clusterDocuments(docs: ClusterInput[], threshold = 0.45): EventC
       text: doc.snippet ?? "",
       sources: [source],
       published_at: published,
+      type,
+      entities,
     });
   }
 
   // The key must reflect the final earliest date after merging.
   return clusters.map((c) => ({ ...c, key: clusterKey(c.title, c.published_at) }));
 }
+
 
 export interface CorrelationPoint {
   t: string;
@@ -260,3 +366,306 @@ export function eventImportance(severity: EventSeverity): "critical" | "importan
       return "minor";
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Market intelligence layer: source quality, importance, updates, alert policy
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** How much weight a report deserves. Never category-specific. */
+export type SourceTier = "primary" | "high" | "secondary" | "low";
+
+const PRIMARY_PATTERNS = [
+  /\.gov$/i, /\.gov\./i, /\.europa\.eu$/i, /\.riksbank\.se$/i, /federalreserve\.gov/i,
+  /ecb\.europa\.eu/i, /imf\.org$/i, /worldbank\.org$/i, /opec\.org$/i, /bis\.org$/i,
+  /sec\.gov/i, /eia\.gov/i, /scb\.se$/i, /eurostat/i, /oecd\.org$/i, /un\.org$/i,
+];
+
+const HIGH_PATTERNS = [
+  /reuters\.com$/i, /bloomberg\.com$/i, /ft\.com$/i, /wsj\.com$/i, /apnews\.com$/i,
+  /cnbc\.com$/i, /economist\.com$/i, /barrons\.com$/i, /nikkei\.com$/i, /bbc\.(co\.uk|com)$/i,
+  /marketwatch\.com$/i, /di\.se$/i, /svd\.se$/i, /dn\.se$/i, /afp\.com$/i, /axios\.com$/i,
+];
+
+const LOW_PATTERNS = [
+  /blogspot\./i, /wordpress\./i, /medium\.com$/i, /substack\.com$/i, /reddit\.com$/i,
+  /x\.com$/i, /twitter\.com$/i, /facebook\.com$/i, /youtube\.com$/i, /tiktok\.com$/i,
+  /coinspeaker|cryptopotato|newsbtc|ambcrypto|beincrypto|zerohedge/i,
+];
+
+export function sourceTier(urlOrHost: string): SourceTier {
+  const host = hostOf(urlOrHost) ?? urlOrHost.toLowerCase();
+  if (PRIMARY_PATTERNS.some((p) => p.test(host))) return "primary";
+  if (HIGH_PATTERNS.some((p) => p.test(host))) return "high";
+  if (LOW_PATTERNS.some((p) => p.test(host))) return "low";
+  return "secondary";
+}
+
+const TIER_RANK: Record<SourceTier, number> = { low: 0, secondary: 1, high: 2, primary: 3 };
+
+export function bestSourceTier(sources: { url: string }[]): SourceTier {
+  let best: SourceTier = "low";
+  for (const s of sources) {
+    const tier = sourceTier(s.url);
+    if (TIER_RANK[tier] > TIER_RANK[best]) best = tier;
+  }
+  return sources.length === 0 ? "low" : best;
+}
+
+/** Distinct publishers behind an event — the real corroboration signal. */
+export function independentSourceCount(sources: { url: string }[]): number {
+  const hosts = new Set<string>();
+  for (const s of sources) {
+    const host = hostOf(s.url);
+    if (host) hosts.add(host);
+  }
+  return hosts.size;
+}
+
+/**
+ * Confidence must be earned. A single low-tier blog can never produce a 95 %
+ * fact confidence no matter how sure the model sounds.
+ */
+export function calibrateFactConfidence(input: {
+  modelConfidence: number;
+  tier: SourceTier;
+  independentSources: number;
+}): number {
+  const tierCap: Record<SourceTier, number> = { primary: 0.95, high: 0.9, secondary: 0.8, low: 0.6 };
+  const corroborationCap = input.independentSources >= 3 ? 1 : input.independentSources === 2 ? 0.85 : 0.7;
+  const base = Math.max(0, Math.min(1, input.modelConfidence));
+  return Math.round(Math.min(base, tierCap[input.tier], corroborationCap) * 100) / 100;
+}
+
+/** Interpretation is always less certain than the facts it rests on. */
+export function calibrateInterpretationConfidence(input: {
+  modelConfidence: number;
+  factConfidence: number;
+}): number {
+  const base = Math.max(0, Math.min(1, input.modelConfidence));
+  return Math.round(Math.min(base, input.factConfidence * 0.9, 0.85) * 100) / 100;
+}
+
+export type AssetRelation = "direct" | "possible" | "indirect";
+
+export interface AffectedAsset {
+  symbol: string;
+  name: string;
+  relation: AssetRelation;
+  rationale: string;
+}
+
+export function asAffectedAssets(value: unknown): AffectedAsset[] {
+  if (!Array.isArray(value)) return [];
+  const out: AffectedAsset[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as Record<string, unknown>;
+    const symbol = typeof raw["symbol"] === "string" ? raw["symbol"].trim() : "";
+    if (!symbol) continue;
+    const relation = raw["relation"];
+    out.push({
+      symbol,
+      name: typeof raw["name"] === "string" && raw["name"] ? raw["name"] : symbol,
+      relation:
+        relation === "direct" || relation === "possible" || relation === "indirect"
+          ? relation
+          : "possible",
+      rationale: typeof raw["rationale"] === "string" ? raw["rationale"] : "",
+    });
+  }
+  return out.slice(0, 8);
+}
+
+/** One development in the life of an event — events grow, they don't multiply. */
+export interface TimelineEntry {
+  at: string;
+  note: string;
+  sourceCount: number;
+  importance: number;
+}
+
+export function asTimeline(value: unknown): TimelineEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const raw = item as Record<string, unknown>;
+    if (typeof raw["at"] !== "string" || typeof raw["note"] !== "string") return [];
+    return [{
+      at: raw["at"],
+      note: raw["note"],
+      sourceCount: typeof raw["sourceCount"] === "number" ? raw["sourceCount"] : 0,
+      importance: typeof raw["importance"] === "number" ? raw["importance"] : 0,
+    }];
+  });
+}
+
+/**
+ * Importance 0–100. Severity sets the band; relevance to THIS radar, source
+ * quality, corroboration, the observed market reaction and novelty move it.
+ */
+export function computeImportance(input: {
+  severity: EventSeverity;
+  relevance: number;
+  tier: SourceTier;
+  independentSources: number;
+  marketMovePct?: number | null;
+  novelty?: number;
+  isUpdate?: boolean;
+}): number {
+  const base = { low: 20, medium: 42, high: 66, critical: 84 }[input.severity];
+  const relevance = (Math.max(0, Math.min(1, input.relevance)) - 0.5) * 30; // ±15
+  const tierBonus = { primary: 8, high: 5, secondary: 0, low: -8 }[input.tier];
+  const corroboration = Math.min(input.independentSources, 5) * 2 - 2; // -2 … +8
+  const move = Math.min(Math.abs(input.marketMovePct ?? 0), 5) * 2; // 0 … 10
+  const novelty = (input.novelty ?? 1) * 8 - 4; // -4 … +4
+  const updatePenalty = input.isUpdate ? -8 : 0;
+  const score = base + relevance + tierBonus + corroboration + move + novelty + updatePenalty;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+export function importanceBand(score: number): "critical" | "important" | "interesting" | "minor" {
+  if (score >= 85) return "critical";
+  if (score >= 70) return "important";
+  if (score >= 45) return "interesting";
+  return "minor";
+}
+
+export type AlertSensitivity = "low" | "balanced" | "high";
+
+export const SENSITIVITY_THRESHOLD: Record<AlertSensitivity, number> = {
+  low: 82,
+  balanced: 70,
+  high: 55,
+};
+
+export interface AlertDecision {
+  alert: boolean;
+  reason:
+    | "new_significant_event"
+    | "material_update"
+    | "baseline"
+    | "below_threshold"
+    | "no_material_change"
+    | "cooldown";
+}
+
+/**
+ * One event → at most one alert per cooldown window. Follow-up coverage of a
+ * story the user already heard about must clear a materiality bar first.
+ */
+export function alertDecision(input: {
+  importance: number;
+  isBaseline: boolean;
+  isNewEvent: boolean;
+  isMaterialUpdate?: boolean;
+  lastAlertedAt?: string | null;
+  nowIso?: string;
+  sensitivity?: AlertSensitivity;
+  cooldownHours?: number;
+}): AlertDecision {
+  if (input.isBaseline) return { alert: false, reason: "baseline" };
+  const threshold = SENSITIVITY_THRESHOLD[input.sensitivity ?? "balanced"];
+  if (input.importance < threshold) return { alert: false, reason: "below_threshold" };
+  if (input.isNewEvent) return { alert: true, reason: "new_significant_event" };
+  if (!input.isMaterialUpdate) return { alert: false, reason: "no_material_change" };
+
+  const cooldownHours = input.cooldownHours ?? 12;
+  const now = Date.parse(input.nowIso ?? new Date().toISOString());
+  const last = input.lastAlertedAt ? Date.parse(input.lastAlertedAt) : NaN;
+  if (Number.isFinite(last) && now - last < cooldownHours * 36e5 && input.importance < 90) {
+    return { alert: false, reason: "cooldown" };
+  }
+  return { alert: true, reason: "material_update" };
+}
+
+/**
+ * An update is material when the story genuinely moved on: fresh independent
+ * corroboration, a higher severity, or a real jump in importance.
+ */
+export function isMaterialUpdate(input: {
+  newIndependentSources: number;
+  previousImportance: number;
+  importance: number;
+  previousSeverity: EventSeverity;
+  severity: EventSeverity;
+}): boolean {
+  if (severityRank(input.severity) > severityRank(input.previousSeverity)) return true;
+  if (input.importance - input.previousImportance >= 10) return true;
+  return input.newIndependentSources >= 2;
+}
+
+/**
+ * Novelty 0–1: how unlike everything the radar already knows this story is.
+ * Recurring coverage of a known theme scores low and rarely alerts.
+ */
+export function noveltyScore(
+  candidate: { title: string; entities?: string[]; type?: EventType },
+  known: { title: string; entities?: string[]; type?: EventType }[],
+): number {
+  let maxSim = 0;
+  for (const k of known) maxSim = Math.max(maxSim, eventSimilarity(candidate, k));
+  return Math.round((1 - Math.min(1, maxSim)) * 100) / 100;
+}
+
+/** Find the stored event a fresh cluster is a continuation of, if any. */
+export function matchExistingEvent<T extends { title: string; entities?: string[]; type?: EventType; published_at?: string | null }>(
+  candidate: { title: string; entities?: string[]; type?: EventType; published_at?: string | null },
+  existing: T[],
+  threshold = 0.4,
+): T | null {
+  let best: { row: T; score: number } | null = null;
+  for (const row of existing) {
+    if (candidate.published_at && row.published_at) {
+      const days = Math.abs(Date.parse(candidate.published_at) - Date.parse(row.published_at)) / 864e5;
+      if (!Number.isNaN(days) && days > 5) continue;
+    }
+    const score = eventSimilarity(candidate, row);
+    if (score >= threshold && (!best || score > best.score)) best = { row, score };
+  }
+  return best?.row ?? null;
+}
+
+const CAUSAL_PATTERNS: [RegExp, string][] = [
+  [/\bcaused by\b/gi, "coincided with"],
+  [/\bcaused\b/gi, "coincided with"],
+  [/\bdue to\b/gi, "amid"],
+  [/\bbecause of\b/gi, "amid"],
+  [/\bdrove\b/gi, "coincided with"],
+  [/\borsakade\b/gi, "sammanföll med"],
+  [/\bpå grund av\b/gi, "i samband med"],
+  [/\bledde till\b/gi, "sammanföll med"],
+];
+
+export function containsCausalClaim(text: string): boolean {
+  return CAUSAL_PATTERNS.some(([pattern]) => new RegExp(pattern.source, "i").test(text));
+}
+
+/**
+ * Radar never asserts causation between an event and a price move. Any causal
+ * phrasing that slips out of the model is rewritten into coincidence language.
+ */
+export function softenCausality(text: string): string {
+  let out = text;
+  for (const [pattern, replacement] of CAUSAL_PATTERNS) {
+    out = out.replace(new RegExp(pattern.source, "gi"), replacement);
+  }
+  return out;
+}
+
+/**
+ * Two events belong to the SAME running story (an escalation, a policy cycle)
+ * even when they are separate happenings. The timeline keeps them apart; the
+ * alert layer uses this to avoid eight notifications about one situation.
+ */
+export function sameStory(
+  a: { title: string; entities?: string[]; type?: EventType },
+  b: { title: string; entities?: string[]; type?: EventType },
+): boolean {
+  const entsA = (a.entities ?? strongTokens(a.title)).map((e) => e.toLowerCase());
+  const entsB = (b.entities ?? strongTokens(b.title)).map((e) => e.toLowerCase());
+  if (overlap(entsA, entsB) >= 0.5) return true;
+  return eventSimilarity(a, b) >= 0.35;
+}
+
+/** Hard ceiling on event alerts per sweep — intelligence, not a news ticker. */
+export const MAX_EVENT_ALERTS_PER_RUN = 3;

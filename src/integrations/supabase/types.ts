@@ -401,79 +401,118 @@ export type Database = {
       }
       market_events: {
         Row: {
+          affected_assets: Json
           ai_analysis: string
+          alert_count: number
           alerted: boolean
           categories: string[]
           confidence: number
           correlation: Json
           created_at: string
           detected_at: string
+          entities: string[]
           event_key: string
+          event_type: string
+          fact_confidence: number
           fact_summary: string
           id: string
+          importance_score: number
           instrument: string | null
+          interpretation_confidence: number
+          last_alerted_at: string | null
+          last_updated_at: string
           market_change_pct: number | null
           market_value: number | null
           metric: string | null
+          novelty_score: number
           published_at: string | null
           radar_id: string
           relevance: number
           run_id: string | null
           severity: string
           source_count: number
+          source_quality: string
           sources: Json
+          status: string
+          timeline: Json
           title: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          affected_assets?: Json
           ai_analysis?: string
+          alert_count?: number
           alerted?: boolean
           categories?: string[]
           confidence?: number
           correlation?: Json
           created_at?: string
           detected_at?: string
+          entities?: string[]
           event_key: string
+          event_type?: string
+          fact_confidence?: number
           fact_summary?: string
           id?: string
+          importance_score?: number
           instrument?: string | null
+          interpretation_confidence?: number
+          last_alerted_at?: string | null
+          last_updated_at?: string
           market_change_pct?: number | null
           market_value?: number | null
           metric?: string | null
+          novelty_score?: number
           published_at?: string | null
           radar_id: string
           relevance?: number
           run_id?: string | null
           severity?: string
           source_count?: number
+          source_quality?: string
           sources?: Json
+          status?: string
+          timeline?: Json
           title: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          affected_assets?: Json
           ai_analysis?: string
+          alert_count?: number
           alerted?: boolean
           categories?: string[]
           confidence?: number
           correlation?: Json
           created_at?: string
           detected_at?: string
+          entities?: string[]
           event_key?: string
+          event_type?: string
+          fact_confidence?: number
           fact_summary?: string
           id?: string
+          importance_score?: number
           instrument?: string | null
+          interpretation_confidence?: number
+          last_alerted_at?: string | null
+          last_updated_at?: string
           market_change_pct?: number | null
           market_value?: number | null
           metric?: string | null
+          novelty_score?: number
           published_at?: string | null
           radar_id?: string
           relevance?: number
           run_id?: string | null
           severity?: string
           source_count?: number
+          source_quality?: string
           sources?: Json
+          status?: string
+          timeline?: Json
           title?: string
           updated_at?: string
           user_id?: string
@@ -1563,12 +1602,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1592,11 +1631,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1617,11 +1656,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1642,11 +1681,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1659,11 +1698,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
