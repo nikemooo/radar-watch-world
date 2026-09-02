@@ -85,11 +85,17 @@ function Dashboard() {
         supabase.from("alerts").select("id, importance").gte("created_at", since),
         supabase.from("monitor_runs").select("id, status, items_found, started_at").order("started_at", { ascending: false }).limit(1),
       ]);
+      const { data: events } = await supabase
+        .from("market_events")
+        .select("id, title, severity, importance_score, event_type, source_count, published_at, detected_at, radar_id")
+        .order("last_updated_at", { ascending: false })
+        .limit(6);
       return {
         radars: radars.data ?? [],
         alerts: (alerts.data ?? []) as AlertRow[],
         weekAlerts: weekAlerts.data ?? [],
         lastRun: runs.data?.[0] ?? null,
+        events: events ?? [],
       };
     },
   });
@@ -181,6 +187,32 @@ function Dashboard() {
             />
           </div>
 
+
+          <section>
+            <h2 className="text-lg font-medium">{t("dashboard.events.title")}</h2>
+            {data?.events.length ? (
+              <ul className="mt-4 space-y-2">
+                {data.events.map((event) => (
+                  <li key={event.id}>
+                    <Link
+                      to="/events/$eventId"
+                      params={{ eventId: event.id }}
+                      className="panel flex flex-wrap items-center gap-3 p-4 transition-colors hover:border-primary/50"
+                    >
+                      <span className="mono-label">{(event.event_type ?? "other").replace(/_/g, " ")}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm">{event.title}</span>
+                      <span className="mono-label">{event.source_count} src</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {event.importance_score ?? 0}/100
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="panel mt-4 p-5 text-sm text-muted-foreground">{t("dashboard.events.empty")}</p>
+            )}
+          </section>
 
           <section>
             <div className="flex items-center justify-between">

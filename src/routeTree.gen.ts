@@ -25,6 +25,7 @@ import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as CheckoutReturnRouteImport } from './routes/checkout/return'
 import { Route as AuthenticatedAdminSearchLoopRouteImport } from './routes/_authenticated/admin_.search-loop'
 import { Route as AuthenticatedAdminSearchTestRouteImport } from './routes/_authenticated/admin_.search-test'
+import { Route as AuthenticatedEventsEventIdRouteImport } from './routes/_authenticated/events.$eventId'
 import { Route as AuthenticatedRadarsIndexRouteImport } from './routes/_authenticated/radars.index'
 import { Route as AuthenticatedRadarsRadarIdRouteImport } from './routes/_authenticated/radars.$radarId'
 import { Route as AuthenticatedRadarsNewRouteImport } from './routes/_authenticated/radars.new'
@@ -118,6 +119,12 @@ const AuthenticatedAdminSearchTestRoute =
     path: '/admin/search-test',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedEventsEventIdRoute =
+  AuthenticatedEventsEventIdRouteImport.update({
+    id: '/events/$eventId',
+    path: '/events/$eventId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedRadarsIndexRoute =
   AuthenticatedRadarsIndexRouteImport.update({
     id: '/radars/',
@@ -190,6 +197,7 @@ export interface FileRoutesByFullPath {
   '/checkout/return': typeof CheckoutReturnRoute
   '/admin/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/admin/search-test': typeof AuthenticatedAdminSearchTestRoute
+  '/events/$eventId': typeof AuthenticatedEventsEventIdRoute
   '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
   '/api/test/openai-search-loop': typeof ApiTestOpenaiSearchLoopRoute
@@ -217,6 +225,7 @@ export interface FileRoutesByTo {
   '/checkout/return': typeof CheckoutReturnRoute
   '/admin/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/admin/search-test': typeof AuthenticatedAdminSearchTestRoute
+  '/events/$eventId': typeof AuthenticatedEventsEventIdRoute
   '/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/radars/new': typeof AuthenticatedRadarsNewRoute
   '/api/test/openai-search-loop': typeof ApiTestOpenaiSearchLoopRoute
@@ -246,6 +255,7 @@ export interface FileRoutesById {
   '/checkout/return': typeof CheckoutReturnRoute
   '/_authenticated/admin_/search-loop': typeof AuthenticatedAdminSearchLoopRoute
   '/_authenticated/admin_/search-test': typeof AuthenticatedAdminSearchTestRoute
+  '/_authenticated/events/$eventId': typeof AuthenticatedEventsEventIdRoute
   '/_authenticated/radars/$radarId': typeof AuthenticatedRadarsRadarIdRoute
   '/_authenticated/radars/new': typeof AuthenticatedRadarsNewRoute
   '/api/test/openai-search-loop': typeof ApiTestOpenaiSearchLoopRoute
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
     | '/checkout/return'
     | '/admin/search-loop'
     | '/admin/search-test'
+    | '/events/$eventId'
     | '/radars/$radarId'
     | '/radars/new'
     | '/api/test/openai-search-loop'
@@ -302,6 +313,7 @@ export interface FileRouteTypes {
     | '/checkout/return'
     | '/admin/search-loop'
     | '/admin/search-test'
+    | '/events/$eventId'
     | '/radars/$radarId'
     | '/radars/new'
     | '/api/test/openai-search-loop'
@@ -330,6 +342,7 @@ export interface FileRouteTypes {
     | '/checkout/return'
     | '/_authenticated/admin_/search-loop'
     | '/_authenticated/admin_/search-test'
+    | '/_authenticated/events/$eventId'
     | '/_authenticated/radars/$radarId'
     | '/_authenticated/radars/new'
     | '/api/test/openai-search-loop'
@@ -472,6 +485,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminSearchTestRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/events/$eventId': {
+      id: '/_authenticated/events/$eventId'
+      path: '/events/$eventId'
+      fullPath: '/events/$eventId'
+      preLoaderRoute: typeof AuthenticatedEventsEventIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/radars/': {
       id: '/_authenticated/radars/'
       path: '/radars'
@@ -555,6 +575,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedAdminSearchLoopRoute: typeof AuthenticatedAdminSearchLoopRoute
   AuthenticatedAdminSearchTestRoute: typeof AuthenticatedAdminSearchTestRoute
+  AuthenticatedEventsEventIdRoute: typeof AuthenticatedEventsEventIdRoute
   AuthenticatedRadarsRadarIdRoute: typeof AuthenticatedRadarsRadarIdRoute
   AuthenticatedRadarsNewRoute: typeof AuthenticatedRadarsNewRoute
   AuthenticatedRadarsIndexRoute: typeof AuthenticatedRadarsIndexRoute
@@ -570,6 +591,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedAdminSearchLoopRoute: AuthenticatedAdminSearchLoopRoute,
   AuthenticatedAdminSearchTestRoute: AuthenticatedAdminSearchTestRoute,
+  AuthenticatedEventsEventIdRoute: AuthenticatedEventsEventIdRoute,
   AuthenticatedRadarsRadarIdRoute: AuthenticatedRadarsRadarIdRoute,
   AuthenticatedRadarsNewRoute: AuthenticatedRadarsNewRoute,
   AuthenticatedRadarsIndexRoute: AuthenticatedRadarsIndexRoute,

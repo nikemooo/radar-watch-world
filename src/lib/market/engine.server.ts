@@ -31,8 +31,8 @@ import { asMarketSpec } from "./types";
 import { collectMarketQuotes, consensusFromQuotes, refineInstrumentSources } from "./sources.server";
 import { computeMarketChanges, type MarketPoint } from "./history";
 import { describeTrigger, evaluateMarketRules, type MarketRuleStateMap } from "./rules";
-import { discoverImpactEvents } from "./events.server";
-import { eventImportance, severityRank, shouldAlertOnEvent } from "./events";
+import { discoverImpactEvents, type KnownEvent } from "./events.server";
+import { alertDecision, asSeverity, asTimeline, importanceBand, severityRank } from "./events";
 
 type Db = SupabaseClient<Database>;
 type RadarRow = Database["public"]["Tables"]["radars"]["Row"];
@@ -256,10 +256,28 @@ export async function runMarketCycle(
     try {
       const { data: knownRows } = await db
         .from("market_events")
-        .select("event_key")
+        .select(
+          "id, event_key, title, entities, event_type, published_at, severity, importance_score, sources, timeline, last_alerted_at, alert_count",
+        )
         .eq("radar_id", radar.id)
-        .limit(500);
-      const knownKeys = new Set((knownRows ?? []).map((r) => r.event_key));
+        .order("last_updated_at", { ascending: false })
+        .limit(200);
+      const knownList = knownRows ?? [];
+      const known: KnownEvent[] = knownList.map((row) => ({
+        id: row.id,
+        event_key: row.event_key,
+        title: row.title,
+        entities: row.entities ?? [],
+        event_type: row.event_type ?? "other",
+        published_at: row.published_at,
+        severity: row.severity,
+        importance_score: row.importance_score ?? 0,
+        source_urls: (Array.isArray(row.sources) ? row.sources : [])
+          .map((s) => (s && typeof s === "object" ? String((s as { url?: unknown }).url ?? "") : ""))
+          .filter(Boolean),
+      }));
+      const knownById = new Map(knownList.map((row) => [row.id, row]));
+
       // Only look back as far as the previous sweep (7 days on a baseline):
       // the timeline collects history forward, it never backfills the past.
       const lastEventSweep =
@@ -274,7 +292,7 @@ export async function runMarketCycle(
           spec,
           rawRequest: radar.raw_request,
           sinceIso,
-          knownKeys,
+          known,
           points,
         }),
       );
@@ -282,26 +300,39 @@ export async function runMarketCycle(
       eventsDetected = discovery.events.length;
 
       for (const event of discovery.events) {
-        const alertable =
-          shouldAlertOnEvent({ severity: event.severity, relevance: event.relevance, isBaseline }) &&
-          (alertBudget === null || alertsCreated < alertBudget);
-        if (severityRank(event.severity) >= severityRank("high")) eventsSignificant += 1;
+        const previous = event.updateOf ? knownById.get(event.updateOf.id) : undefined;
+        const decision = alertDecision({
+          importance: event.importance,
+          isBaseline,
+          isNewEvent: !event.updateOf,
+          isMaterialUpdate: event.materialUpdate,
+          lastAlertedAt: previous?.last_alerted_at ?? null,
+          nowIso,
+          sensitivity: "balanced",
+        });
+        const budgetOk = alertBudget === null || alertsCreated < alertBudget;
+        if (event.importance >= 70) eventsSignificant += 1;
 
         let alerted = false;
-        if (alertable) {
+        if (decision.alert && budgetOk) {
           const { error: eventAlertError } = await db.from("alerts").insert({
             radar_id: radar.id,
             user_id: radar.user_id,
-            title: event.title,
+            title: event.updateOf ? `Update: ${event.title}` : event.title,
             summary: event.factSummary,
-            what_changed: event.correlation.observed
-              ? `${spec.instrument.symbol} ${
-                  (event.correlation.changePct ?? 0) >= 0 ? "+" : ""
-                }${(event.correlation.changePct ?? 0).toFixed(2)}% around this event`
-              : `New ${event.severity} event detected for ${spec.instrument.symbol}`,
+            what_changed: event.updateOf
+              ? event.updateNote || `New developments in an event already on your timeline.`
+              : event.correlation.observed
+                ? `${spec.instrument.symbol} ${
+                    (event.correlation.changePct ?? 0) >= 0 ? "+" : ""
+                  }${(event.correlation.changePct ?? 0).toFixed(2)}% observed around this event (coincidence, not causation)`
+                : `New ${event.severity} event detected for ${spec.instrument.symbol}`,
             why_it_matters: event.aiAnalysis,
-            importance: eventImportance(event.severity),
-            confidence: event.confidence,
+            potential_impact: event.affectedAssets
+              .map((a) => `${a.symbol} (${a.relation})`)
+              .join(", ") || null,
+            importance: importanceBand(event.importance),
+            confidence: event.factConfidence,
             sources: event.sources.map((s) => ({
               title: s.title,
               url: s.url,
@@ -315,11 +346,63 @@ export async function runMarketCycle(
               value: consensus.value,
               event_key: event.key,
               severity: event.severity,
+              importance: event.importance,
               correlation: event.correlation,
             } as never,
           });
           alerted = !eventAlertError;
           if (alerted) alertsCreated += 1;
+        }
+
+        const timelineEntry = {
+          at: nowIso,
+          note: event.updateOf ? event.updateNote || "New coverage of this event." : event.factSummary,
+          sourceCount: event.sources.length,
+          importance: event.importance,
+        };
+
+        if (previous) {
+          // One real-world event stays ONE row: updates extend it.
+          const mergedSources = [...(Array.isArray(previous.sources) ? previous.sources : []), ...event.sources]
+            .filter((s): s is { url: string } => Boolean(s) && typeof s === "object" && "url" in (s as object))
+            .filter((s, i, arr) => arr.findIndex((o) => o.url === s.url) === i);
+          const timeline = [...asTimeline(previous.timeline), timelineEntry].slice(-20);
+          await db
+            .from("market_events")
+            .update({
+              run_id: runId,
+              title: event.title,
+              fact_summary: event.factSummary,
+              ai_analysis: event.aiAnalysis,
+              severity:
+                severityRank(event.severity) > severityRank(asSeverity(previous.severity))
+                  ? event.severity
+                  : previous.severity,
+              relevance: event.relevance,
+              confidence: event.factConfidence,
+              fact_confidence: event.factConfidence,
+              interpretation_confidence: event.interpretationConfidence,
+              importance_score: Math.max(event.importance, previous.importance_score ?? 0),
+              novelty_score: event.novelty,
+              event_type: event.type,
+              entities: event.entities,
+              affected_assets: event.affectedAssets as never,
+              timeline: timeline as never,
+              categories: event.categories,
+              sources: mergedSources as never,
+              source_count: mergedSources.length,
+              source_quality: event.sourceTier,
+              market_value: consensus.value,
+              market_change_pct: event.correlation.changePct,
+              correlation: event.correlation as never,
+              last_updated_at: nowIso,
+              status: "updated",
+              ...(alerted
+                ? { alerted: true, last_alerted_at: nowIso, alert_count: (previous.alert_count ?? 0) + 1 }
+                : {}),
+            })
+            .eq("id", previous.id);
+          continue;
         }
 
         await db.from("market_events").upsert(
@@ -333,7 +416,16 @@ export async function runMarketCycle(
             ai_analysis: event.aiAnalysis,
             severity: event.severity,
             relevance: event.relevance,
-            confidence: event.confidence,
+            confidence: event.factConfidence,
+            fact_confidence: event.factConfidence,
+            interpretation_confidence: event.interpretationConfidence,
+            importance_score: event.importance,
+            novelty_score: event.novelty,
+            event_type: event.type,
+            entities: event.entities,
+            affected_assets: event.affectedAssets as never,
+            timeline: [timelineEntry] as never,
+            source_quality: event.sourceTier,
             categories: event.categories,
             sources: event.sources as never,
             source_count: event.sources.length,
@@ -343,12 +435,16 @@ export async function runMarketCycle(
             market_value: consensus.value,
             market_change_pct: event.correlation.changePct,
             correlation: event.correlation as never,
+            status: "active",
+            last_updated_at: nowIso,
             alerted,
+            ...(alerted ? { last_alerted_at: nowIso, alert_count: 1 } : {}),
           },
-          { onConflict: "radar_id,event_key", ignoreDuplicates: true },
+          { onConflict: "radar_id,event_key", ignoreDuplicates: false },
         );
       }
       memory["market_events_swept_at"] = nowIso;
+
     } catch (err) {
       if (err instanceof SweepPaused) throw err;
       // Event discovery is additive: a failure must never fail the numeric sweep.

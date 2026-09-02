@@ -1,5 +1,5 @@
 /**
- * Market Impact — world-event discovery and analysis.
+ * Market Impact — world-event discovery, clustering and analysis.
  *
  * This is the second half of a market radar: the numeric layer says WHAT the
  * value is, this layer says WHAT HAPPENED that could move it. It reuses the
@@ -7,24 +7,53 @@
  * AI gateway; it never invents a source and never stores a claim without the
  * URLs it came from.
  *
- * Pipeline: queries → documents → recency filter → clustering (duplicate
- * coverage collapses into one event) → one batched AI pass that separates
- * FACT from INTERPRETATION and scores significance/relevance → correlation
- * against the radar's own observation series.
+ * Pipeline: queries → documents → recency filter → multi-signal clustering
+ * (duplicate coverage collapses into one event, and follow-up coverage is
+ * matched onto the event the radar already knows) → one batched AI pass that
+ * separates FACT from INTERPRETATION → calibrated confidence, 0–100 importance
+ * and observed (never causal) correlation against the radar's value series.
  */
 import { chatJson, MODELS } from "../ai/gateway.server";
 import { researchQueries } from "../search/providers.server";
 import {
+  asAffectedAssets,
   asSeverity,
+  bestSourceTier,
+  calibrateFactConfidence,
+  calibrateInterpretationConfidence,
+  classifyEventType,
   clusterDocuments,
+  computeImportance,
   correlateEvent,
+  independentSourceCount,
+  isMaterialUpdate,
+  matchExistingEvent,
+  noveltyScore,
+  softenCausality,
+  strongTokens,
+  type AffectedAsset,
   type CorrelationPoint,
   type EventCluster,
   type EventCorrelation,
   type EventSeverity,
   type EventSource,
+  type EventType,
+  type SourceTier,
 } from "./events";
 import type { MarketMonitorSpec } from "./types";
+
+/** A stored event, as far as the discovery layer needs to know it. */
+export interface KnownEvent {
+  id: string;
+  event_key: string;
+  title: string;
+  entities: string[];
+  event_type: string;
+  published_at: string | null;
+  severity: string;
+  importance_score: number;
+  source_urls: string[];
+}
 
 export interface ImpactEvent {
   key: string;
@@ -34,13 +63,31 @@ export interface ImpactEvent {
   /** Explicitly labelled AI interpretation of why it matters for this instrument. */
   aiAnalysis: string;
   severity: EventSeverity;
+  type: EventType;
+  entities: string[];
   /** 0-1 — how much this event bears on THIS instrument. */
   relevance: number;
-  confidence: number;
+  /** Calibrated confidence in the FACTS, capped by source quality. */
+  factConfidence: number;
+  /** Calibrated confidence in the INTERPRETATION — always the weaker of the two. */
+  interpretationConfidence: number;
+  /** 0-100 significance for this radar. Drives the alert policy. */
+  importance: number;
+  /** 0-1, how unlike everything the radar already knows this story is. */
+  novelty: number;
+  sourceTier: SourceTier;
+  independentSources: number;
+  affectedAssets: AffectedAsset[];
   categories: string[];
   sources: EventSource[];
   publishedAt: string | null;
   correlation: EventCorrelation;
+  /** Set when this is new coverage of an event the radar already stored. */
+  updateOf: KnownEvent | null;
+  /** Only meaningful for updates: did the story genuinely move on? */
+  materialUpdate: boolean;
+  /** One-line description of the development, appended to the event timeline. */
+  updateNote: string;
 }
 
 export interface EventDiscovery {
@@ -49,6 +96,8 @@ export interface EventDiscovery {
   queries: string[];
   documents: number;
   clusters: number;
+  /** Clusters recognised as coverage of an already-known event. */
+  merged: number;
   provider: string | null;
   searchRequests: number;
   searchFailures: number;
@@ -102,8 +151,12 @@ const analysisSchema = {
           "ai_analysis",
           "severity",
           "relevance",
-          "confidence",
+          "fact_confidence",
+          "interpretation_confidence",
           "categories",
+          "entities",
+          "affected_assets",
+          "update_note",
         ],
         properties: {
           key: { type: "string" },
@@ -112,8 +165,25 @@ const analysisSchema = {
           ai_analysis: { type: "string" },
           severity: { type: "string", enum: ["low", "medium", "high", "critical"] },
           relevance: { type: "number" },
-          confidence: { type: "number" },
+          fact_confidence: { type: "number" },
+          interpretation_confidence: { type: "number" },
           categories: { type: "array", items: { type: "string" } },
+          entities: { type: "array", items: { type: "string" } },
+          affected_assets: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["symbol", "name", "relation", "rationale"],
+              properties: {
+                symbol: { type: "string" },
+                name: { type: "string" },
+                relation: { type: "string", enum: ["direct", "possible", "indirect"] },
+                rationale: { type: "string" },
+              },
+            },
+          },
+          update_note: { type: "string" },
         },
       },
     },
@@ -127,8 +197,12 @@ interface AnalyzedEvent {
   ai_analysis: string;
   severity: string;
   relevance: number;
-  confidence: number;
+  fact_confidence: number;
+  interpretation_confidence: number;
   categories: string[];
+  entities: string[];
+  affected_assets: unknown;
+  update_note: string;
 }
 
 function clamp01(value: unknown, fallback: number): number {
@@ -136,20 +210,25 @@ function clamp01(value: unknown, fallback: number): number {
   return Math.max(0, Math.min(1, n));
 }
 
-function clusterBlock(clusters: EventCluster[]): string {
+function clusterBlock(clusters: { cluster: EventCluster; existing: KnownEvent | null }[]): string {
   return clusters
-    .map(
-      (c) =>
-        `KEY: ${c.key}\nHEADLINE: ${c.title}\nPUBLISHED: ${c.published_at ?? "unknown"}\nOUTLETS: ${c.sources
-          .map((s) => s.publisher ?? s.url)
-          .join(", ")}\nEXCERPT: ${c.text.slice(0, 1800)}`,
+    .map(({ cluster: c, existing }) =>
+      [
+        `KEY: ${c.key}`,
+        `HEADLINE: ${c.title}`,
+        `TYPE: ${c.type}`,
+        `PUBLISHED: ${c.published_at ?? "unknown"}`,
+        `OUTLETS: ${c.sources.map((s) => s.publisher ?? s.url).join(", ")}`,
+        existing ? `CONTINUES KNOWN EVENT: "${existing.title}"` : "STATUS: new to this radar",
+        `EXCERPT: ${c.text.slice(0, 1800)}`,
+      ].join("\n"),
     )
     .join("\n\n---\n\n");
 }
 
 /** One batched AI pass over the clusters — fact, interpretation, significance. */
 async function analyzeClusters(
-  clusters: EventCluster[],
+  clusters: { cluster: EventCluster; existing: KnownEvent | null }[],
   spec: MarketMonitorSpec,
   rawRequest: string | null,
 ): Promise<Map<string, AnalyzedEvent>> {
@@ -159,19 +238,27 @@ async function analyzeClusters(
     schemaName: "market_impact_events",
     schema: analysisSchema,
     system:
-      "You analyse world events for a market monitoring product. For each candidate event you receive a headline, " +
+      "You are the analyst of a market intelligence product. For each candidate event you receive a headline, a type, " +
       "a publication date and an excerpt from real published sources. Return one object per event, reusing the given KEY verbatim.\n" +
       "fact_summary: ONLY what the sources actually state — the concrete happening, named actors, numbers and dates. " +
-      "One or two sentences. Never speculate, never add context that is not in the excerpt, never use hedging words.\n" +
+      "One or two sentences. Never speculate, never add context that is not in the excerpt.\n" +
       "ai_analysis: your own interpretation of why this could matter for the instrument being monitored — transmission " +
-      "mechanism, what to watch next. This is explicitly labelled as AI interpretation in the product, so it may reason, " +
-      "but it must never be presented as fact and must never invent numbers.\n" +
-      "severity: how significant the event itself is in the world — 'low' routine coverage or commentary, 'medium' a real " +
+      "mechanism, what to watch next. It is labelled as AI interpretation in the product. NEVER claim that this event " +
+      "caused any price move; markets are multi-causal. Write about plausible channels, not proven causes.\n" +
+      "severity: significance of the event in the world — 'low' routine coverage or commentary, 'medium' a real " +
       "development with limited reach, 'high' a major development (central bank decision, major sanctions, large supply " +
-      "shock, big earnings surprise), 'critical' a rare, system-level event (war outbreak, default, emergency rate move).\n" +
+      "shock, big earnings surprise), 'critical' a rare, system-level event (war outbreak, default, emergency rate move). " +
+      "Recycled commentary and opinion pieces are 'low'.\n" +
       "relevance: 0-1, how directly the event bears on THIS instrument specifically. Generic market commentary that only " +
       "mentions the instrument in passing is below 0.3. A decision that directly prices it is above 0.8.\n" +
-      "confidence: 0-1, how well the sources support the fact_summary.\n" +
+      "fact_confidence: 0-1, how well the given sources support the fact_summary. Be strict: one anonymous or low-quality " +
+      "outlet is below 0.6.\n" +
+      "interpretation_confidence: 0-1, how sure you are of your own reading. Must be lower than fact_confidence.\n" +
+      "entities: 2-6 named actors, places, tickers or institutions central to the event.\n" +
+      "affected_assets: assets plausibly touched, with relation 'direct' (the event prices this asset), 'possible' " +
+      "(a credible channel exists) or 'indirect' (second-order). Empty array if none beyond the monitored instrument.\n" +
+      "update_note: if the candidate CONTINUES a known event, one short sentence stating only what is NEW versus the known " +
+      "event. Otherwise an empty string.\n" +
       "categories: 1-3 short lowercase slugs such as monetary_policy, geopolitics, supply, demand, regulation, earnings, " +
       "energy, conflict, macro_data.\n" +
       "Drop nothing: return an entry for every KEY you were given. Answer in the language of the user's request.",
@@ -190,16 +277,16 @@ async function analyzeClusters(
 }
 
 /**
- * Discover and analyse the world events that could move this instrument.
- * `knownKeys` are events the radar already stored — they are dropped before
- * the AI pass so a sweep only ever pays for genuinely new happenings.
+ * Discover, cluster and analyse the world events that could move this
+ * instrument. `known` are events the radar already stored: fresh coverage of
+ * them becomes an UPDATE to the existing event, never a second event.
  */
 export async function discoverImpactEvents(input: {
   spec: MarketMonitorSpec;
   rawRequest?: string | null;
   /** Ignore anything published before this timestamp. */
   sinceIso: string;
-  knownKeys: Set<string>;
+  known: KnownEvent[];
   /** The radar's own observation series, for correlation. */
   points: CorrelationPoint[];
 }): Promise<EventDiscovery> {
@@ -211,6 +298,7 @@ export async function discoverImpactEvents(input: {
     queries,
     documents: research.documents.length,
     clusters: 0,
+    merged: 0,
     provider: research.provider,
     searchRequests: research.requests,
     searchFailures: research.failures,
@@ -238,49 +326,126 @@ export async function discoverImpactEvents(input: {
   );
   base.clusters = clusters.length;
 
-  // Multi-source coverage first: an event three outlets report is more likely
-  // to be real and significant than a single blog post.
-  const candidates = clusters
-    .filter((c) => !input.knownKeys.has(c.key))
+  const knownShapes = input.known.map((row) => ({
+    ...row,
+    type: classifyEventType(row.event_type) === "other" ? classifyEventType(row.title) : (row.event_type as EventType),
+    entities: row.entities.length > 0 ? row.entities : strongTokens(row.title),
+  }));
+
+  // Match each cluster against what the radar already knows. Known stories are
+  // only re-analysed when they bring genuinely new sources.
+  const paired = clusters.map((cluster) => {
+    const existing = matchExistingEvent(
+      { title: cluster.title, entities: cluster.entities, type: cluster.type, published_at: cluster.published_at },
+      knownShapes,
+    );
+    const knownUrls = new Set(existing?.source_urls ?? []);
+    const newSources = cluster.sources.filter((s) => !knownUrls.has(s.url));
+    return { cluster, existing: existing ? (existing as KnownEvent) : null, newSources };
+  });
+  base.merged = paired.filter((p) => p.existing).length;
+
+  const candidates = paired
+    .filter((p) => !p.existing || p.newSources.length > 0)
     .sort((a, b) => {
-      if (b.sources.length !== a.sources.length) return b.sources.length - a.sources.length;
-      return (b.published_at ?? "").localeCompare(a.published_at ?? "");
+      if (b.cluster.sources.length !== a.cluster.sources.length) {
+        return b.cluster.sources.length - a.cluster.sources.length;
+      }
+      return (b.cluster.published_at ?? "").localeCompare(a.cluster.published_at ?? "");
     })
     .slice(0, MAX_CLUSTERS_ANALYZED);
   if (candidates.length === 0) return base;
 
   let analyses: Map<string, AnalyzedEvent>;
   try {
-    analyses = await analyzeClusters(candidates, input.spec, input.rawRequest ?? null);
+    analyses = await analyzeClusters(
+      candidates.map(({ cluster, existing }) => ({ cluster, existing })),
+      input.spec,
+      input.rawRequest ?? null,
+    );
   } catch (err) {
     console.error(`[radar:market-events] analysis failed: ${(err as Error).message}`);
     return base;
   }
 
   const events: ImpactEvent[] = [];
-  for (const cluster of candidates) {
+  for (const { cluster, existing, newSources } of candidates) {
     const analysis = analyses.get(cluster.key);
     if (!analysis) continue;
     const relevance = clamp01(analysis.relevance, 0.3);
     // Anything the model itself judges unrelated never reaches the timeline.
     if (relevance < 0.25) continue;
+
+    const severity = asSeverity(analysis.severity);
+    const tier = bestSourceTier(cluster.sources);
+    const independent = independentSourceCount(cluster.sources);
+    const factConfidence = calibrateFactConfidence({
+      modelConfidence: clamp01(analysis.fact_confidence, 0.5),
+      tier,
+      independentSources: independent,
+    });
+    const interpretationConfidence = calibrateInterpretationConfidence({
+      modelConfidence: clamp01(analysis.interpretation_confidence, 0.4),
+      factConfidence,
+    });
+    const correlation = correlateEvent(cluster.published_at, input.points);
+    const novelty = existing
+      ? 0.3
+      : noveltyScore({ title: cluster.title, entities: cluster.entities, type: cluster.type }, knownShapes);
+    const importance = computeImportance({
+      severity,
+      relevance,
+      tier,
+      independentSources: independent,
+      marketMovePct: correlation.changePct,
+      novelty,
+      isUpdate: Boolean(existing),
+    });
+
+    // The model's named actors are the entities; headline tokens are only a
+    // fallback so a thin analysis still leaves something to match updates on.
+    const named = (Array.isArray(analysis.entities) ? analysis.entities : [])
+      .filter((e): e is string => typeof e === "string" && e.trim().length > 1)
+      .map((e) => e.trim());
+    const entities = [...new Set(named.length >= 3 ? named : [...named, ...cluster.entities])].slice(0, 12);
+
     events.push({
-      key: cluster.key,
+      key: existing?.event_key ?? cluster.key,
       title: (analysis.headline || cluster.title).slice(0, 300),
       factSummary: (analysis.fact_summary || "").slice(0, 1200),
-      aiAnalysis: (analysis.ai_analysis || "").slice(0, 1600),
-      severity: asSeverity(analysis.severity),
+      // The product never asserts causation between an event and a price move.
+      aiAnalysis: softenCausality(analysis.ai_analysis || "").slice(0, 1600),
+      severity,
+      type: cluster.type,
+      entities,
       relevance,
-      confidence: clamp01(analysis.confidence, 0.5),
+      factConfidence,
+      interpretationConfidence,
+      importance,
+      novelty,
+      sourceTier: tier,
+      independentSources: independent,
+      affectedAssets: asAffectedAssets(analysis.affected_assets),
       categories: (Array.isArray(analysis.categories) ? analysis.categories : [])
         .filter((c): c is string => typeof c === "string" && c.length > 0)
         .slice(0, 3),
       sources: cluster.sources,
       publishedAt: cluster.published_at,
-      correlation: correlateEvent(cluster.published_at, input.points),
+      correlation,
+      updateOf: existing,
+      materialUpdate: existing
+        ? isMaterialUpdate({
+            newIndependentSources: independentSourceCount(newSources),
+            previousImportance: existing.importance_score,
+            importance,
+            previousSeverity: asSeverity(existing.severity),
+            severity,
+          })
+        : false,
+      updateNote: typeof analysis.update_note === "string" ? softenCausality(analysis.update_note).slice(0, 400) : "",
     });
   }
 
-  events.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
+  events.sort((a, b) => b.importance - a.importance);
   return { ...base, events };
 }
