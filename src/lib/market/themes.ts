@@ -41,7 +41,9 @@ export interface Theme {
 }
 
 function normalizedEntities(event: ThemeInputEvent): string[] {
-  const list = (event.entities ?? []).map((e) => e.toLowerCase().trim()).filter((e) => e.length > 2);
+  const list = (event.entities ?? [])
+    .map((e) => e.toLowerCase().trim())
+    .filter((e) => e.length > 2);
   if (list.length > 0) return [...new Set(list)];
   return [
     ...new Set(
@@ -71,7 +73,11 @@ function readMoves(value: unknown): ThemeMove[] {
     const symbol = typeof raw["symbol"] === "string" ? raw["symbol"] : "";
     const changePct = typeof raw["changePct"] === "number" ? raw["changePct"] : null;
     if (!symbol || changePct === null) continue;
-    out.push({ symbol, changePct, window: typeof raw["window"] === "string" ? raw["window"] : null });
+    out.push({
+      symbol,
+      changePct,
+      window: typeof raw["window"] === "string" ? raw["window"] : null,
+    });
   }
   return out;
 }
@@ -95,9 +101,14 @@ function themeLabel(events: ThemeInputEvent[], category: EventCategory): string 
       counts.set(key, { display: prior?.display ?? raw.trim(), n: (prior?.n ?? 0) + 1 });
     }
   }
-  const top = [...counts.values()].sort((a, b) => b.n - a.n).slice(0, 2).map((c) => c.display);
+  const top = [...counts.values()]
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 2)
+    .map((c) => c.display);
   if (top.length > 0) return top.join(" · ");
-  const strongest = [...events].sort((a, b) => (b.importance_score ?? 0) - (a.importance_score ?? 0))[0];
+  const strongest = [...events].sort(
+    (a, b) => (b.importance_score ?? 0) - (a.importance_score ?? 0),
+  )[0];
   return strongest?.title.slice(0, 70) ?? category.replace(/_/g, " ");
 }
 
@@ -125,7 +136,10 @@ function aggregateMoves(events: ThemeInputEvent[]): ThemeMove[] {
  * Group events into themes. Only groups with more than one event, or a single
  * genuinely important one, are worth surfacing as "what's moving markets".
  */
-export function buildThemes(events: ThemeInputEvent[], options: { minEvents?: number; max?: number } = {}): Theme[] {
+export function buildThemes(
+  events: ThemeInputEvent[],
+  options: { minEvents?: number; max?: number } = {},
+): Theme[] {
   const groups: ThemeInputEvent[][] = [];
   const ordered = [...events].sort((a, b) => (b.importance_score ?? 0) - (a.importance_score ?? 0));
 
@@ -140,11 +154,12 @@ export function buildThemes(events: ThemeInputEvent[], options: { minEvents?: nu
     .filter((group) => group.length >= minEvents || (group[0]?.importance_score ?? 0) >= 70)
     .map((group) => {
       const category = normalizeCategory(group[0]?.event_type);
-      const latest = group
-        .map((e) => e.last_updated_at ?? e.published_at)
-        .filter((t): t is string => Boolean(t))
-        .sort()
-        .at(-1) ?? null;
+      const latest =
+        group
+          .map((e) => e.last_updated_at ?? e.published_at)
+          .filter((t): t is string => Boolean(t))
+          .sort()
+          .at(-1) ?? null;
       const entities = [
         ...new Set(group.flatMap((e) => (e.entities ?? []).map((x) => x.trim())).filter(Boolean)),
       ].slice(0, 6);

@@ -3,9 +3,24 @@
  * Everything here is pure or offline — no network calls in the suite.
  */
 import { describe, expect, it } from "vitest";
-import { classifyEvent, eventCategories, normalizeCategory, relatedCategories } from "@/lib/market/taxonomy";
-import { bestQuality, countIndependent, identifyAll, identifySource } from "@/lib/market/syndication";
-import { resolveFeed, describeReactions, significantReactions, peakMovePct } from "@/lib/market/reaction.server";
+import {
+  classifyEvent,
+  eventCategories,
+  normalizeCategory,
+  relatedCategories,
+} from "@/lib/market/taxonomy";
+import {
+  bestQuality,
+  countIndependent,
+  identifyAll,
+  identifySource,
+} from "@/lib/market/syndication";
+import {
+  resolveFeed,
+  describeReactions,
+  significantReactions,
+  peakMovePct,
+} from "@/lib/market/reaction.server";
 import { buildThemes } from "@/lib/market/themes";
 
 describe("taxonomy", () => {
@@ -108,9 +123,30 @@ describe("themes", () => {
 
   it("groups related events into one theme and keeps unrelated ones apart", () => {
     const themes = buildThemes([
-      { id: "1", title: "Israel strikes Hezbollah positions", entities: ["Israel", "Hezbollah"], event_type: "military_conflict", importance_score: 80, ...base },
-      { id: "2", title: "Israeli forces escalate against Hezbollah", entities: ["Israel", "Hezbollah"], event_type: "geopolitics", importance_score: 70, ...base },
-      { id: "3", title: "Fed holds rates", entities: ["Fed", "FOMC"], event_type: "monetary_policy", importance_score: 75, ...base },
+      {
+        id: "1",
+        title: "Israel strikes Hezbollah positions",
+        entities: ["Israel", "Hezbollah"],
+        event_type: "military_conflict",
+        importance_score: 80,
+        ...base,
+      },
+      {
+        id: "2",
+        title: "Israeli forces escalate against Hezbollah",
+        entities: ["Israel", "Hezbollah"],
+        event_type: "geopolitics",
+        importance_score: 70,
+        ...base,
+      },
+      {
+        id: "3",
+        title: "Fed holds rates",
+        entities: ["Fed", "FOMC"],
+        event_type: "monetary_policy",
+        importance_score: 75,
+        ...base,
+      },
     ]);
     const conflict = themes.find((t) => t.eventCount === 2);
     expect(conflict?.eventIds.sort()).toEqual(["1", "2"]);
@@ -124,8 +160,24 @@ describe("themes", () => {
     ];
     const [theme] = buildThemes(
       [
-        { id: "1", title: "Gulf tensions rise", entities: ["Iran", "Hormuz"], event_type: "military_conflict", importance_score: 90, market_reactions: reactions, ...base },
-        { id: "2", title: "Iran threatens Hormuz shipping", entities: ["Iran", "Hormuz"], event_type: "military_conflict", importance_score: 60, market_reactions: reactions, ...base },
+        {
+          id: "1",
+          title: "Gulf tensions rise",
+          entities: ["Iran", "Hormuz"],
+          event_type: "military_conflict",
+          importance_score: 90,
+          market_reactions: reactions,
+          ...base,
+        },
+        {
+          id: "2",
+          title: "Iran threatens Hormuz shipping",
+          entities: ["Iran", "Hormuz"],
+          event_type: "military_conflict",
+          importance_score: 60,
+          market_reactions: reactions,
+          ...base,
+        },
       ],
       { minEvents: 2 },
     );
@@ -134,8 +186,22 @@ describe("themes", () => {
 
   it("drops one-off noise but keeps a single critical event", () => {
     const themes = buildThemes([
-      { id: "1", title: "Minor commentary", entities: ["Analyst"], event_type: "other", importance_score: 20, ...base },
-      { id: "2", title: "Emergency rate cut announced", entities: ["Fed"], event_type: "monetary_policy", importance_score: 92, ...base },
+      {
+        id: "1",
+        title: "Minor commentary",
+        entities: ["Analyst"],
+        event_type: "other",
+        importance_score: 20,
+        ...base,
+      },
+      {
+        id: "2",
+        title: "Emergency rate cut announced",
+        entities: ["Fed"],
+        event_type: "monetary_policy",
+        importance_score: 92,
+        ...base,
+      },
     ]);
     expect(themes).toHaveLength(1);
     expect(themes[0]?.eventIds).toEqual(["2"]);
