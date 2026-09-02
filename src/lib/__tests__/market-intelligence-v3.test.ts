@@ -55,18 +55,18 @@ describe("syndication", () => {
 
   it("counts syndicated copies of one wire report as a single voice", () => {
     const identities = identifyAll([
-      { title: "Reuters: rate cut", url: "https://reuters.com/a", publisher: "Reuters", published_at: null },
-      { title: "(Reuters) rate cut", url: "https://finance.yahoo.com/b", publisher: "Yahoo", published_at: null },
-      { title: "(Reuters) rate cut", url: "https://msn.com/c", publisher: "MSN", published_at: null },
+      { title: "Reuters: rate cut", url: "https://reuters.com/a", publisher: "Reuters" },
+      { title: "(Reuters) rate cut", url: "https://finance.yahoo.com/b", publisher: "Yahoo" },
+      { title: "(Reuters) rate cut", url: "https://msn.com/c", publisher: "MSN" },
     ]);
     expect(countIndependent(identities)).toBe(1);
   });
 
   it("counts genuinely different newsrooms separately", () => {
     const identities = identifyAll([
-      { title: "Fed cuts", url: "https://reuters.com/a", publisher: "Reuters", published_at: null },
-      { title: "Fed cuts", url: "https://ft.com/b", publisher: "Financial Times", published_at: null },
-      { title: "Fed cuts", url: "https://randomblog.example/c", publisher: "Blog", published_at: null },
+      { title: "Fed cuts", url: "https://reuters.com/a", publisher: "Reuters" },
+      { title: "Fed cuts", url: "https://ft.com/b", publisher: "Financial Times" },
+      { title: "Fed cuts", url: "https://randomblog.example/c", publisher: "Blog" },
     ]);
     expect(countIndependent(identities)).toBe(3);
     expect(bestQuality(identities)).toBe("high");
