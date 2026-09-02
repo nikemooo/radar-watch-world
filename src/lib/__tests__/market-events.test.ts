@@ -15,6 +15,7 @@ import {
   matchExistingEvent,
   noveltyScore,
   softenCausality,
+  sameStory,
   sourceTier,
 } from "../market/events";
 
@@ -236,5 +237,19 @@ describe("causality guard", () => {
     const soft = softenCausality(text);
     expect(soft).not.toMatch(/because of|caused/i);
     expect(soft).toMatch(/amid|coincided with/i);
+  });
+});
+
+describe("story grouping", () => {
+  it("recognises separate happenings that belong to one running story", () => {
+    const a = { title: "Oil surges above $95 on renewed US-Iran fighting", entities: ["Iran", "USA", "Brent"] };
+    const b = { title: "Brent rises over 2% after tit-for-tat strikes by U.S. and Iran", entities: ["Iran", "USA", "Brent"] };
+    expect(sameStory(a, b)).toBe(true);
+  });
+
+  it("keeps unrelated stories separate", () => {
+    const a = { title: "Oil surges on US-Iran fighting", entities: ["Iran", "USA", "Brent"] };
+    const b = { title: "US crude oil stockpiles see modest weekly build", entities: ["EIA", "inventories"] };
+    expect(sameStory(a, b)).toBe(false);
   });
 });

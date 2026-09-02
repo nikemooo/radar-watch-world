@@ -651,3 +651,21 @@ export function softenCausality(text: string): string {
   }
   return out;
 }
+
+/**
+ * Two events belong to the SAME running story (an escalation, a policy cycle)
+ * even when they are separate happenings. The timeline keeps them apart; the
+ * alert layer uses this to avoid eight notifications about one situation.
+ */
+export function sameStory(
+  a: { title: string; entities?: string[]; type?: EventType },
+  b: { title: string; entities?: string[]; type?: EventType },
+): boolean {
+  const entsA = (a.entities ?? strongTokens(a.title)).map((e) => e.toLowerCase());
+  const entsB = (b.entities ?? strongTokens(b.title)).map((e) => e.toLowerCase());
+  if (overlap(entsA, entsB) >= 0.5) return true;
+  return eventSimilarity(a, b) >= 0.35;
+}
+
+/** Hard ceiling on event alerts per sweep — intelligence, not a news ticker. */
+export const MAX_EVENT_ALERTS_PER_RUN = 3;
