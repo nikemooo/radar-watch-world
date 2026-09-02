@@ -417,11 +417,13 @@ export type Database = {
           fact_summary: string
           id: string
           importance_score: number
+          independent_sources: number
           instrument: string | null
           interpretation_confidence: number
           last_alerted_at: string | null
           last_updated_at: string
           market_change_pct: number | null
+          market_reactions: Json
           market_value: number | null
           metric: string | null
           novelty_score: number
@@ -431,6 +433,7 @@ export type Database = {
           run_id: string | null
           severity: string
           source_count: number
+          source_identities: Json
           source_quality: string
           sources: Json
           status: string
@@ -438,6 +441,7 @@ export type Database = {
           title: string
           updated_at: string
           user_id: string
+          what_to_watch: string | null
         }
         Insert: {
           affected_assets?: Json
@@ -456,11 +460,13 @@ export type Database = {
           fact_summary?: string
           id?: string
           importance_score?: number
+          independent_sources?: number
           instrument?: string | null
           interpretation_confidence?: number
           last_alerted_at?: string | null
           last_updated_at?: string
           market_change_pct?: number | null
+          market_reactions?: Json
           market_value?: number | null
           metric?: string | null
           novelty_score?: number
@@ -470,6 +476,7 @@ export type Database = {
           run_id?: string | null
           severity?: string
           source_count?: number
+          source_identities?: Json
           source_quality?: string
           sources?: Json
           status?: string
@@ -477,6 +484,7 @@ export type Database = {
           title: string
           updated_at?: string
           user_id: string
+          what_to_watch?: string | null
         }
         Update: {
           affected_assets?: Json
@@ -495,11 +503,13 @@ export type Database = {
           fact_summary?: string
           id?: string
           importance_score?: number
+          independent_sources?: number
           instrument?: string | null
           interpretation_confidence?: number
           last_alerted_at?: string | null
           last_updated_at?: string
           market_change_pct?: number | null
+          market_reactions?: Json
           market_value?: number | null
           metric?: string | null
           novelty_score?: number
@@ -509,6 +519,7 @@ export type Database = {
           run_id?: string | null
           severity?: string
           source_count?: number
+          source_identities?: Json
           source_quality?: string
           sources?: Json
           status?: string
@@ -516,6 +527,7 @@ export type Database = {
           title?: string
           updated_at?: string
           user_id?: string
+          what_to_watch?: string | null
         }
         Relationships: [
           {

@@ -28,6 +28,7 @@ export const createRadar = createServerFn({ method: "POST" })
       recency_days: number;
       config: unknown;
       mode?: string;
+      language?: string;
       start?: string;
       scheduled_start_at?: string | null;
     }) => {
@@ -56,6 +57,12 @@ export const createRadar = createServerFn({ method: "POST" })
     // on is decided here, and a market radar without a valid instrument is
     // rejected instead of dying on its first sweep.
     const parsedConfig = asConfig(data.config);
+    // The UI language the radar was created in travels with it: background
+    // sweeps have no browser to ask, so AI interpretations would otherwise
+    // silently fall back to English.
+    if (typeof data.language === "string" && /^[a-z]{2}(-[A-Za-z]{2})?$/.test(data.language)) {
+      parsedConfig.language = data.language;
+    }
     if (asRadarKind(parsedConfig.kind) === "market_monitoring") {
       const { asMarketSpec } = await import("./market/types");
       const spec = asMarketSpec(parsedConfig.market);

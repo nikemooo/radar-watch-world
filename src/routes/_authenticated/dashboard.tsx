@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RadarMark } from "@/components/radar-mark";
 import { Textarea } from "@/components/ui/textarea";
+import { buildThemes } from "@/lib/market/themes";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -87,9 +88,11 @@ function Dashboard() {
       ]);
       const { data: events } = await supabase
         .from("market_events")
-        .select("id, title, severity, importance_score, event_type, source_count, published_at, detected_at, radar_id")
+        .select(
+          "id, title, severity, importance_score, event_type, source_count, published_at, detected_at, radar_id, entities, market_reactions, last_updated_at",
+        )
         .order("last_updated_at", { ascending: false })
-        .limit(6);
+        .limit(40);
       return {
         radars: radars.data ?? [],
         alerts: (alerts.data ?? []) as AlertRow[],
@@ -99,6 +102,9 @@ function Dashboard() {
       };
     },
   });
+
+  // Individual headlines are noise; themes are what is actually moving markets.
+  const themes = buildThemes(data?.events ?? []);
 
   const radarNames = new Map((data?.radars ?? []).map((r) => [r.id, r.name]));
   const activeRadars = (data?.radars ?? []).filter((r) => r.status === "active").length;
@@ -188,11 +194,56 @@ function Dashboard() {
           </div>
 
 
+          {themes.length > 0 && (
+            <section>
+              <h2 className="text-lg font-medium">{t("dashboard.themes.title")}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{t("dashboard.themes.subtitle")}</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {themes.map((theme) => (
+                  <article key={theme.id} className="panel p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="mono-label">{theme.category.replace(/_/g, " ")}</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {t("dashboard.themes.count", { n: String(theme.eventCount) })}
+                      </span>
+                    </div>
+                    <h3 className="mt-2 truncate text-sm font-medium">{theme.label}</h3>
+                    {theme.moves.length > 0 ? (
+                      <ul className="mt-3 flex flex-wrap gap-2">
+                        {theme.moves.map((move) => (
+                          <li
+                            key={move.symbol}
+                            className={`rounded-md border border-border px-2 py-1 font-mono text-xs ${
+                              move.changePct >= 0 ? "text-interesting" : "text-critical"
+                            }`}
+                          >
+                            {move.symbol} {move.changePct >= 0 ? "+" : ""}
+                            {move.changePct.toFixed(2)}%
+                            {move.window ? ` · ${move.window}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 text-xs text-muted-foreground">{t("dashboard.themes.noData")}</p>
+                    )}
+                    <Link
+                      to="/events/$eventId"
+                      params={{ eventId: theme.eventIds[0]! }}
+                      className="mono-label mt-3 inline-block text-primary hover:underline"
+                    >
+                      {t("dashboard.themes.open")}
+                    </Link>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <h2 className="text-lg font-medium">{t("dashboard.events.title")}</h2>
             {data?.events.length ? (
               <ul className="mt-4 space-y-2">
-                {data.events.map((event) => (
+                {data.events.slice(0, 6).map((event) => (
                   <li key={event.id}>
                     <Link
                       to="/events/$eventId"

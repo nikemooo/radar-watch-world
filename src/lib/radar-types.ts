@@ -71,6 +71,8 @@ export interface RadarConfig {
   hard_constraints: HardConstraint[];
   /** Market Monitoring only: instrument + alert rules. Null for product radars. */
   market: MarketMonitorSpec | null;
+  /** UI language the radar was created in — AI interpretations follow it. */
+  language?: string;
 }
 
 export const emptyConfig: RadarConfig = {
