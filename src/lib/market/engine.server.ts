@@ -32,6 +32,7 @@ import { collectMarketQuotes, consensusFromQuotes, refineInstrumentSources } fro
 import { computeMarketChanges, type MarketPoint } from "./history";
 import { describeTrigger, evaluateMarketRules, type MarketRuleStateMap } from "./rules";
 import { discoverImpactEvents, type KnownEvent } from "./events.server";
+import { describeReactions } from "./reaction.server";
 import {
   alertDecision,
   asSeverity,
@@ -302,6 +303,7 @@ export async function runMarketCycle(
           sinceIso,
           known,
           points,
+          language: config.language ?? "en",
         }),
       );
       eventCost = discovery.costEstimate;
@@ -342,8 +344,11 @@ export async function runMarketCycle(
                 ? `${spec.instrument.symbol} ${
                     (event.correlation.changePct ?? 0) >= 0 ? "+" : ""
                   }${(event.correlation.changePct ?? 0).toFixed(2)}% observed around this event (coincidence, not causation)`
-                : `New ${event.severity} event detected for ${spec.instrument.symbol}`,
-            why_it_matters: event.aiAnalysis,
+                : describeReactions(event.reactions) ??
+                  `New ${event.severity} event detected for ${spec.instrument.symbol}`,
+            why_it_matters: event.whatToWatch
+              ? `${event.aiAnalysis}\n\nWhat to watch: ${event.whatToWatch}`
+              : event.aiAnalysis,
             potential_impact: event.affectedAssets
               .map((a) => `${a.symbol} (${a.relation})`)
               .join(", ") || null,
@@ -415,6 +420,10 @@ export async function runMarketCycle(
               market_value: consensus.value,
               market_change_pct: event.correlation.changePct,
               correlation: event.correlation as never,
+              what_to_watch: event.whatToWatch || null,
+              market_reactions: event.reactions as never,
+              source_identities: event.sourceIdentities as never,
+              independent_sources: event.independentSources,
               last_updated_at: nowIso,
               status: "updated",
               ...(alerted
@@ -455,6 +464,10 @@ export async function runMarketCycle(
             market_value: consensus.value,
             market_change_pct: event.correlation.changePct,
             correlation: event.correlation as never,
+            what_to_watch: event.whatToWatch || null,
+            market_reactions: event.reactions as never,
+            source_identities: event.sourceIdentities as never,
+            independent_sources: event.independentSources,
             status: "active",
             last_updated_at: nowIso,
             alerted,

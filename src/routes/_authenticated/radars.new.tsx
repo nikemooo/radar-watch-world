@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { createRadar, interpretRadarRequest, runRadarNow } from "@/lib/radar.functions";
+import { takePendingRequest } from "@/lib/pending-request";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,7 @@ import {
 import { OPERATOR_LABEL, type MarketMonitorSpec } from "@/lib/market/types";
 import { monitoringWindowLabel, type MonitoringWindow } from "@/lib/monitoring/temporal";
 import { track } from "@/lib/analytics";
-import { useFormatDateTime, useT, type TranslationKey } from "@/lib/i18n";
+import { useFormatDateTime, useI18n, useT, type TranslationKey } from "@/lib/i18n";
 
 
 export const Route = createFileRoute("/_authenticated/radars/new")({
@@ -49,11 +50,11 @@ export const Route = createFileRoute("/_authenticated/radars/new")({
 });
 
 const suggestions = [
-  "Find me a black BMW M340i under 450,000 SEK in Sweden",
-  "Tell me when anything material happens to Tesla stock",
-  "Watch for remote senior React roles paying over $150k",
-  "Alert me if flights from London to Tokyo drop below £600 in March",
-  "Alert me if USD/EUR drops 5% from today's level",
+  "Watch gold and tell me what moves it",
+  "Monitor oil and geopolitical risk in the Middle East",
+  "Tell me when anything material happens to NVIDIA",
+  "Alert me if Bitcoin drops more than 8% in 24 hours",
+  "Track USD/SEK and the Riksbank's rate decisions",
   "Track the gold price and alert me under $2,000 per ounce",
 ];
 
@@ -61,11 +62,13 @@ function NewRadar() {
   const navigate = useNavigate();
   const { q } = Route.useSearch();
   const t = useT();
+  const { locale } = useI18n();
   const formatDateTime = useFormatDateTime();
   const interpret = useServerFn(interpretRadarRequest);
   const createRadarFn = useServerFn(createRadar);
   const startSweep = useServerFn(runRadarNow);
-  const [request, setRequest] = useState(q ?? "");
+  // A sentence typed on the landing page survives the sign-in round-trip.
+  const [request, setRequest] = useState(() => q ?? takePendingRequest());
   const [name, setName] = useState("");
   const [category, setCategory] = useState("general");
   const [frequency, setFrequency] = useState<RadarFrequency>("smart");
@@ -110,6 +113,7 @@ function NewRadar() {
           monitoring_window: monitoringWindow,
           recency_days: recencyDays,
           mode,
+          language: locale,
           start,
           scheduled_start_at: start === "scheduled" && scheduledAt ? new Date(scheduledAt).toISOString() : null,
           config,

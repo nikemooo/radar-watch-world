@@ -1,21 +1,26 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, Bell, Brain, Radar as RadarIcon, Search, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { ArrowRight, Bell, Brain, LineChart, Radar as RadarIcon, Sparkles } from "lucide-react";
 import { RadarMark, Wordmark } from "@/components/radar-mark";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { stashPendingRequest } from "@/lib/pending-request";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Radar — Personal Intelligence That Watches For You" },
+      { title: "Radar — AI Market Intelligence That Watches The World" },
       {
         name: "description",
         content:
-          "Tell Radar what you care about. It monitors public sources continuously, detects meaningful change, and tells you only what matters.",
+          "Tell Radar what you care about. It watches world events, connects them to markets, and explains what changed, why it matters and what to watch next.",
       },
-      { property: "og:title", content: "Radar — Personal Intelligence That Watches For You" },
+      { property: "og:title", content: "Radar — AI Market Intelligence That Watches The World" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       {
         property: "og:description",
-        content: "Continuous AI monitoring for anything you care about — cars, markets, jobs, prices, people.",
+        content: "Continuous AI monitoring of markets, events and impact — gold, oil, crypto, equities, currencies.",
       },
     ],
   }),
@@ -25,35 +30,43 @@ export const Route = createFileRoute("/")({
 const capabilities = [
   {
     icon: Brain,
-    title: "It understands intent",
-    body: "Describe what you want in plain language. Radar interprets goal, constraints and the events worth watching — no forms, no categories.",
+    title: "It understands what you care about",
+    body: "Describe it in plain language. Radar builds the monitoring profile — the instrument, the themes and the events that historically move it.",
   },
   {
-    icon: Search,
-    title: "It researches continuously",
-    body: "Radar runs live web research against real sources on a cadence it chooses, then remembers everything it has already seen.",
+    icon: RadarIcon,
+    title: "It watches the world, not a feed",
+    body: "Live research across real sources, clustered per story. Twenty syndicated copies of one wire report become one event, not twenty alerts.",
+  },
+  {
+    icon: LineChart,
+    title: "It measures the market reaction",
+    body: "Every event is checked against real price data around its timestamp. If no data covers it, Radar says so instead of inventing a number.",
   },
   {
     icon: Sparkles,
-    title: "It detects real change",
-    body: "New listings, price drops, filings, announcements. Radar diffs the world against its own memory instead of re-reading it.",
+    title: "It separates fact from interpretation",
+    body: "What the sources actually state is kept apart from the AI's reading of it — with confidence on each, and what to watch next.",
   },
   {
     icon: Bell,
-    title: "It filters ruthlessly",
-    body: "Every finding is scored for relevance to you. Only what actually matters becomes an alert — with reasoning and sources attached.",
+    title: "It alerts sparingly",
+    body: "Ranked by importance, capped per sweep, deduplicated across stories. Silence is a feature when nothing meaningful happened.",
   },
 ];
 
 const examples = [
-  "Find me a black BMW M340i under 450,000 SEK in Sweden",
-  "Tell me when anything material happens to Tesla stock",
-  "Watch for remote senior React roles paying over $150k",
-  "Alert me if flights to Tokyo drop below $600 in March",
-  "Monitor competitor pricing changes in project management SaaS",
+  "Watch gold and tell me what moves it",
+  "Monitor oil and geopolitical risk in the Middle East",
+  "Tell me when anything material happens to NVIDIA",
+  "Alert me if Bitcoin drops more than 8% in 24 hours",
+  "Track USD/SEK and the Riksbank's rate decisions",
 ];
 
 function Landing() {
+  const navigate = useNavigate();
+  const [request, setRequest] = useState("");
+
   return (
     <div className="min-h-screen">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5">
@@ -74,7 +87,7 @@ function Landing() {
           <div>
             <span className="mono-label inline-flex items-center gap-2 rounded-full border border-border px-3 py-1">
               <span className="size-1.5 animate-pulse rounded-full bg-interesting" />
-              Universal personal intelligence
+              AI market & world event intelligence
             </span>
             <h1 className="mt-6 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
               You describe what matters.
@@ -82,20 +95,50 @@ function Landing() {
               <span className="text-muted-foreground">Radar watches the world for it.</span>
             </h1>
             <p className="mt-6 max-w-xl text-lg text-muted-foreground">
-              Radar is a monitoring intelligence that never sleeps. It researches live sources, remembers
-              what it has seen, detects the changes that count, and tells you why they matter — for
-              absolutely anything you can describe.
+              Radar continuously watches the world, detects the events that matter, connects them to the
+              markets you follow, and explains what changed, why it matters and what to watch next —
+              with facts and AI interpretation kept strictly apart.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button asChild size="lg" className="gap-2">
-                <Link to="/auth">
+            <form
+              className="panel mt-8 p-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const value = request.trim();
+                if (value.length < 8) return;
+                stashPendingRequest(value);
+                navigate({ to: "/radars/new", search: { q: value } });
+              }}
+            >
+              <label htmlFor="monitor-request" className="mono-label px-1">
+                What do you want to monitor?
+              </label>
+              <Textarea
+                id="monitor-request"
+                value={request}
+                onChange={(e) => setRequest(e.target.value)}
+                rows={2}
+                placeholder="e.g. Watch gold and tell me what moves it"
+                className="mt-2 resize-none border-0 bg-transparent text-base shadow-none focus-visible:ring-0"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-1">
+                <span className="mono-label">One sentence is enough</span>
+                <Button type="submit" size="lg" className="gap-2" disabled={request.trim().length < 8}>
                   Start monitoring
                   <ArrowRight className="size-4" />
-                </Link>
-              </Button>
-              <Button asChild size="lg" variant="outline">
-                <Link to="/pricing">See plans</Link>
-              </Button>
+                </Button>
+              </div>
+            </form>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {examples.slice(0, 3).map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => setRequest(example)}
+                  className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition hover:border-primary hover:text-foreground"
+                >
+                  {example}
+                </button>
+              ))}
             </div>
             <p className="mono-label mt-4">Free plan · no card required</p>
           </div>
@@ -105,7 +148,7 @@ function Landing() {
               <RadarMark className="size-10" />
               <div>
                 <p className="text-sm font-medium">Live radar</p>
-                <p className="mono-label">Sweeping 6 sources</p>
+                <p className="mono-label">Events · impact · what to watch</p>
               </div>
             </div>
             <ul className="mt-6 space-y-3">

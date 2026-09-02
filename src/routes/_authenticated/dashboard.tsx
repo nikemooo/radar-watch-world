@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RadarMark } from "@/components/radar-mark";
 import { Textarea } from "@/components/ui/textarea";
+import { buildThemes } from "@/lib/market/themes";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -18,7 +19,10 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
       { title: "Dashboard — Radar" },
       { name: "description", content: "Your live monitoring overview and latest intelligence." },
       { property: "og:title", content: "Dashboard — Radar" },
-      { property: "og:description", content: "Your live monitoring overview and latest intelligence." },
+      {
+        property: "og:description",
+        content: "Your live monitoring overview and latest intelligence.",
+      },
     ],
   }),
   component: Dashboard,
@@ -80,16 +84,25 @@ function Dashboard() {
     queryFn: async () => {
       const since = new Date(Date.now() - 7 * 864e5).toISOString();
       const [radars, alerts, weekAlerts, runs] = await Promise.all([
-        supabase.from("radars").select("id, name, status, last_run_at, category").order("created_at", { ascending: false }),
+        supabase
+          .from("radars")
+          .select("id, name, status, last_run_at, category")
+          .order("created_at", { ascending: false }),
         supabase.from("alerts").select("*").order("created_at", { ascending: false }).limit(8),
         supabase.from("alerts").select("id, importance").gte("created_at", since),
-        supabase.from("monitor_runs").select("id, status, items_found, started_at").order("started_at", { ascending: false }).limit(1),
+        supabase
+          .from("monitor_runs")
+          .select("id, status, items_found, started_at")
+          .order("started_at", { ascending: false })
+          .limit(1),
       ]);
       const { data: events } = await supabase
         .from("market_events")
-        .select("id, title, severity, importance_score, event_type, source_count, published_at, detected_at, radar_id")
+        .select(
+          "id, title, severity, importance_score, event_type, source_count, published_at, detected_at, radar_id, entities, market_reactions, last_updated_at",
+        )
         .order("last_updated_at", { ascending: false })
-        .limit(6);
+        .limit(40);
       return {
         radars: radars.data ?? [],
         alerts: (alerts.data ?? []) as AlertRow[],
@@ -99,6 +112,9 @@ function Dashboard() {
       };
     },
   });
+
+  // Individual headlines are noise; themes are what is actually moving markets.
+  const themes = buildThemes(data?.events ?? []);
 
   const radarNames = new Map((data?.radars ?? []).map((r) => [r.id, r.name]));
   const activeRadars = (data?.radars ?? []).filter((r) => r.status === "active").length;
@@ -142,7 +158,9 @@ function Dashboard() {
       {empty ? (
         <div className="panel px-5 py-10 text-center sm:px-8 sm:py-14">
           <RadarMark className="mx-auto size-14" />
-          <h2 className="mt-6 text-xl font-semibold tracking-tight">{t("dashboard.empty.title")}</h2>
+          <h2 className="mt-6 text-xl font-semibold tracking-tight">
+            {t("dashboard.empty.title")}
+          </h2>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
             {t("dashboard.empty.body")}
           </p>
@@ -161,9 +179,7 @@ function Dashboard() {
               </li>
             ))}
           </ul>
-          <p className="mt-5 text-xs text-muted-foreground">
-            {t("dashboard.empty.footnote")}
-          </p>
+          <p className="mt-5 text-xs text-muted-foreground">{t("dashboard.empty.footnote")}</p>
           <Button asChild className="mt-7 h-12 w-full max-w-xs text-base">
             <Link to="/radars/new">{t("dashboard.empty.cta")}</Link>
           </Button>
@@ -171,7 +187,12 @@ function Dashboard() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Stat icon={RadarIcon} label={t("dashboard.stat.activeRadars")} value={String(activeRadars)} to="/radars" />
+            <Stat
+              icon={RadarIcon}
+              label={t("dashboard.stat.activeRadars")}
+              value={String(activeRadars)}
+              to="/radars"
+            />
             <Stat
               icon={Bell}
               label={t("dashboard.stat.alertsThisWeek")}
@@ -187,19 +208,66 @@ function Dashboard() {
             />
           </div>
 
+          {themes.length > 0 && (
+            <section>
+              <h2 className="text-lg font-medium">{t("dashboard.themes.title")}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{t("dashboard.themes.subtitle")}</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {themes.map((theme) => (
+                  <article key={theme.id} className="panel p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="mono-label">{theme.category.replace(/_/g, " ")}</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {t("dashboard.themes.count", { n: String(theme.eventCount) })}
+                      </span>
+                    </div>
+                    <h3 className="mt-2 truncate text-sm font-medium">{theme.label}</h3>
+                    {theme.moves.length > 0 ? (
+                      <ul className="mt-3 flex flex-wrap gap-2">
+                        {theme.moves.map((move) => (
+                          <li
+                            key={move.symbol}
+                            className={`rounded-md border border-border px-2 py-1 font-mono text-xs ${
+                              move.changePct >= 0 ? "text-interesting" : "text-critical"
+                            }`}
+                          >
+                            {move.symbol} {move.changePct >= 0 ? "+" : ""}
+                            {move.changePct.toFixed(2)}%{move.window ? ` · ${move.window}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        {t("dashboard.themes.noData")}
+                      </p>
+                    )}
+                    <Link
+                      to="/events/$eventId"
+                      params={{ eventId: theme.eventIds[0]! }}
+                      className="mono-label mt-3 inline-block text-primary hover:underline"
+                    >
+                      {t("dashboard.themes.open")}
+                    </Link>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section>
             <h2 className="text-lg font-medium">{t("dashboard.events.title")}</h2>
             {data?.events.length ? (
               <ul className="mt-4 space-y-2">
-                {data.events.map((event) => (
+                {data.events.slice(0, 6).map((event) => (
                   <li key={event.id}>
                     <Link
                       to="/events/$eventId"
                       params={{ eventId: event.id }}
                       className="panel flex flex-wrap items-center gap-3 p-4 transition-colors hover:border-primary/50"
                     >
-                      <span className="mono-label">{(event.event_type ?? "other").replace(/_/g, " ")}</span>
+                      <span className="mono-label">
+                        {(event.event_type ?? "other").replace(/_/g, " ")}
+                      </span>
                       <span className="min-w-0 flex-1 truncate text-sm">{event.title}</span>
                       <span className="mono-label">{event.source_count} src</span>
                       <span className="font-mono text-xs text-muted-foreground">
@@ -210,7 +278,9 @@ function Dashboard() {
                 ))}
               </ul>
             ) : (
-              <p className="panel mt-4 p-5 text-sm text-muted-foreground">{t("dashboard.events.empty")}</p>
+              <p className="panel mt-4 p-5 text-sm text-muted-foreground">
+                {t("dashboard.events.empty")}
+              </p>
             )}
           </section>
 
@@ -270,5 +340,4 @@ function Stat({
       <p className="mt-3 font-mono text-3xl">{value}</p>
     </Link>
   );
-
 }

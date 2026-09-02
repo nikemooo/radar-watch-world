@@ -40,6 +40,8 @@ import {
   type EventType,
   type SourceTier,
 } from "./events";
+import { bestQuality, countIndependent, identifyAll, type SourceIdentity } from "./syndication";
+import { measureReactions, peakMovePct, type MarketReaction } from "./reaction.server";
 import type { MarketMonitorSpec } from "./types";
 
 /** A stored event, as far as the discovery layer needs to know it. */
@@ -88,6 +90,12 @@ export interface ImpactEvent {
   materialUpdate: boolean;
   /** One-line description of the development, appended to the event timeline. */
   updateNote: string;
+  /** Concrete, checkable next signals — the "what to watch" of the product. */
+  whatToWatch: string;
+  /** Publisher identity per source: original vs aggregator, wire, quality. */
+  sourceIdentities: SourceIdentity[];
+  /** Measured moves of the affected assets around the event. Never invented. */
+  reactions: MarketReaction[];
 }
 
 export interface EventDiscovery {
@@ -108,6 +116,31 @@ export interface EventDiscovery {
 const MAX_QUERIES = 4;
 const RESULTS_PER_QUERY = 8;
 const MAX_CLUSTERS_ANALYZED = 12;
+/** Reaction measurement costs network calls — only the events that matter. */
+const MAX_EVENTS_MEASURED = 6;
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  en: "English",
+  sv: "Swedish",
+  de: "German",
+  fr: "French",
+  es: "Spanish",
+  it: "Italian",
+  nl: "Dutch",
+  pt: "Portuguese",
+  pl: "Polish",
+  da: "Danish",
+  nb: "Norwegian",
+  no: "Norwegian",
+  fi: "Finnish",
+  ar: "Arabic",
+};
+
+/** UI language tag -> a name the model reliably understands. */
+export function languageName(tag: string | null | undefined): string {
+  const base = (tag ?? "en").toLowerCase().split(/[-_]/)[0] ?? "en";
+  return LANGUAGE_NAMES[base] ?? "English";
+}
 
 /**
  * Queries for the event sweep. The impact profile drives it when the AI
@@ -157,6 +190,7 @@ const analysisSchema = {
           "entities",
           "affected_assets",
           "update_note",
+          "what_to_watch",
         ],
         properties: {
           key: { type: "string" },
@@ -184,6 +218,7 @@ const analysisSchema = {
             },
           },
           update_note: { type: "string" },
+          what_to_watch: { type: "string" },
         },
       },
     },
@@ -203,6 +238,7 @@ interface AnalyzedEvent {
   entities: string[];
   affected_assets: unknown;
   update_note: string;
+  what_to_watch: string;
 }
 
 function clamp01(value: unknown, fallback: number): number {
@@ -231,6 +267,7 @@ async function analyzeClusters(
   clusters: { cluster: EventCluster; existing: KnownEvent | null }[],
   spec: MarketMonitorSpec,
   rawRequest: string | null,
+  language: string,
 ): Promise<Map<string, AnalyzedEvent>> {
   const inst = spec.instrument;
   const result = await chatJson<{ events: AnalyzedEvent[] }>({
@@ -259,9 +296,14 @@ async function analyzeClusters(
       "(a credible channel exists) or 'indirect' (second-order). Empty array if none beyond the monitored instrument.\n" +
       "update_note: if the candidate CONTINUES a known event, one short sentence stating only what is NEW versus the known " +
       "event. Otherwise an empty string.\n" +
+      "what_to_watch: one or two concrete, checkable things that would confirm or kill this story in the coming days " +
+      "(a scheduled decision, a data release, a level being held or broken, an official statement). Name them specifically; " +
+      "never write generic advice like 'monitor the situation'.\n" +
       "categories: 1-3 short lowercase slugs such as monetary_policy, geopolitics, supply, demand, regulation, earnings, " +
       "energy, conflict, macro_data.\n" +
-      "Drop nothing: return an entry for every KEY you were given. Answer in the language of the user's request.",
+      "Drop nothing: return an entry for every KEY you were given.\n" +
+      `Write every human-readable field (fact_summary, ai_analysis, update_note, what_to_watch) in ${languageName(language)}. ` +
+      "Keep key, categories, entities and asset symbols unchanged and untranslated.",
     user:
       `INSTRUMENT: ${inst.name} (${inst.symbol}), kind ${inst.kind}, metric ${inst.metric}` +
       `${inst.currency ? `, quoted in ${inst.currency}` : ""}\n` +
@@ -289,6 +331,8 @@ export async function discoverImpactEvents(input: {
   known: KnownEvent[];
   /** The radar's own observation series, for correlation. */
   points: CorrelationPoint[];
+  /** UI language tag — AI interpretations are written in it. */
+  language?: string | undefined;
 }): Promise<EventDiscovery> {
   const queries = buildEventQueries(input.spec, input.rawRequest ?? null);
   const research = await researchQueries(queries, RESULTS_PER_QUERY, MAX_QUERIES);
@@ -362,6 +406,7 @@ export async function discoverImpactEvents(input: {
       candidates.map(({ cluster, existing }) => ({ cluster, existing })),
       input.spec,
       input.rawRequest ?? null,
+      input.language ?? "en",
     );
   } catch (err) {
     console.error(`[radar:market-events] analysis failed: ${(err as Error).message}`);
@@ -378,7 +423,9 @@ export async function discoverImpactEvents(input: {
 
     const severity = asSeverity(analysis.severity);
     const tier = bestSourceTier(cluster.sources);
-    const independent = independentSourceCount(cluster.sources);
+    const identities = identifyAll(cluster.sources);
+    // Syndicated copies of one wire report are ONE voice, not five.
+    const independent = Math.max(1, Math.min(countIndependent(identities), independentSourceCount(cluster.sources)));
     const factConfidence = calibrateFactConfidence({
       modelConfidence: clamp01(analysis.fact_confidence, 0.5),
       tier,
@@ -443,9 +490,36 @@ export async function discoverImpactEvents(input: {
           })
         : false,
       updateNote: typeof analysis.update_note === "string" ? softenCausality(analysis.update_note).slice(0, 400) : "",
+      whatToWatch: typeof analysis.what_to_watch === "string" ? analysis.what_to_watch.slice(0, 600) : "",
+      sourceIdentities: identities,
+      reactions: [],
     });
   }
 
   events.sort((a, b) => b.importance - a.importance);
+
+  // Market Reaction Engine: for the events that matter, measure what the
+  // affected assets actually did around the event timestamp. Failures stay
+  // visible as "unavailable" rather than becoming a fabricated 0%.
+  const measured = events.slice(0, MAX_EVENTS_MEASURED);
+  await Promise.all(
+    measured.map(async (event) => {
+      const assets = [
+        { symbol: input.spec.instrument.symbol, name: input.spec.instrument.name },
+        ...event.affectedAssets
+          .filter((a) => a.relation !== "indirect")
+          .map((a) => ({ symbol: a.symbol, name: a.name })),
+      ];
+      event.reactions = await measureReactions({ assets, eventIso: event.publishedAt, max: 4 });
+      // An observed move is evidence of significance — never of causation.
+      const peak = peakMovePct(event.reactions);
+      if (peak !== null && event.correlation.changePct === null) {
+        event.importance = Math.min(100, event.importance + Math.min(12, Math.round(peak * 2)));
+      }
+    }),
+  );
+
+  events.sort((a, b) => b.importance - a.importance);
   return { ...base, events };
 }
+

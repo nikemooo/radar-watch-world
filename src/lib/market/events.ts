@@ -12,6 +12,8 @@
  *      sources — clustering is done on the wire, before anything is stored.
  */
 
+import { classifyEvent, normalizeCategory, relatedCategories, type EventCategory } from "./taxonomy";
+
 export type EventSeverity = "low" | "medium" | "high" | "critical";
 
 export const SEVERITIES: EventSeverity[] = ["low", "medium", "high", "critical"];
@@ -112,50 +114,16 @@ function hostOf(url: string): string | null {
 }
 
 /**
- * Coarse, language-agnostic event typing from the wording itself. The type is
- * a clustering signal (a rate decision and a war report are never the same
- * story) and a UI facet — it is never used to fabricate impact.
+ * Event typing now lives in the V3 taxonomy (21 context-aware categories with
+ * weighted evidence). These aliases keep the clustering code and every stored
+ * `event_type` value working against one single vocabulary.
  */
-export type EventType =
-  | "monetary_policy"
-  | "macro_data"
-  | "geopolitics"
-  | "conflict"
-  | "supply"
-  | "regulation"
-  | "earnings"
-  | "corporate"
-  | "legal"
-  | "energy"
-  | "market_move"
-  | "other";
+export type EventType = EventCategory;
 
-const TYPE_PATTERNS: [EventType, RegExp][] = [
-  ["monetary_policy", /\b(fed|federal reserve|fomc|ecb|riksbank|boj|bank of england|rate (cut|hike|decision)|räntebesked|styrränta|interest rate|quantitative)\b/i],
-  ["macro_data", /\b(inflation|cpi|ppi|gdp|bnp|jobs report|payrolls|unemployment|arbetslöshet|pmi|retail sales|konsumentpris)\b/i],
-  ["conflict", /\b(war|krig|strike[sd]?|missile|attack|invasion|ceasefire|militar|troops|drone)\b/i],
-  ["geopolitics", /\b(sanction|tariff|tull|trade war|election|val\b|summit|treaty|diplomat|opec|embargo)\b/i],
-  ["supply", /\b(supply|shortage|production cut|output|mine|harvest|inventory|lager|shipment|logistic|brist)\b/i],
-  ["regulation", /\b(regulat|sec |etf approval|ban\b|law\b|lagförslag|approval|compliance|antitrust)\b/i],
-  ["earnings", /\b(earnings|results|quarterly|q[1-4] |guidance|revenue|profit|kvartalsrapport|omsättning)\b/i],
-  ["corporate", /\b(acquisition|merger|ceo|layoff|varsel|partnership|contract|launch|recall|uppköp)\b/i],
-  ["legal", /\b(lawsuit|court|indict|fine\b|settlement|domstol|åtal|böter)\b/i],
-  ["energy", /\b(oil|crude|opec\+|gas|lng|refinery|pipeline|electricity|elpris|olja)\b/i],
-  ["market_move", /\b(rally|selloff|sell-off|plunge|surge|record high|all-time high|crash|rasar|stiger|faller)\b/i],
-];
-
-/**
- * The type with the most distinct signals in the text wins — first-match order
- * would label every gold story "monetary_policy" the moment "Fed" appears.
- */
 export function classifyEventType(text: string): EventType {
-  let best: { type: EventType; hits: number } | null = null;
-  for (const [type, pattern] of TYPE_PATTERNS) {
-    const hits = (text.match(new RegExp(pattern.source, "gi")) ?? []).length;
-    if (hits > 0 && (!best || hits > best.hits)) best = { type, hits };
-  }
-  return best?.type ?? "other";
+  return classifyEvent(text);
 }
+
 
 /**
  * Distinctive tokens: numbers, percentages and capitalised words. Two reports
@@ -197,10 +165,11 @@ export function eventSimilarity(
   const ents = overlap(a.entities ?? strongTokens(a.title), b.entities ?? strongTokens(b.title));
   const typeA = a.type ?? classifyEventType(a.title);
   const typeB = b.type ?? classifyEventType(b.title);
-  const typeScore = typeA === typeB ? 1 : 0;
+  const related = relatedCategories(normalizeCategory(typeA), normalizeCategory(typeB));
+  const typeScore = typeA === typeB ? 1 : related ? 0.6 : 0;
   const score = words * 0.5 + ents * 0.35 + typeScore * 0.15;
-  // Different event types are a hard brake: never merge a rate decision into a war.
-  if (typeA !== typeB && typeA !== "other" && typeB !== "other") return Math.min(score, 0.35);
+  // Unrelated categories are a hard brake: never merge a rate decision into a war.
+  if (!related && typeA !== "other" && typeB !== "other") return Math.min(score, 0.35);
   return score;
 }
 
@@ -225,7 +194,7 @@ export function clusterDocuments(docs: ClusterInput[], threshold = 0.4): EventCl
       publisher: doc.publisher ?? hostOf(doc.url),
       published_at: published,
     };
-    const type = classifyEventType(`${title} ${doc.snippet ?? ""}`);
+    const type = classifyEvent(title, doc.snippet ?? "");
     const entities = strongTokens(title);
 
     let best: { cluster: EventCluster; score: number } | null = null;

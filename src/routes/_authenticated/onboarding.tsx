@@ -214,6 +214,7 @@ function Onboarding() {
           raw_request: request,
           monitoring_window: monitoringWindow,
           recency_days: recencyDays,
+          language: typeof navigator !== "undefined" ? navigator.language.slice(0, 2) : "en",
           config,
         },
       });
