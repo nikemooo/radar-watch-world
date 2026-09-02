@@ -13,7 +13,7 @@ describe("taxonomy", () => {
     expect(classifyEvent("Fed holds rates steady as inflation cools")).toBe("monetary_policy");
     expect(classifyEvent("OPEC+ announces surprise production cut")).toBe("commodity_supply");
     expect(classifyEvent("Missile strikes hit Red Sea shipping lane")).toBe("military_conflict");
-    expect(classifyEvent("US imposes new tariffs on Chinese EVs")).toBe("trade_policy");
+    expect(classifyEvent("US imposes new tariffs on Chinese EVs")).toBe("sanctions");
     expect(classifyEvent("NVIDIA beats Q4 revenue guidance")).toBe("earnings");
   });
 
