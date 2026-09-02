@@ -32,7 +32,15 @@ import { collectMarketQuotes, consensusFromQuotes, refineInstrumentSources } fro
 import { computeMarketChanges, type MarketPoint } from "./history";
 import { describeTrigger, evaluateMarketRules, type MarketRuleStateMap } from "./rules";
 import { discoverImpactEvents, type KnownEvent } from "./events.server";
-import { alertDecision, asSeverity, asTimeline, importanceBand, severityRank } from "./events";
+import {
+  alertDecision,
+  asSeverity,
+  asTimeline,
+  importanceBand,
+  MAX_EVENT_ALERTS_PER_RUN,
+  sameStory,
+  severityRank,
+} from "./events";
 
 type Db = SupabaseClient<Database>;
 type RadarRow = Database["public"]["Tables"]["radars"]["Row"];
@@ -299,6 +307,11 @@ export async function runMarketCycle(
       eventCost = discovery.costEstimate;
       eventsDetected = discovery.events.length;
 
+      // One situation, one notification: everything below is the alert layer's
+      // memory of what the user has already been told during this sweep.
+      const alertedStories: { title: string; entities: string[] }[] = [];
+      let eventAlerts = 0;
+
       for (const event of discovery.events) {
         const previous = event.updateOf ? knownById.get(event.updateOf.id) : undefined;
         const decision = alertDecision({
@@ -312,9 +325,12 @@ export async function runMarketCycle(
         });
         const budgetOk = alertBudget === null || alertsCreated < alertBudget;
         if (event.importance >= 70) eventsSignificant += 1;
+        const duplicateStory = alertedStories.some((story) =>
+          sameStory(story, { title: event.title, entities: event.entities, type: event.type }),
+        );
 
         let alerted = false;
-        if (decision.alert && budgetOk) {
+        if (decision.alert && budgetOk && !duplicateStory && eventAlerts < MAX_EVENT_ALERTS_PER_RUN) {
           const { error: eventAlertError } = await db.from("alerts").insert({
             radar_id: radar.id,
             user_id: radar.user_id,
@@ -351,7 +367,11 @@ export async function runMarketCycle(
             } as never,
           });
           alerted = !eventAlertError;
-          if (alerted) alertsCreated += 1;
+          if (alerted) {
+            alertsCreated += 1;
+            eventAlerts += 1;
+            alertedStories.push({ title: event.title, entities: event.entities });
+          }
         }
 
         const timelineEntry = {
