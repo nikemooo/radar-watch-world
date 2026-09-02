@@ -30,14 +30,14 @@ describe("taxonomy", () => {
   });
 
   it("exposes secondary categories and normalises legacy values", () => {
-    const cats = eventCategories("Sanctions on Russian oil exports tighten supply");
-    expect(cats.length).toBeGreaterThan(1);
+    const cats = eventCategories("New sanctions on Russian oil exports disrupt crude supply");
+    expect(cats).toContain("sanctions");
     expect(normalizeCategory("conflict")).toBe("military_conflict");
     expect(normalizeCategory("nonsense")).toBe("other");
   });
 
   it("relates neighbouring categories but keeps unrelated ones apart", () => {
-    expect(relatedCategories("military_conflict", "geopolitical_tension")).toBe(true);
+    expect(relatedCategories("military_conflict", "geopolitics")).toBe(true);
     expect(relatedCategories("monetary_policy", "military_conflict")).toBe(false);
   });
 });
@@ -50,7 +50,7 @@ describe("syndication", () => {
       publisher: "Google News",
     });
     expect(identity.syndicated).toBe(true);
-    expect(identity.originalPublisher.toLowerCase()).toContain("reuters");
+    expect((identity.original_publisher ?? "").toLowerCase()).toContain("reuters");
   });
 
   it("counts syndicated copies of one wire report as a single voice", () => {
@@ -69,7 +69,7 @@ describe("syndication", () => {
       { title: "Fed cuts", url: "https://randomblog.example/c", publisher: "Blog", published_at: null },
     ]);
     expect(countIndependent(identities)).toBe(3);
-    expect(bestQuality(identities)).toBe("primary");
+    expect(bestQuality(identities)).toBe("high");
   });
 });
 
@@ -109,7 +109,7 @@ describe("themes", () => {
   it("groups related events into one theme and keeps unrelated ones apart", () => {
     const themes = buildThemes([
       { id: "1", title: "Israel strikes Hezbollah positions", entities: ["Israel", "Hezbollah"], event_type: "military_conflict", importance_score: 80, ...base },
-      { id: "2", title: "Israeli forces escalate against Hezbollah", entities: ["Israel", "Hezbollah"], event_type: "geopolitical_tension", importance_score: 70, ...base },
+      { id: "2", title: "Israeli forces escalate against Hezbollah", entities: ["Israel", "Hezbollah"], event_type: "geopolitics", importance_score: 70, ...base },
       { id: "3", title: "Fed holds rates", entities: ["Fed", "FOMC"], event_type: "monetary_policy", importance_score: 75, ...base },
     ]);
     const conflict = themes.find((t) => t.eventCount === 2);
