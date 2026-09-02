@@ -70,10 +70,14 @@ export function asEventCategory(value: unknown): EventCategory {
  */
 const SIGNALS: Record<Exclude<EventCategory, "other">, [RegExp, number][]> = {
   monetary_policy: [
-    [/\b(fomc|federal reserve|the fed\b|ecb|riksbank|bank of japan|boj\b|bank of england|pboc)\b/i, 3],
-    [/\b(rate (cut|hike|decision|path)|styrränta|räntebesked|policy rate|benchmark rate)\b/i, 3],
+    [/\b(fomc|federal reserve|fed|ecb|riksbank|bank of japan|boj|bank of england|pboc)\b/i, 3],
+    [
+      /\b(rate (cut|hike|decision|path)|(holds|holding|raises|lowers|cuts) (interest )?rates?|styrränta|räntebesked|policy rate|benchmark rate)\b/i,
+      3,
+    ],
     [/\b(quantitative (easing|tightening)|balance sheet runoff|dot plot|hawkish|dovish)\b/i, 2],
     [/\b(interest rates?|penningpolitik|monetary policy)\b/i, 1],
+
   ],
   inflation: [
     [/\b(cpi|core inflation|inflation rate|ppi|pce|kpi(f)?|konsumentpris)\b/i, 3],
