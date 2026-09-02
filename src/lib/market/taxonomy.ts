@@ -98,7 +98,7 @@ const SIGNALS: Record<Exclude<EventCategory, "other">, [RegExp, number][]> = {
   ],
   sanctions: [
     [/\b(sanction[s]?|embargo|export controls?|export restrictions?|entity list|price cap|sanktioner|exportförbud)\b/i, 3],
-    [/\b(tariff|tull|trade war|import duty|blacklist)\b/i, 2],
+    [/\b(tariffs?|tullar?|trade war|import dut(y|ies)|blacklist(ed|ing)?)\b/i, 2],
   ],
   military_conflict: [
     [/\b(air ?strike[s]?|missile|drone attack|invasion|offensive|troops|ceasefire|shelling|war\b|krig|militär)\b/i, 3],
