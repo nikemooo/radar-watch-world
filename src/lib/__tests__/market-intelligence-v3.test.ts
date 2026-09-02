@@ -11,7 +11,7 @@ import { buildThemes } from "@/lib/market/themes";
 describe("taxonomy", () => {
   it("classifies by weighted evidence, not first match", () => {
     expect(classifyEvent("Fed holds rates steady as inflation cools")).toBe("monetary_policy");
-    expect(classifyEvent("OPEC+ announces surprise production cut")).toBe("supply_disruption");
+    expect(classifyEvent("OPEC+ announces surprise production cut")).toBe("commodity_supply");
     expect(classifyEvent("Missile strikes hit Red Sea shipping lane")).toBe("military_conflict");
     expect(classifyEvent("US imposes new tariffs on Chinese EVs")).toBe("trade_policy");
     expect(classifyEvent("NVIDIA beats Q4 revenue guidance")).toBe("earnings");
