@@ -30,6 +30,17 @@ interface SourceEntry {
   published_at?: string | null;
 }
 
+interface ReactionShape {
+  symbol?: string;
+  window?: string | null;
+  changePct?: number | null;
+  available?: boolean;
+  unavailableReason?: string | null;
+  priceBefore?: number | null;
+  priceAfter?: number | null;
+  provider?: string | null;
+}
+
 interface CorrelationShape {
   before?: number | null;
   after?: number | null;
@@ -95,6 +106,11 @@ export function MarketEventBody({ event, alwaysOpen = false }: { event: MarketEv
   const correlation = (event.correlation ?? {}) as CorrelationShape;
   const assets = asAffectedAssets(event.affected_assets);
   const timeline = asTimeline(event.timeline);
+  const reactions: ReactionShape[] = Array.isArray(event.market_reactions)
+    ? (event.market_reactions as ReactionShape[])
+    : [];
+  const measured = reactions.filter((r) => r.available && typeof r.changePct === "number");
+  const unmeasured = reactions.filter((r) => !r.available);
   const changePct =
     typeof correlation.changePct === "number" && Number.isFinite(correlation.changePct)
       ? correlation.changePct
@@ -120,6 +136,11 @@ export function MarketEventBody({ event, alwaysOpen = false }: { event: MarketEv
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
         <ImportanceGauge score={event.importance_score ?? 0} />
         <span className="mono-label">{t("events.sourceQuality", { tier: event.source_quality ?? "secondary" })}</span>
+        {(event.independent_sources ?? 0) > 0 && (
+          <span className="mono-label">
+            {t("events.independentSources", { count: event.independent_sources ?? 0 })}
+          </span>
+        )}
         {(event.alert_count ?? 0) > 0 && (
           <span className="mono-label">{t("events.updated", { when: formatDateTime(event.last_updated_at) })}</span>
         )}
@@ -166,6 +187,39 @@ export function MarketEventBody({ event, alwaysOpen = false }: { event: MarketEv
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {reactions.length > 0 && (
+        <div className="mt-3">
+          <p className="mono-label">{t("events.reaction")}</p>
+          {measured.length > 0 ? (
+            <ul className="mt-1 flex flex-wrap gap-2">
+              {measured.map((r) => (
+                <li key={r.symbol} className="rounded-md border border-border px-2 py-1 text-xs">
+                  <span className="font-medium">{r.symbol}</span>{" "}
+                  <span className={r.changePct! > 0 ? "text-primary" : r.changePct! < 0 ? "text-critical" : ""}>
+                    {r.changePct! > 0 ? "+" : ""}
+                    {r.changePct!.toFixed(2)} %
+                  </span>{" "}
+                  <span className="text-muted-foreground">{r.window}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {unmeasured.length > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("events.reactionUnavailable", { symbols: unmeasured.map((r) => r.symbol ?? "?").join(", ") })}
+            </p>
+          )}
+          {measured.length > 0 && <p className="mt-1 text-xs text-muted-foreground">{t("events.coincidence")}</p>}
+        </div>
+      )}
+
+      {event.what_to_watch && (
+        <div className="mt-3 rounded-md border border-border bg-muted/20 p-3">
+          <p className="mono-label">{t("events.whatToWatch")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{event.what_to_watch}</p>
         </div>
       )}
 
