@@ -184,6 +184,45 @@ async function coingeckoQuote(
   };
 }
 
+/** Yahoo Finance — covers stocks, indices, commodities, forex and crypto. */
+async function yahooSourceQuote(
+  symbol: string,
+  instrument: MarketInstrument,
+): Promise<SourceQuote | null> {
+  const quote = await yahooQuote(symbol);
+  if (!quote) return null;
+  return {
+    source: "yahoo",
+    sourceUrl: `https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}`,
+    value: quote.value,
+    currency: quote.currency ?? instrument.currency,
+    unit: instrument.unit,
+    observedAt: quote.observedAt,
+  };
+}
+
+/** Binance — second independent crypto feed, keyless. */
+async function binanceQuote(
+  base: string,
+  instrument: MarketInstrument,
+): Promise<SourceQuote | null> {
+  const pair = `${base.toUpperCase()}USDT`;
+  const url = `https://api.binance.com/api/v3/ticker/price?symbol=${pair}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`binance HTTP ${res.status}`);
+  const json = (await res.json()) as { price?: string };
+  const value = Number(json.price);
+  if (!Number.isFinite(value)) return null;
+  return {
+    source: "binance",
+    sourceUrl: `https://www.binance.com/en/trade/${pair}`,
+    value,
+    currency: "USD",
+    unit: instrument.unit,
+    observedAt: new Date().toISOString(),
+  };
+}
+
 interface WebQuoteResult {
   quote: SourceQuote | null;
   cost: number;
