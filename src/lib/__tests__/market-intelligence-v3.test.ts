@@ -3,6 +3,7 @@
  * Everything here is pure or offline — no network calls in the suite.
  */
 import { describe, expect, it } from "vitest";
+import { yahooSymbolFor } from "@/lib/market/yahoo.server";
 import {
   classifyEvent,
   eventCategories,
@@ -206,5 +207,53 @@ describe("themes", () => {
     ]);
     expect(themes).toHaveLength(1);
     expect(themes[0]?.eventIds).toEqual(["2"]);
+  });
+});
+
+describe("data-source redundancy and duplicate stories (production bug fixes)", () => {
+  it("maps every instrument kind onto a Yahoo ticker", () => {
+    expect(yahooSymbolFor({ symbol: "XAU/USD", name: "Gold", kind: "commodity" })).toBe("GC=F");
+    expect(yahooSymbolFor({ symbol: "NVDA", kind: "stock", stooq_symbol: "nvda.us" })).toBe("NVDA");
+    expect(
+      yahooSymbolFor({ symbol: "USD/EUR", kind: "forex", base_currency: "USD", quote_currency: "EUR" }),
+    ).toBe("USDEUR=X");
+    expect(yahooSymbolFor({ symbol: "BTC/USD", kind: "crypto", coingecko_id: "bitcoin" })).toBe("BTC-USD");
+    expect(yahooSymbolFor({ symbol: "my neighbour's bicycle" })).toBeNull();
+  });
+
+  it("merges two headlines about the same number and subject into one story", () => {
+    const clusters = clusterDocuments([
+      {
+        title: "Bitcoin hits $77,000 wall as the Fed gets trapped between weak jobs and $90 oil",
+        url: "https://a.com/1",
+        snippet: "BTC stalled.",
+        published_at: "2026-09-02T10:00:00Z",
+      },
+      {
+        title: "Bitcoin falls below $77,000 with Federal Reserves trapped between jobs and oil",
+        url: "https://b.com/2",
+        snippet: "BTC slid.",
+        published_at: "2026-09-02T11:00:00Z",
+      },
+      {
+        title: "Bitcoin Pauses After Reclaiming $80,000 as Sept. 15 Clarity Act Vote Looms",
+        url: "https://c.com/3",
+        snippet: "Different story.",
+        published_at: "2026-09-02T12:00:00Z",
+      },
+    ]);
+    expect(clusters).toHaveLength(2);
+    expect(clusters[0]!.sources).toHaveLength(2);
+  });
+
+  it("lets a first sweep alert on major news but stays quiet on ordinary news", () => {
+    expect(alertDecision({ importance: 84, isBaseline: true, isNewEvent: true })).toEqual({
+      alert: true,
+      reason: "baseline_significant",
+    });
+    expect(alertDecision({ importance: 62, isBaseline: true, isNewEvent: true })).toEqual({
+      alert: false,
+      reason: "baseline",
+    });
   });
 });
