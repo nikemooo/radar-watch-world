@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { yahooSymbolFor } from "@/lib/market/yahoo.server";
+import { alertDecision, clusterDocuments } from "@/lib/market/events";
 import {
   classifyEvent,
   eventCategories,
