@@ -179,8 +179,13 @@ export function eventSimilarity(
   const anchor = sharedNumber && sharedSubject ? 1 : 0;
 
   const score = words * 0.45 + ents * 0.3 + typeScore * 0.15 + anchor * 0.1;
-  // Unrelated categories are a hard brake: never merge a rate decision into a war.
-  if (!related && typeA !== "other" && typeB !== "other") return Math.min(score, 0.35);
+  // Unrelated categories are a hard brake: never merge a rate decision into a
+  // war — unless both reports name the same number about the same subject, in
+  // which case they are one story the two classifiers merely labelled apart.
+  const strongDuplicate = anchor === 1 && words >= 0.3;
+  if (!related && !strongDuplicate && typeA !== "other" && typeB !== "other") {
+    return Math.min(score, 0.35);
+  }
   return score;
 }
 
