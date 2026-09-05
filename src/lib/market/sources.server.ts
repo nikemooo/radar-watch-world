@@ -16,6 +16,7 @@
 import { MODELS, chatJson } from "../ai/gateway.server";
 import { researchQueries } from "../search/providers.server";
 import type { MarketInstrument, MarketMonitorSpec } from "./types";
+import { yahooQuote, yahooSymbolFor } from "./yahoo.server";
 
 export interface SourceQuote {
   source: string;
@@ -373,6 +374,16 @@ export async function collectMarketQuotes(
       run: () => coingeckoQuote(inst.coingecko_id!, (inst.currency ?? "usd").toLowerCase(), inst),
     });
   }
+  // Yahoo covers every instrument kind and is the redundancy that keeps a
+  // radar alive when Stooq blocks or a single API rate-limits.
+  const yahooSym = yahooSymbolFor(inst);
+  if (yahooSym) tasks.push({ source: "yahoo", run: () => yahooSourceQuote(yahooSym, inst) });
+  if (inst.kind === "crypto") {
+    const cryptoBase = (inst.base_currency ?? inst.symbol.split(/[\/-]/)[0] ?? "").trim();
+    if (/^[A-Za-z]{2,6}$/.test(cryptoBase)) {
+      tasks.push({ source: "binance", run: () => binanceQuote(cryptoBase, inst) });
+    }
+  }
 
   const settled = await Promise.allSettled(tasks.map((t) => t.run()));
   const quotes: SourceQuote[] = [];
@@ -383,11 +394,12 @@ export async function collectMarketQuotes(
       quotes.push(result.value);
       attempts.push({ source, ok: true });
     } else {
-      attempts.push({
-        source,
-        ok: false,
-        error: result.status === "rejected" ? String(result.reason).slice(0, 200) : "no data",
-      });
+      const error = result.status === "rejected" ? String(result.reason).slice(0, 200) : "no data";
+      // Server-side visibility: which provider failed, for which instrument, why.
+      console.warn(
+        `[market-data] ${inst.symbol} (${inst.kind}) source=${source} failed: ${error}`,
+      );
+      attempts.push({ source, ok: false, error });
     }
   });
 

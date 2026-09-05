@@ -167,9 +167,25 @@ export function eventSimilarity(
   const typeB = b.type ?? classifyEventType(b.title);
   const related = relatedCategories(normalizeCategory(typeA), normalizeCategory(typeB));
   const typeScore = typeA === typeB ? 1 : related ? 0.6 : 0;
-  const score = words * 0.5 + ents * 0.35 + typeScore * 0.15;
-  // Unrelated categories are a hard brake: never merge a rate decision into a war.
-  if (!related && typeA !== "other" && typeB !== "other") return Math.min(score, 0.35);
+  // Numeric anchor: two reports that name the SAME number about the SAME
+  // subject are almost always the same happening, even when the headlines are
+  // worded completely differently ("hits $77,000 wall" / "falls below $77,000").
+  const numsA = new Set((a.entities ?? strongTokens(a.title)).filter((t) => /\d/.test(t)));
+  const numsB = new Set((b.entities ?? strongTokens(b.title)).filter((t) => /\d/.test(t)));
+  const wordsA = new Set((a.entities ?? strongTokens(a.title)).filter((t) => !/\d/.test(t)));
+  const wordsB = new Set((b.entities ?? strongTokens(b.title)).filter((t) => !/\d/.test(t)));
+  const sharedNumber = [...numsA].some((n) => numsB.has(n));
+  const sharedSubject = [...wordsA].some((w) => wordsB.has(w));
+  const anchor = sharedNumber && sharedSubject ? 1 : 0;
+
+  const score = Math.min(1, words * 0.5 + ents * 0.35 + typeScore * 0.15 + anchor * 0.1);
+  // Unrelated categories are a hard brake: never merge a rate decision into a
+  // war — unless both reports name the same number about the same subject, in
+  // which case they are one story the two classifiers merely labelled apart.
+  const strongDuplicate = anchor === 1 && words >= 0.3;
+  if (!related && !strongDuplicate && typeA !== "other" && typeB !== "other") {
+    return Math.min(score, 0.35);
+  }
   return score;
 }
 
@@ -507,12 +523,16 @@ export const SENSITIVITY_THRESHOLD: Record<AlertSensitivity, number> = {
   high: 55,
 };
 
+/** Importance a first-sweep event must reach before it is allowed to alert. */
+export const BASELINE_ALERT_FLOOR = 80;
+
 export interface AlertDecision {
   alert: boolean;
   reason:
     | "new_significant_event"
     | "material_update"
     | "baseline"
+    | "baseline_significant"
     | "below_threshold"
     | "no_material_change"
     | "cooldown";
@@ -532,8 +552,16 @@ export function alertDecision(input: {
   sensitivity?: AlertSensitivity;
   cooldownHours?: number;
 }): AlertDecision {
-  if (input.isBaseline) return { alert: false, reason: "baseline" };
   const threshold = SENSITIVITY_THRESHOLD[input.sensitivity ?? "balanced"];
+  // A first sweep does not alert on ordinary news — it is establishing the
+  // timeline. But genuinely major breaking news found on that first sweep must
+  // still reach the user; otherwise a radar's most important event is silently
+  // swallowed and can never alert again, because later sweeps see it as known.
+  if (input.isBaseline) {
+    return input.importance >= BASELINE_ALERT_FLOOR
+      ? { alert: true, reason: "baseline_significant" }
+      : { alert: false, reason: "baseline" };
+  }
   if (input.importance < threshold) return { alert: false, reason: "below_threshold" };
   if (input.isNewEvent) return { alert: true, reason: "new_significant_event" };
   if (!input.isMaterialUpdate) return { alert: false, reason: "no_material_change" };

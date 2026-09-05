@@ -15,6 +15,7 @@
  *      mappings (symbol → provider ticker), not business rules.
  */
 import type { InstrumentKind } from "./types";
+import { yahooSeries, yahooSymbolFor } from "./yahoo.server";
 
 export type ReactionWindow = "1h" | "4h" | "24h" | "7d";
 
@@ -35,6 +36,14 @@ export interface MarketReaction {
   available: boolean;
   /** Machine-readable honesty: why there is no number. */
   unavailableReason: "no_provider" | "no_history" | "event_undated" | "fetch_failed" | null;
+  /** Finest resolution the answering feed offered, in hours. */
+  resolutionHours: number | null;
+  /**
+   * True when the measured bar is coarser than the event's own timing, i.e.
+   * two events inside the same bar necessarily share this number. The UI must
+   * say so instead of implying each event caused its own move.
+   */
+  coarse: boolean;
 }
 
 interface Point {
@@ -43,7 +52,7 @@ interface Point {
 }
 
 interface Feed {
-  provider: "coingecko" | "stooq";
+  provider: "coingecko" | "yahoo";
   id: string;
   currency: string | null;
   /** Finest resolution the feed offers, in hours. */
@@ -73,52 +82,6 @@ const COINGECKO_IDS: Record<string, string> = {
   matic: "matic-network",
 };
 
-/** Commodities, indices and common aliases → Stooq tickers. */
-const STOOQ_ALIASES: Record<string, string> = {
-  gold: "xauusd",
-  xau: "xauusd",
-  "xau/usd": "xauusd",
-  guld: "xauusd",
-  silver: "xagusd",
-  "xag/usd": "xagusd",
-  platinum: "xptusd",
-  palladium: "xpdusd",
-  copper: "hg.f",
-  brent: "cb.f",
-  "brent crude": "cb.f",
-  "brent oil": "cb.f",
-  oil: "cb.f",
-  olja: "cb.f",
-  crude: "cl.f",
-  wti: "cl.f",
-  "wti crude": "cl.f",
-  "natural gas": "ng.f",
-  gas: "ng.f",
-  wheat: "zw.f",
-  corn: "zc.f",
-  spx: "^spx",
-  "s&p 500": "^spx",
-  sp500: "^spx",
-  ndx: "^ndx",
-  nasdaq: "^ndx",
-  "nasdaq 100": "^ndx",
-  dji: "^dji",
-  "dow jones": "^dji",
-  dax: "^dax",
-  omxs30: "^omxs30",
-  vix: "^vix",
-  dxy: "^dxy",
-  "us dollar index": "^dxy",
-  "usd index": "^dxy",
-  "us 10y": "10usy.b",
-  "10-year treasury": "10usy.b",
-  "us 2y": "2usy.b",
-};
-
-const CURRENCY_CODES = new Set([
-  "usd", "eur", "sek", "gbp", "jpy", "chf", "nok", "dkk", "cad", "aud", "nzd", "cny", "pln",
-]);
-
 /**
  * Map a free-form asset symbol/name onto a real data feed. Returns null when
  * no provider can be established — the caller must then report unavailable.
@@ -131,22 +94,11 @@ export function resolveFeed(symbol: string, name = "", kind?: InstrumentKind | n
   const coin = COINGECKO_IDS[key] ?? COINGECKO_IDS[nameKey];
   if (coin) return { provider: "coingecko", id: coin, currency: "USD", resolutionHours: 1 };
 
-  const alias = STOOQ_ALIASES[key] ?? STOOQ_ALIASES[nameKey];
-  if (alias) return { provider: "stooq", id: alias, currency: alias.startsWith("^") ? null : "USD", resolutionHours: 24 };
-
-  // Forex pair, e.g. "USD/SEK" or "EURUSD".
-  const pair = key.match(/^([a-z]{3})\s*[/-]?\s*([a-z]{3})$/);
-  if (pair && CURRENCY_CODES.has(pair[1]!) && CURRENCY_CODES.has(pair[2]!)) {
-    return { provider: "stooq", id: `${pair[1]}${pair[2]}`, currency: pair[2]!.toUpperCase(), resolutionHours: 24 };
-  }
-
-  // Equity ticker: 1–5 letters, optionally already exchange-qualified.
-  if (/^[a-z]{1,5}\.[a-z]{2}$/.test(key)) {
-    return { provider: "stooq", id: key, currency: null, resolutionHours: 24 };
-  }
-  if (/^[A-Z]{1,5}$/.test(raw) && (kind === "stock" || kind == null)) {
-    return { provider: "stooq", id: `${key}.us`, currency: "USD", resolutionHours: 24 };
-  }
+  // Everything else goes to Yahoo, which serves intraday bars — Stooq's quote
+  // and CSV endpoints are blocked and its daily bars could not tell two events
+  // on the same day apart.
+  const yahoo = yahooSymbolFor({ symbol: raw, name, kind: kind ?? null });
+  if (yahoo) return { provider: "yahoo", id: yahoo, currency: null, resolutionHours: 1 / 12 };
   return null;
 }
 
@@ -160,25 +112,6 @@ async function coingeckoSeries(id: string, fromMs: number, toMs: number): Promis
   return (json.prices ?? [])
     .filter((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
     .map((p) => ({ t: p[0], v: p[1] }));
-}
-
-async function stooqSeries(ticker: string): Promise<Point[]> {
-  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(ticker)}&i=d`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`stooq HTTP ${res.status}`);
-  const text = await res.text();
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2 || !/^date/i.test(lines[0] ?? "")) return [];
-  const out: Point[] = [];
-  for (const line of lines.slice(1)) {
-    const cells = line.split(",");
-    const date = cells[0];
-    const close = Number(cells[4]);
-    if (!date || !Number.isFinite(close)) continue;
-    const t = Date.parse(`${date}T21:00:00Z`); // daily close, roughly US session end
-    if (Number.isFinite(t)) out.push({ t, v: close });
-  }
-  return out;
 }
 
 function pickBefore(points: Point[], at: number): Point | null {
@@ -211,6 +144,8 @@ const unavailable = (
   changePct: null,
   available: false,
   unavailableReason: reason,
+  resolutionHours: null,
+  coarse: false,
 });
 
 /**
@@ -234,25 +169,33 @@ export async function measureReaction(input: {
   if (!feed) return unavailable(input.symbol, name, "no_provider");
 
   const requested = input.preferredWindow ?? "24h";
-  const window: ReactionWindow =
-    WINDOW_HOURS[requested] >= feed.resolutionHours
-      ? requested
-      : feed.resolutionHours <= 4
-        ? "4h"
-        : feed.resolutionHours <= 24
-          ? "24h"
-          : "7d";
 
   let points: Point[];
+  let resolutionHours = feed.resolutionHours;
+  let currency = feed.currency;
   try {
-    points =
-      feed.provider === "coingecko"
-        ? await coingeckoSeries(feed.id, at - 3 * 864e5, at + 8 * 864e5)
-        : await stooqSeries(feed.id);
+    if (feed.provider === "coingecko") {
+      points = await coingeckoSeries(feed.id, at - 3 * 864e5, at + 8 * 864e5);
+    } else {
+      const series = await yahooSeries(feed.id, at);
+      points = series.points;
+      resolutionHours = series.resolutionHours;
+      currency = series.currency;
+    }
   } catch {
     return unavailable(input.symbol, name, "fetch_failed", feed.provider);
   }
   if (points.length === 0) return unavailable(input.symbol, name, "no_history", feed.provider);
+
+  // Never claim a window the feed cannot resolve.
+  const window: ReactionWindow =
+    WINDOW_HOURS[requested] >= resolutionHours
+      ? requested
+      : resolutionHours <= 4
+        ? "4h"
+        : resolutionHours <= 24
+          ? "24h"
+          : "7d";
 
   const before = pickBefore(points, at);
   const target = at + WINDOW_HOURS[window] * 36e5;
@@ -265,7 +208,7 @@ export async function measureReaction(input: {
     symbol: input.symbol,
     name,
     provider: feed.provider,
-    currency: feed.currency,
+    currency,
     window,
     priceBefore: before.v,
     priceBeforeAt: new Date(before.t).toISOString(),
@@ -274,6 +217,8 @@ export async function measureReaction(input: {
     changePct: Math.round(((after.v - before.v) / before.v) * 10000) / 100,
     available: true,
     unavailableReason: null,
+    resolutionHours,
+    coarse: resolutionHours > 1,
   };
 }
 

@@ -40,7 +40,7 @@ import {
   type EventType,
   type SourceTier,
 } from "./events";
-import { bestQuality, countIndependent, identifyAll, type SourceIdentity } from "./syndication";
+import { countIndependent, identifyAll, type SourceIdentity } from "./syndication";
 import { measureReactions, peakMovePct, type MarketReaction } from "./reaction.server";
 import type { MarketMonitorSpec } from "./types";
 

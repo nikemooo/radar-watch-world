@@ -288,6 +288,8 @@ export const en = {
   "events.notFound": "That event no longer exists.",
   "events.reaction": "Measured market reaction",
   "events.reactionUnavailable": "No market data available for {symbols}.",
+  "events.reactionCoarse":
+    "Measured on daily bars — events on the same day share this move.",
   "events.whatToWatch": "What to watch next",
   "events.independentSources": "{count} independent",
   "events.type": "type",
@@ -689,6 +691,8 @@ const sv: Dictionary = {
   "events.notFound": "Händelsen finns inte längre.",
   "events.reaction": "Uppmätt marknadsreaktion",
   "events.reactionUnavailable": "Ingen marknadsdata tillgänglig för {symbols}.",
+  "events.reactionCoarse":
+    "Mätt på dagsdata — händelser samma dag delar samma rörelse.",
   "events.whatToWatch": "Detta bevakar vi härnäst",
   "events.independentSources": "{count} oberoende",
   "events.type": "typ",
