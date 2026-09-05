@@ -91,9 +91,10 @@ describe("syndication", () => {
 describe("reaction feeds", () => {
   it("maps assets onto real provider feeds", () => {
     expect(resolveFeed("BTC")?.provider).toBe("coingecko");
-    expect(resolveFeed("Gold")?.provider).toBe("stooq");
-    expect(resolveFeed("USD/SEK")?.id).toBe("usdsek");
-    expect(resolveFeed("AAPL", "", "stock")?.id).toBe("aapl.us");
+    expect(resolveFeed("Gold")?.provider).toBe("yahoo");
+    expect(resolveFeed("Gold")?.id).toBe("GC=F");
+    expect(resolveFeed("USD/SEK")?.id).toBe("USDSEK=X");
+    expect(resolveFeed("AAPL", "", "stock")?.id).toBe("AAPL");
   });
 
   it("returns null rather than guessing for unknown assets", () => {
