@@ -16,6 +16,7 @@
 import { MODELS, chatJson } from "../ai/gateway.server";
 import { researchQueries } from "../search/providers.server";
 import type { MarketInstrument, MarketMonitorSpec } from "./types";
+import { yahooQuote, yahooSymbolFor } from "./yahoo.server";
 
 export interface SourceQuote {
   source: string;
