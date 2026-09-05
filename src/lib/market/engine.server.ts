@@ -314,12 +314,33 @@ export async function runMarketCycle(
       const alertedStories: { title: string; entities: string[] }[] = [];
       let eventAlerts = 0;
 
-      for (const event of discovery.events) {
-        const previous = event.updateOf ? knownById.get(event.updateOf.id) : undefined;
+      // Rank before alerting: the per-run alert ceiling must spend itself on
+      // the most important events, not on whichever was discovered first.
+      const rankedEvents = [...discovery.events].sort((a, b) => b.importance - a.importance);
+
+      for (const event of rankedEvents) {
+        // The AI names updates it recognises; this deterministic fallback
+        // catches the same story reported with different wording across runs,
+        // so one happening stays ONE row instead of multiplying.
+        const storyMatch =
+          event.updateOf
+            ? undefined
+            : knownList.find((row) => {
+                if (row.published_at && event.publishedAt) {
+                  const days =
+                    Math.abs(Date.parse(row.published_at) - Date.parse(event.publishedAt)) / 864e5;
+                  if (days > 3) return false;
+                }
+                return sameStory(
+                  { title: row.title, entities: row.entities ?? [], type: row.event_type as never },
+                  { title: event.title, entities: event.entities, type: event.type },
+                );
+              });
+        const previous = event.updateOf ? knownById.get(event.updateOf.id) : storyMatch;
         const decision = alertDecision({
           importance: event.importance,
           isBaseline,
-          isNewEvent: !event.updateOf,
+          isNewEvent: !previous,
           isMaterialUpdate: event.materialUpdate,
           lastAlertedAt: previous?.last_alerted_at ?? null,
           nowIso,
