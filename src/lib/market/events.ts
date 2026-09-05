@@ -167,7 +167,18 @@ export function eventSimilarity(
   const typeB = b.type ?? classifyEventType(b.title);
   const related = relatedCategories(normalizeCategory(typeA), normalizeCategory(typeB));
   const typeScore = typeA === typeB ? 1 : related ? 0.6 : 0;
-  const score = words * 0.5 + ents * 0.35 + typeScore * 0.15;
+  // Numeric anchor: two reports that name the SAME number about the SAME
+  // subject are almost always the same happening, even when the headlines are
+  // worded completely differently ("hits $77,000 wall" / "falls below $77,000").
+  const numsA = new Set((a.entities ?? strongTokens(a.title)).filter((t) => /\d/.test(t)));
+  const numsB = new Set((b.entities ?? strongTokens(b.title)).filter((t) => /\d/.test(t)));
+  const wordsA = new Set((a.entities ?? strongTokens(a.title)).filter((t) => !/\d/.test(t)));
+  const wordsB = new Set((b.entities ?? strongTokens(b.title)).filter((t) => !/\d/.test(t)));
+  const sharedNumber = [...numsA].some((n) => numsB.has(n));
+  const sharedSubject = [...wordsA].some((w) => wordsB.has(w));
+  const anchor = sharedNumber && sharedSubject ? 1 : 0;
+
+  const score = words * 0.45 + ents * 0.3 + typeScore * 0.15 + anchor * 0.1;
   // Unrelated categories are a hard brake: never merge a rate decision into a war.
   if (!related && typeA !== "other" && typeB !== "other") return Math.min(score, 0.35);
   return score;
