@@ -82,52 +82,6 @@ const COINGECKO_IDS: Record<string, string> = {
   matic: "matic-network",
 };
 
-/** Commodities, indices and common aliases → Stooq tickers. */
-const STOOQ_ALIASES: Record<string, string> = {
-  gold: "xauusd",
-  xau: "xauusd",
-  "xau/usd": "xauusd",
-  guld: "xauusd",
-  silver: "xagusd",
-  "xag/usd": "xagusd",
-  platinum: "xptusd",
-  palladium: "xpdusd",
-  copper: "hg.f",
-  brent: "cb.f",
-  "brent crude": "cb.f",
-  "brent oil": "cb.f",
-  oil: "cb.f",
-  olja: "cb.f",
-  crude: "cl.f",
-  wti: "cl.f",
-  "wti crude": "cl.f",
-  "natural gas": "ng.f",
-  gas: "ng.f",
-  wheat: "zw.f",
-  corn: "zc.f",
-  spx: "^spx",
-  "s&p 500": "^spx",
-  sp500: "^spx",
-  ndx: "^ndx",
-  nasdaq: "^ndx",
-  "nasdaq 100": "^ndx",
-  dji: "^dji",
-  "dow jones": "^dji",
-  dax: "^dax",
-  omxs30: "^omxs30",
-  vix: "^vix",
-  dxy: "^dxy",
-  "us dollar index": "^dxy",
-  "usd index": "^dxy",
-  "us 10y": "10usy.b",
-  "10-year treasury": "10usy.b",
-  "us 2y": "2usy.b",
-};
-
-const CURRENCY_CODES = new Set([
-  "usd", "eur", "sek", "gbp", "jpy", "chf", "nok", "dkk", "cad", "aud", "nzd", "cny", "pln",
-]);
-
 /**
  * Map a free-form asset symbol/name onto a real data feed. Returns null when
  * no provider can be established — the caller must then report unavailable.
