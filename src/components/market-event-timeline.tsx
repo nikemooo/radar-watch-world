@@ -36,6 +36,7 @@ interface ReactionShape {
   changePct?: number | null;
   available?: boolean;
   unavailableReason?: string | null;
+  coarse?: boolean | null;
   priceBefore?: number | null;
   priceAfter?: number | null;
   provider?: string | null;
@@ -240,6 +241,9 @@ export function MarketEventBody({
                 symbols: unmeasured.map((r) => r.symbol ?? "?").join(", "),
               })}
             </p>
+          )}
+          {measured.some((r) => r.coarse) && (
+            <p className="mt-1 text-xs text-muted-foreground">{t("events.reactionCoarse")}</p>
           )}
           {measured.length > 0 && (
             <p className="mt-1 text-xs text-muted-foreground">{t("events.coincidence")}</p>
