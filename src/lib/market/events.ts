@@ -523,12 +523,16 @@ export const SENSITIVITY_THRESHOLD: Record<AlertSensitivity, number> = {
   high: 55,
 };
 
+/** Importance a first-sweep event must reach before it is allowed to alert. */
+export const BASELINE_ALERT_FLOOR = 80;
+
 export interface AlertDecision {
   alert: boolean;
   reason:
     | "new_significant_event"
     | "material_update"
     | "baseline"
+    | "baseline_significant"
     | "below_threshold"
     | "no_material_change"
     | "cooldown";
@@ -548,8 +552,16 @@ export function alertDecision(input: {
   sensitivity?: AlertSensitivity;
   cooldownHours?: number;
 }): AlertDecision {
-  if (input.isBaseline) return { alert: false, reason: "baseline" };
   const threshold = SENSITIVITY_THRESHOLD[input.sensitivity ?? "balanced"];
+  // A first sweep does not alert on ordinary news — it is establishing the
+  // timeline. But genuinely major breaking news found on that first sweep must
+  // still reach the user; otherwise a radar's most important event is silently
+  // swallowed and can never alert again, because later sweeps see it as known.
+  if (input.isBaseline) {
+    return input.importance >= BASELINE_ALERT_FLOOR
+      ? { alert: true, reason: "baseline_significant" }
+      : { alert: false, reason: "baseline" };
+  }
   if (input.importance < threshold) return { alert: false, reason: "below_threshold" };
   if (input.isNewEvent) return { alert: true, reason: "new_significant_event" };
   if (!input.isMaterialUpdate) return { alert: false, reason: "no_material_change" };
