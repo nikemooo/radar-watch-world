@@ -660,9 +660,22 @@ export function sameStory(
 ): boolean {
   const entsA = (a.entities ?? strongTokens(a.title)).map((e) => e.toLowerCase());
   const entsB = (b.entities ?? strongTokens(b.title)).map((e) => e.toLowerCase());
-  if (overlap(entsA, entsB) >= 0.5) return true;
-  return eventSimilarity(a, b) >= 0.35;
+  const setB = new Set(entsB);
+  const shared = [...new Set(entsA)].filter((e) => setB.has(e));
+  const typeA = a.type ?? classifyEventType(a.title);
+  const typeB = b.type ?? classifyEventType(b.title);
+  const compatible =
+    typeA === typeB ||
+    typeA === "other" ||
+    typeB === "other" ||
+    relatedCategories(normalizeCategory(typeA), normalizeCategory(typeB));
+  // Entity shortcut: on an asset radar the asset itself is shared by EVERY
+  // event, so one shared entity proves nothing. Demand a second shared actor
+  // and a compatible event type before calling two happenings one story.
+  if (compatible && shared.length >= 2 && overlap(entsA, entsB) >= 0.5) return true;
+  return eventSimilarity(a, b) > 0.45;
 }
+
 
 /** Hard ceiling on event alerts per sweep — intelligence, not a news ticker. */
 export const MAX_EVENT_ALERTS_PER_RUN = 3;
