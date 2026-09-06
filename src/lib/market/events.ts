@@ -665,7 +665,10 @@ export function sameStory(
   const typeA = a.type ?? classifyEventType(a.title);
   const typeB = b.type ?? classifyEventType(b.title);
   const compatible =
-    typeA === typeB || relatedCategories(normalizeCategory(typeA), normalizeCategory(typeB));
+    typeA === typeB ||
+    typeA === "other" ||
+    typeB === "other" ||
+    relatedCategories(normalizeCategory(typeA), normalizeCategory(typeB));
   // Entity shortcut: on an asset radar the asset itself is shared by EVERY
   // event, so one shared entity proves nothing. Demand a second shared actor
   // and a compatible event type before calling two happenings one story.
