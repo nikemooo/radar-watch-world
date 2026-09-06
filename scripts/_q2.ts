@@ -6,3 +6,5 @@ const D = { title: "Fed keeps rates unchanged; bitcoin holds $77,000 support", e
 const E = { title: "Bitcoin miner Marathon reports Q3 loss with BTC near $77,000", entities:["Marathon","Bitcoin"], event_type:"earnings" };
 const pairs: [string, any, any][] = [["A(Fed) vs B(ETF flows)",A,B],["A(Fed) vs D(Fed dup)",A,D],["B vs C (ETF dup)",B,C],["A(Fed) vs E(earnings)",A,E],["B(ETF) vs E(earnings)",B,E]];
 for (const [label,x,y] of pairs) console.log(sameStory(x as any,y as any) ? "MERGED  " : "SEPARATE", label);
+import { eventSimilarity } from "../src/lib/market/events";
+for (const [label,x,y] of pairs) console.log("  sim", label, eventSimilarity(x as any,y as any).toFixed(2));
