@@ -98,3 +98,59 @@ export function computeMarketChanges(
     },
   };
 }
+
+export type Freshness =
+  | { state: "fresh"; ageMs: number }
+  /** Exchange-traded instrument: the value is the last trade, market has not traded since. */
+  | { state: "last_close"; ageMs: number }
+  /** Continuously traded instrument (crypto/forex/commodity) whose source timestamp is old. */
+  | { state: "stale"; ageMs: number };
+
+/** How old a source timestamp may be before the UI must stop presenting it as current. */
+export const FRESHNESS_LIMIT_MS: Record<string, number> = {
+  crypto: 2 * 60 * 60 * 1000,
+  forex: 6 * 60 * 60 * 1000,
+  commodity: 6 * 60 * 60 * 1000,
+  stock: 3 * 60 * 60 * 1000,
+  index: 3 * 60 * 60 * 1000,
+  other: 24 * 60 * 60 * 1000,
+};
+
+/**
+ * Classify a datapoint by the gap between when the SOURCE says it was
+ * observed and when we retrieved it. A gap larger than the instrument's
+ * limit means the number is not "current": for exchange-traded instruments
+ * it is the last close (weekend / holiday / pre-market), for 24/7 markets it
+ * is simply stale data.
+ */
+export function priceFreshness(
+  kind: string,
+  observedAt: string,
+  retrievedAt: string | null | undefined,
+  now: number = Date.now(),
+): Freshness {
+  const observed = Date.parse(observedAt);
+  const retrieved = retrievedAt ? Date.parse(retrievedAt) : NaN;
+  const reference = Number.isFinite(retrieved) ? retrieved : now;
+  const ageMs = Math.max(0, reference - (Number.isFinite(observed) ? observed : reference));
+  const limit = FRESHNESS_LIMIT_MS[kind] ?? FRESHNESS_LIMIT_MS["other"]!;
+  if (ageMs <= limit) return { state: "fresh", ageMs };
+  return { state: kind === "stock" || kind === "index" ? "last_close" : "stale", ageMs };
+}
+
+/** Pick the row that is genuinely latest: newest source timestamp, then newest retrieval. */
+export function latestObservation<T extends { observed_at: string; retrieved_at?: string | null }>(
+  rows: T[],
+): T | null {
+  let best: T | null = null;
+  for (const row of rows) {
+    if (!best) {
+      best = row;
+      continue;
+    }
+    const dt = Date.parse(row.observed_at) - Date.parse(best.observed_at);
+    const dr = Date.parse(row.retrieved_at ?? "") - Date.parse(best.retrieved_at ?? "");
+    if (dt > 0 || (dt === 0 && (Number.isNaN(dr) ? true : dr >= 0))) best = row;
+  }
+  return best;
+}

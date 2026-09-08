@@ -119,6 +119,7 @@ function RadarDetail() {
           .select("*")
           .eq("radar_id", radarId)
           .order("observed_at", { ascending: true })
+          .order("retrieved_at", { ascending: true })
           .limit(500),
         supabase
           .from("market_events")
