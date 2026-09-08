@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changeOverWindow, computeMarketChanges, type MarketPoint } from "../market/history";
+import { changeOverWindow, computeMarketChanges, latestObservation, priceFreshness, type MarketPoint } from "../market/history";
 import { evaluateMarketRules } from "../market/rules";
 import { asMarketRules, asMarketSpec } from "../market/types";
 import { consensusFromQuotes, stooqSymbolFor, type SourceQuote } from "../market/sources.server";
