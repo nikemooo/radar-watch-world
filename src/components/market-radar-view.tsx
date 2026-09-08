@@ -10,7 +10,12 @@
  */
 import type { Database } from "@/integrations/supabase/types";
 import { useFormatDateTime, useT } from "@/lib/i18n";
-import { computeMarketChanges, type WindowChange } from "@/lib/market/history";
+import {
+  computeMarketChanges,
+  latestObservation,
+  priceFreshness,
+  type WindowChange,
+} from "@/lib/market/history";
 import { evaluateMarketRules, type MarketRuleStateMap } from "@/lib/market/rules";
 import type { MarketMonitorSpec } from "@/lib/market/types";
 
@@ -108,7 +113,14 @@ export function MarketRadarView({
     (o) => o.instrument === inst.symbol && o.metric === inst.metric && Number.isFinite(Number(o.value)),
   );
   const points = relevant.map((o) => ({ t: o.observed_at, v: Number(o.value) }));
-  const latest = relevant[relevant.length - 1] ?? null;
+  // Several sweeps can legitimately record the same source timestamp (a
+  // weekend or holiday for a stock); the newest retrieval wins the tie.
+  const latest = latestObservation(relevant);
+  const freshness = latest ? priceFreshness(inst.kind, latest.observed_at, latest.retrieved_at) : null;
+  const ageLabel = (ms: number) => {
+    const h = Math.round(ms / 36e5);
+    return h < 48 ? `${h} h` : `${Math.round(h / 24)} d`;
+  };
 
   if (!latest || points.length === 0) {
     return (
@@ -146,7 +158,18 @@ export function MarketRadarView({
             <p className="mt-2 text-3xl font-semibold tracking-tight">{fmt(current)}</p>
             <p className="mono-label mt-2">
               {t("market.observedAt", { when: formatDateTime(latest.observed_at) })}
+              {latest.retrieved_at && (
+                <> · {t("market.checkedAt", { when: formatDateTime(latest.retrieved_at) })}</>
+              )}
             </p>
+            {freshness && freshness.state !== "fresh" && (
+              <p className="mt-2 inline-block rounded-md border border-border bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
+                {t(freshness.state === "last_close" ? "market.lastClose" : "market.stale", {
+                  when: formatDateTime(latest.observed_at),
+                  age: ageLabel(freshness.ageMs),
+                })}
+              </p>
+            )}
           </div>
           <div className="text-right">
             <span
