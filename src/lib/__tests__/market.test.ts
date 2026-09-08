@@ -173,3 +173,27 @@ describe("market sources", () => {
     ).toBeNull();
   });
 });
+
+describe("price freshness (BUG 5 — stale price presented as current)", () => {
+  it("flags a Friday close retrieved on Tuesday as last_close for a stock", () => {
+    const f = priceFreshness("stock", "2026-09-04T20:00:00Z", "2026-09-08T10:50:28Z");
+    expect(f.state).toBe("last_close");
+    expect(Math.round(f.ageMs / 36e5)).toBe(87);
+  });
+  it("treats a 30-minute-old quote as fresh", () => {
+    expect(priceFreshness("stock", "2026-09-08T14:00:00Z", "2026-09-08T14:30:00Z").state).toBe("fresh");
+  });
+  it("calls an old crypto/commodity timestamp stale, not last close", () => {
+    expect(priceFreshness("crypto", "2026-09-08T01:00:00Z", "2026-09-08T10:00:00Z").state).toBe("stale");
+    expect(priceFreshness("commodity", "2026-09-08T09:00:00Z", "2026-09-08T10:00:00Z").state).toBe("fresh");
+  });
+  it("picks the newest retrieval when several rows share one source timestamp", () => {
+    const rows = [
+      { observed_at: "2026-09-04T20:00:00Z", retrieved_at: "2026-09-07T09:25:00Z", src: "Stock Analysis" },
+      { observed_at: "2026-09-04T20:00:00Z", retrieved_at: "2026-09-08T10:50:28Z", src: "yahoo" },
+      { observed_at: "2026-09-04T20:00:00Z", retrieved_at: "2026-09-08T05:32:40Z", src: "yahoo" },
+    ];
+    expect(latestObservation(rows)?.retrieved_at).toBe("2026-09-08T10:50:28Z");
+    expect(latestObservation([...rows].reverse())?.retrieved_at).toBe("2026-09-08T10:50:28Z");
+  });
+});
