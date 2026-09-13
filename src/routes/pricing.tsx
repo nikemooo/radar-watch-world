@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/radar-mark";
 import { MarketSelect } from "@/components/market-select";
 import { useMarketPricing } from "@/hooks/use-market";
+import { useT } from "@/lib/i18n";
+import { planFeatures, type PlanShape } from "@/lib/billing/plan-features";
+
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
@@ -23,6 +26,7 @@ export const Route = createFileRoute("/pricing")({
 });
 
 function Pricing() {
+  const t = useT();
   const { markets, market, setMarket, priceFor, format } = useMarketPricing();
   const { data: plans } = useQuery({
     queryKey: ["plans"],
@@ -44,28 +48,26 @@ function Pricing() {
           <Wordmark />
         </Link>
         <Button asChild size="sm">
-          <Link to="/auth">Sign in</Link>
+          <Link to="/auth">{t("pricing.signIn")}</Link>
         </Button>
       </header>
 
       <section className="mx-auto w-full max-w-5xl px-5 py-14">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Pricing</h1>
-        <p className="mt-3 max-w-xl text-muted-foreground">
-          Every plan runs the same intelligence engine. Higher tiers simply watch more things, more often.
-        </p>
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{t("pricing.title")}</h1>
+        <p className="mt-3 max-w-xl text-muted-foreground">{t("pricing.intro")}</p>
 
         <div className="mt-6">
           <MarketSelect
             markets={markets}
             value={market.code}
             onChange={(code) => void setMarket(code)}
-            hint={`Prices shown in ${market.currency}`}
+            hint={t("billing.pricesIn", { currency: market.currency })}
           />
         </div>
 
         <div className="mt-10 grid gap-5 md:grid-cols-3">
           {(plans ?? []).map((plan, index) => {
-            const features = Array.isArray(plan.features) ? (plan.features as string[]) : [];
+            const features = planFeatures(plan as unknown as PlanShape, t);
             const highlighted = index === 1;
             const monthly = priceFor(plan.key, "month");
             const yearly = priceFor(plan.key, "year");
@@ -74,27 +76,19 @@ function Pricing() {
                 key={plan.key}
                 className={`panel flex flex-col p-6 ${highlighted ? "border-primary/50 ring-1 ring-primary/30" : ""}`}
               >
-                {highlighted && <span className="mono-label text-primary">Most popular</span>}
+                {highlighted && <span className="mono-label text-primary">{t("pricing.popular")}</span>}
                 <h2 className="mt-1 text-lg font-medium">{plan.name}</h2>
                 <p className="mt-3 font-mono text-3xl">
-                  {monthly ? format(monthly.amount_minor, monthly.currency) : "Free"}
-                  {monthly && <span className="text-sm text-muted-foreground">/month</span>}
+                  {monthly ? format(monthly.amount_minor, monthly.currency) : t("billing.free")}
+                  {monthly && <span className="text-sm text-muted-foreground">{t("pricing.perMonth")}</span>}
                 </p>
                 {yearly && (
                   <p className="mt-1 text-sm text-muted-foreground">
-                    or {format(yearly.amount_minor, yearly.currency)}/year
+                    {t("pricing.orYear", { price: format(yearly.amount_minor, yearly.currency) })}
                   </p>
                 )}
 
                 <ul className="mt-6 flex-1 space-y-2.5 text-sm">
-                  <li className="flex gap-2">
-                    <Check className="mt-0.5 size-4 shrink-0 text-interesting" />
-                    {plan.max_radars} active radars
-                  </li>
-                  <li className="flex gap-2">
-                    <Check className="mt-0.5 size-4 shrink-0 text-interesting" />
-                    Checks as often as every {plan.min_check_interval_minutes} min
-                  </li>
                   {features.map((feature) => (
                     <li key={feature} className="flex gap-2">
                       <Check className="mt-0.5 size-4 shrink-0 text-interesting" />
@@ -103,7 +97,9 @@ function Pricing() {
                   ))}
                 </ul>
                 <Button asChild className="mt-6 w-full" variant={highlighted ? "default" : "outline"}>
-                  <Link to="/auth">{plan.price_amount === 0 ? "Start free" : "Get started"}</Link>
+                  <Link to="/auth">
+                    {plan.price_amount === 0 ? t("pricing.startFree") : t("pricing.getStarted")}
+                  </Link>
                 </Button>
               </div>
             );
@@ -113,3 +109,4 @@ function Pricing() {
     </div>
   );
 }
+

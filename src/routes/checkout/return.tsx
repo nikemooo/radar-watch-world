@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
+
 
 export const Route = createFileRoute("/checkout/return")({
   head: () => ({
@@ -20,28 +22,28 @@ export const Route = createFileRoute("/checkout/return")({
 
 function CheckoutReturn() {
   const search = Route.useSearch();
+  const t = useT();
   const sessionId = search['session_id'];
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="max-w-md text-center">
         <h1 className="text-2xl font-semibold tracking-tight">
-          {sessionId ? "Welcome to Radar Pro" : "Checkout complete"}
+          {sessionId ? t("checkout.welcome") : t("checkout.complete")}
         </h1>
         <p className="mt-3 text-muted-foreground">
-          {sessionId
-            ? "Your subscription is being activated. It may take a few moments to show up in your account."
-            : "Your session information was not found. If you completed a payment, it will still be processed."}
+          {sessionId ? t("checkout.activating") : t("checkout.notFound")}
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link to="/billing">Go to billing</Link>
+            <Link to="/billing">{t("checkout.goBilling")}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/">Back to dashboard</Link>
+            <Link to="/">{t("checkout.backDashboard")}</Link>
           </Button>
         </div>
       </div>
     </div>
   );
 }
+
