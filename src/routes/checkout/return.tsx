@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
+
 
 export const Route = createFileRoute("/checkout/return")({
   head: () => ({
