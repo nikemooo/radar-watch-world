@@ -108,8 +108,5 @@ function Pricing() {
       </section>
     </div>
   );
-
-      </section>
-    </div>
-  );
 }
+
