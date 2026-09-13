@@ -88,12 +88,17 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       const mismatch = await assertStripePriceMatches(stripe, planPrice);
       if (mismatch) return { error: mismatch };
 
+      // Launch offer: applied automatically while the coupon secret is configured.
+      const foundingCoupon = process.env['STRIPE_FOUNDING_COUPON'];
+
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
         ui_mode: "embedded_page",
         return_url: data.returnUrl,
         client_reference_id: userId,
+        ...(foundingCoupon ? { discounts: [{ coupon: foundingCoupon }] } : {}),
+
         ...(existing?.stripe_customer_id
           ? { customer: existing.stripe_customer_id }
           : claims?.email
