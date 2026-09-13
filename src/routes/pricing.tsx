@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/radar-mark";
 import { MarketSelect } from "@/components/market-select";
 import { useMarketPricing } from "@/hooks/use-market";
+import { useT } from "@/lib/i18n";
+import { planFeatures, type PlanShape } from "@/lib/billing/plan-features";
+
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
