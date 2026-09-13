@@ -415,7 +415,99 @@ export const en = {
   // ── billing ────────────────────────────────────────────────────────────
   "billing.eyebrow": "Plan and usage",
   "billing.title": "Billing",
+  "billing.currentPlan": "Current plan",
+  "billing.internalAccount": "internal test account",
+  "billing.statusPrefix": "Status",
+  "billing.status.active": "active",
+  "billing.status.trialing": "trial",
+  "billing.status.past_due": "past due",
+  "billing.status.canceled": "canceled",
+  "billing.status.incomplete": "incomplete",
+  "billing.status.unpaid": "unpaid",
+  "billing.status.paused": "paused",
+  "billing.billedMonthly": "billed monthly",
+  "billing.billedYearly": "billed yearly",
+  "billing.cancelsAtPeriodEnd": "cancels at period end",
+  "billing.freeStatus": "Status: free plan · {price}/mo · no payment method needed",
+  "billing.usage.radars": "{used} of {max} radars used",
+  "billing.usage.sweeps": "sweeps {interval}",
+  "billing.usage.alertsUnlimited": "unlimited alerts",
+  "billing.usage.alerts": "{used}/{max} alerts this month",
+  "billing.usage.history": "{days}-day history",
+  "billing.scheduledChange": "Scheduled change to {plan} on {date}.",
+  "billing.periodEndFallback": "the period ends",
+  "billing.accessEnds": "Access ends: {date}.",
+  "billing.nextBilling": "Next billing date: {date}.",
+  "billing.managePayment": "Manage payment & invoices",
+  "billing.cancelAction": "Cancel at period end",
+  "billing.resumeAction": "Resume subscription",
+  "billing.monthly": "Monthly",
+  "billing.yearly": "Yearly (2 months free)",
+  "billing.checkout": "Checkout",
+  "billing.free": "Free",
+  "billing.perMonthShort": "/mo",
+  "billing.perYearShort": "/yr",
+  "billing.upgradeNow": "Upgrade now",
+  "billing.downgrade": "Downgrade at period end",
+  "billing.pricesIn": "Prices shown in {currency}",
+  "billing.currencyLocked": "Billing currency is locked to your active subscription.",
+  "billing.testModeNote":
+    "Payments run in test mode. Upgrades apply immediately and are prorated; cancellations and downgrades take effect at the end of the current billing period.",
+  "billing.toast.upgraded": "Upgraded — you're on the new plan now and only pay the prorated difference.",
+  "billing.toast.scheduled": "Change scheduled. You keep your current plan until {date}.",
+  "billing.toast.changeFailed": "Could not change plan.",
+  "billing.toast.portalFailed": "Could not open the billing portal.",
+  "billing.toast.cancelScheduled": "Cancellation scheduled. You keep access until {date}.",
+  "billing.toast.cancelFailed": "Could not cancel.",
+  "billing.toast.resumed": "Subscription resumed.",
+  "billing.toast.resumeFailed": "Could not resume.",
+  "billing.toast.checkoutFailed": "Checkout failed.",
+
+  // ── sweep intervals ────────────────────────────────────────────────────
+  "interval.hourly": "every hour",
+  "interval.daily": "once a day",
+  "interval.everyMinutes": "every {minutes} minutes",
+  "interval.everyHours": "every {hours} hours",
+
+  // ── plan features ──────────────────────────────────────────────────────
+  "plan.feature.radars": "{count} active Radars",
+  "plan.feature.sweeps": "Sweeps {interval}",
+  "plan.feature.alertsUnlimited": "Unlimited alerts",
+  "plan.feature.alertsLimited": "{count} alerts per month",
+  "plan.feature.detail.limited": "Limited detail fetching",
+  "plan.feature.detail.standard": "Full detail fetching",
+  "plan.feature.detail.priority": "Priority detail fetching",
+  "plan.feature.baseline": "Market baseline / comparables",
+  "plan.feature.changeDetection": "Basic change detection",
+  "plan.feature.history": "{days}-day history",
+  "plan.feature.historyYear": "1-year history",
+
+  // ── public pricing page ────────────────────────────────────────────────
+  "pricing.signIn": "Sign in",
+  "pricing.title": "Pricing",
+  "pricing.intro":
+    "Every plan runs the same intelligence engine. Higher tiers simply watch more things, more often.",
+  "pricing.popular": "Most popular",
+  "pricing.perMonth": "/month",
+  "pricing.orYear": "or {price}/year",
+  "pricing.startFree": "Start free",
+  "pricing.getStarted": "Get started",
+
+  // ── checkout ───────────────────────────────────────────────────────────
+  "checkout.welcome": "Welcome to Radar",
+  "checkout.complete": "Checkout complete",
+  "checkout.activating":
+    "Your subscription is being activated. It may take a few moments to show up in your account.",
+  "checkout.notFound":
+    "Your session information was not found. If you completed a payment, it will still be processed.",
+  "checkout.goBilling": "Go to billing",
+  "checkout.backDashboard": "Back to dashboard",
+  "payments.notConfigured":
+    "Production checkout is not configured. Complete the payment go-live step to accept real payments.",
+  "payments.testMode": "All payments made in the preview are in test mode.",
+  "payments.readMore": "Read more",
 } as const;
+
 
 export type TranslationKey = keyof typeof en;
 export type Dictionary = Record<TranslationKey, string>;
