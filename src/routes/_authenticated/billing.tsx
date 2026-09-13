@@ -145,62 +145,79 @@ function Billing() {
   const marketLocked = Boolean((data as { marketLocked?: boolean }).marketLocked);
   const lockedCode = (data as { marketCode?: string }).marketCode ?? market.code;
 
+  const statusLabel = (status: string) => {
+    const key = `billing.status.${status}` as TranslationKey;
+    const label = t(key);
+    return label === key ? status.replace(/_/g, " ") : label;
+  };
+
   return (
     <div className="space-y-6">
       <header>
-        <p className="mono-label">Plan and usage</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Billing</h1>
+        <p className="mono-label">{t("billing.eyebrow")}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{t("billing.title")}</h1>
       </header>
 
       {current && (
         <section className="panel space-y-3 p-5">
-          <p className="mono-label">Current plan</p>
+          <p className="mono-label">{t("billing.currentPlan")}</p>
           <p className="text-xl font-medium">
             {current.name}
-            {data.isInternal && <span className="ml-2 text-xs text-muted-foreground">internal test account</span>}
+            {data.isInternal && (
+              <span className="ml-2 text-xs text-muted-foreground">{t("billing.internalAccount")}</span>
+            )}
           </p>
           <p className="text-sm text-muted-foreground">
             {sub
-              ? `Status: ${sub.status.replace("_", " ")} · billed ${sub.billing_interval === "year" ? "yearly" : "monthly"}${
-                  sub.cancel_at_period_end ? " · cancels at period end" : ""
-                }`
-              : `Status: free plan · ${format(0, market.currency)}/mo · no payment method needed`}
+              ? `${t("billing.statusPrefix")}: ${statusLabel(sub.status)} · ${
+                  sub.billing_interval === "year" ? t("billing.billedYearly") : t("billing.billedMonthly")
+                }${sub.cancel_at_period_end ? ` · ${t("billing.cancelsAtPeriodEnd")}` : ""}`
+              : t("billing.freeStatus", { price: format(0, market.currency) })}
           </p>
           <p className="text-sm text-muted-foreground">
-            {data.radarCount} of {current.max_radars} radars used · sweeps as often as every{" "}
-            {current.min_check_interval_minutes} minutes ·{" "}
+            {t("billing.usage.radars", { used: data.radarCount, max: current.max_radars })} ·{" "}
+            {t("billing.usage.sweeps", {
+              interval: formatSweepInterval(current.min_check_interval_minutes, t),
+            })}{" "}
+            ·{" "}
             {current.max_alerts_per_month === null
-              ? "unlimited alerts"
-              : `${data.alertsThisMonth}/${current.max_alerts_per_month} alerts this month`}{" "}
-            · {current.history_days}-day history
+              ? t("billing.usage.alertsUnlimited")
+              : t("billing.usage.alerts", {
+                  used: data.alertsThisMonth,
+                  max: current.max_alerts_per_month,
+                })}{" "}
+            · {t("billing.usage.history", { days: current.history_days })}
           </p>
           {sub?.pending_plan_key && (
             <p className="text-sm text-important">
-              Scheduled change to {plans.find((p) => p.key === sub.pending_plan_key)?.name ?? sub.pending_plan_key} on{" "}
-              {sub.pending_effective_at ? new Date(sub.pending_effective_at).toLocaleDateString() : "period end"}.
+              {t("billing.scheduledChange", {
+                plan: plans.find((p) => p.key === sub.pending_plan_key)?.name ?? sub.pending_plan_key,
+                date: asDate(sub.pending_effective_at),
+              })}
             </p>
           )}
           {sub?.current_period_end && !sub.pending_plan_key && (
             <p className="text-sm text-muted-foreground">
-              {sub.cancel_at_period_end ? "Access ends" : "Next billing date"}:{" "}
-              {new Date(sub.current_period_end).toLocaleDateString()}.
+              {sub.cancel_at_period_end
+                ? t("billing.accessEnds", { date: asDate(sub.current_period_end) })
+                : t("billing.nextBilling", { date: asDate(sub.current_period_end) })}
             </p>
           )}
           <div className="flex flex-wrap gap-2 pt-1">
             {sub?.stripe_customer_id && (
               <Button variant="outline" size="sm" onClick={openPortal} disabled={busy === "portal"}>
                 {busy === "portal" ? <Loader2 className="mr-2 size-4 animate-spin" /> : <ExternalLink className="mr-2 size-4" />}
-                Manage payment & invoices
+                {t("billing.managePayment")}
               </Button>
             )}
             {sub?.stripe_subscription_id && !sub.cancel_at_period_end && (
               <Button variant="ghost" size="sm" onClick={doCancel} disabled={busy === "cancel"}>
-                Cancel at period end
+                {t("billing.cancelAction")}
               </Button>
             )}
             {sub?.cancel_at_period_end && (
               <Button variant="outline" size="sm" onClick={doResume} disabled={busy === "resume"}>
-                Resume subscription
+                {t("billing.resumeAction")}
               </Button>
             )}
           </div>
@@ -215,28 +232,28 @@ function Billing() {
           disabled={marketLocked}
           hint={
             marketLocked
-              ? "Billing currency is locked to your active subscription."
-              : `Prices shown in ${market.currency}`
+              ? t("billing.currencyLocked")
+              : t("billing.pricesIn", { currency: market.currency })
           }
         />
       </div>
 
       <div className="flex items-center gap-2">
         <Button variant={interval === "month" ? "default" : "outline"} size="sm" onClick={() => setInterval("month")}>
-          Monthly
+          {t("billing.monthly")}
         </Button>
         <Button variant={interval === "year" ? "default" : "outline"} size="sm" onClick={() => setInterval("year")}>
-          Yearly (2 months free)
+          {t("billing.yearly")}
         </Button>
       </div>
 
       {checkoutOpen && (
         <section className="panel space-y-3 p-5">
           <div className="flex items-center justify-between">
-            <p className="mono-label">Checkout</p>
+            <p className="mono-label">{t("billing.checkout")}</p>
             <Button variant="ghost" size="sm" onClick={closeCheckout}>
               <X className="size-4" />
-              Close
+              {t("common.close")}
             </Button>
           </div>
           {checkoutElement}
@@ -245,17 +262,15 @@ function Billing() {
 
       <div className="grid gap-5 md:grid-cols-3">
         {plans.map((plan) => {
-          const features = Array.isArray(plan.features) ? (plan.features as string[]) : [];
+          const features = planFeatures(plan, t);
           const isCurrent = plan.key === data.planKey;
           const price = priceFor(plan.key, interval);
           const upgrade = (PLAN_RANK[plan.key] ?? 0) > (PLAN_RANK[data.planKey] ?? 0);
           const label = isCurrent
-            ? "Current plan"
-            : plan.key === "free"
-              ? "Downgrade at period end"
-              : upgrade
-                ? "Upgrade now"
-                : "Downgrade at period end";
+            ? t("billing.currentPlan")
+            : upgrade
+              ? t("billing.upgradeNow")
+              : t("billing.downgrade");
           const onClick = () =>
             sub?.stripe_subscription_id ? switchPlan(plan.key) : startCheckout(plan.key);
 
@@ -266,9 +281,11 @@ function Billing() {
             >
               <h2 className="font-medium">{plan.name}</h2>
               <p className="mt-2 font-mono text-2xl">
-                {price ? format(price.amount_minor, price.currency) : "Free"}
+                {price ? format(price.amount_minor, price.currency) : t("billing.free")}
                 {price && (
-                  <span className="text-sm text-muted-foreground">/{interval === "year" ? "yr" : "mo"}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {interval === "year" ? t("billing.perYearShort") : t("billing.perMonthShort")}
+                  </span>
                 )}
               </p>
               <ul className="mt-5 flex-1 space-y-2 text-sm">
@@ -293,10 +310,8 @@ function Billing() {
         })}
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        Payments run in test mode. Upgrades apply immediately and are prorated; cancellations and downgrades take
-        effect at the end of the current billing period.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("billing.testModeNote")}</p>
+
     </div>
   );
 }
