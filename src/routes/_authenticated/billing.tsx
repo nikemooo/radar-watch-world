@@ -87,14 +87,12 @@ function Billing() {
       const result = unwrap(await change({ data: { planKey, interval } }));
       toast.success(
         result.effect === "immediate"
-          ? "Upgraded — you're on the new plan now and only pay the prorated difference."
-          : `Change scheduled. You keep your current plan until ${
-              result.effectiveAt ? new Date(result.effectiveAt).toLocaleDateString() : "the period ends"
-            }.`,
+          ? t("billing.toast.upgraded")
+          : t("billing.toast.scheduled", { date: asDate(result.effectiveAt) }),
       );
       refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not change plan.");
+      toast.error(error instanceof Error ? error.message : t("billing.toast.changeFailed"));
     } finally {
       setBusy(null);
     }
@@ -106,7 +104,7 @@ function Billing() {
       const result = unwrap(await portal({ data: { returnUrl: `${window.location.origin}/billing` } }));
       window.open(result.url, "_blank");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not open the billing portal.");
+      toast.error(error instanceof Error ? error.message : t("billing.toast.portalFailed"));
     } finally {
       setBusy(null);
     }
@@ -116,14 +114,10 @@ function Billing() {
     setBusy("cancel");
     try {
       const result = unwrap(await cancel({}));
-      toast.success(
-        `Cancellation scheduled. You keep access until ${
-          result.effectiveAt ? new Date(result.effectiveAt).toLocaleDateString() : "the period ends"
-        }.`,
-      );
+      toast.success(t("billing.toast.cancelScheduled", { date: asDate(result.effectiveAt) }));
       refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not cancel.");
+      toast.error(error instanceof Error ? error.message : t("billing.toast.cancelFailed"));
     } finally {
       setBusy(null);
     }
@@ -133,14 +127,15 @@ function Billing() {
     setBusy("resume");
     try {
       unwrap(await resume({}));
-      toast.success("Subscription resumed.");
+      toast.success(t("billing.toast.resumed"));
       refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not resume.");
+      toast.error(error instanceof Error ? error.message : t("billing.toast.resumeFailed"));
     } finally {
       setBusy(null);
     }
   };
+
 
   if (isLoading || !data) return <Skeleton className="h-72" />;
 
