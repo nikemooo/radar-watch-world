@@ -37,8 +37,13 @@ export const Route = createFileRoute("/_authenticated/billing")({
 
 function Billing() {
   const queryClient = useQueryClient();
+  const { t, locale } = useI18n();
   const [interval, setInterval] = useState<"month" | "year">("month");
   const [busy, setBusy] = useState<string | null>(null);
+
+  const asDate = (value: string | null | undefined) =>
+    value ? new Date(value).toLocaleDateString(locale) : t("billing.periodEndFallback");
+
 
   const fetchState = useServerFn(getBillingState);
   const portal = useServerFn(createPortalSession);
