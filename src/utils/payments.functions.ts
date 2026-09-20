@@ -181,7 +181,7 @@ export const changePlan = createServerFn({ method: "POST" })
     const { data: plan } = await supabase.from("plans").select("key").eq("key", data.planKey).maybeSingle();
     if (!plan) return { error: "Unknown plan." };
 
-    const { resolveBillingMarket, resolvePlanPrice } = await import("@/lib/billing/market.server");
+    const { resolveBillingMarket, resolvePlanPrice, resolveStripePrice } = await import("@/lib/billing/market.server");
     const resolved = await resolveBillingMarket(supabase, userId, { environment: ENV });
     const planPrice =
       data.planKey === "free" ? null : await resolvePlanPrice(supabase, data.planKey, resolved.market.code, data.interval);
