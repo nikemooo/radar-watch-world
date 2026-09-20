@@ -26,6 +26,8 @@ import { VerifyDialog } from "@/components/verify-dialog";
 import { EditCriteriaDialog } from "@/components/edit-criteria-dialog";
 import { MarketRadarView } from "@/components/market-radar-view";
 import { MarketEventTimeline, type MarketEventRow } from "@/components/market-event-timeline";
+import { ImpactFilter } from "@/components/impact-filter";
+import { asNotifyLevels, type ImpactLevel } from "@/lib/market/impact";
 import { asMarketSpec } from "@/lib/market/types";
 import type { MarketRuleStateMap } from "@/lib/market/rules";
 import {
@@ -180,6 +182,7 @@ function RadarDetail() {
       frequency?: string;
       recency_days?: number;
       recency_source?: string;
+      notify_impact_levels?: ImpactLevel[];
     }) => {
       const { error } = await supabase.from("radars").update(patch).eq("id", radarId);
       if (error) throw error;
@@ -435,6 +438,15 @@ function RadarDetail() {
             spec={marketSpec}
             observations={data.observations}
             ruleState={marketRuleState}
+          />
+          <ImpactFilter
+            value={asNotifyLevels(radar.notify_impact_levels)}
+            disabled={update.isPending}
+            onChange={(levels) => {
+              update.mutate({ notify_impact_levels: levels }, {
+                onSuccess: () => toast.success(t("impact.saved")),
+              });
+            }}
           />
           <MarketEventTimeline events={data.marketEvents} />
         </>
