@@ -33,6 +33,7 @@ import { computeMarketChanges, type MarketPoint } from "./history";
 import { describeTrigger, evaluateMarketRules, type MarketRuleStateMap } from "./rules";
 import { discoverImpactEvents, type KnownEvent } from "./events.server";
 import { describeReactions } from "./reaction.server";
+import { asNotifyLevels, impactLevel, shouldNotify } from "./impact";
 import {
   alertDecision,
   asSeverity,
