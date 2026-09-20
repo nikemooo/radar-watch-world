@@ -353,6 +353,7 @@ export async function runMarketCycle(
           sensitivity: "balanced",
         });
         const budgetOk = alertBudget === null || alertsCreated < alertBudget;
+        const impactOk = shouldNotify(event.importance, notifyLevels);
         if (event.importance >= 70) eventsSignificant += 1;
         const duplicateStory = alertedStories.some((story) =>
           sameStory(story, { title: event.title, entities: event.entities, type: event.type }),
