@@ -1,4 +1,4 @@
-export type PlanKey = "free" | "plus" | "pro" | "pro_plus";
+export type PlanKey = "free" | "lite" | "plus" | "pro" | "pro_plus";
 export type BillingInterval = "month" | "year";
 
 export type PlanRow = {
@@ -20,7 +20,7 @@ export type PlanRow = {
   sort_order: number;
 };
 
-export const PLAN_RANK: Record<string, number> = { free: 0, plus: 1, pro: 2, pro_plus: 3 };
+export const PLAN_RANK: Record<string, number> = { free: 0, lite: 1, plus: 2, pro: 3, pro_plus: 4 };
 
 export function isUpgrade(from: string, to: string): boolean {
   return (PLAN_RANK[to] ?? 0) > (PLAN_RANK[from] ?? 0);

@@ -20,6 +20,8 @@ export const Route = createFileRoute("/pricing")({
       },
       { property: "og:title", content: "Pricing — Radar Intelligence" },
       { property: "og:description", content: "Start free. Upgrade for faster checks and more radars." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Pricing,
@@ -65,10 +67,10 @@ function Pricing() {
           />
         </div>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-3">
-          {(plans ?? []).map((plan, index) => {
+        <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {(plans ?? []).map((plan) => {
             const features = planFeatures(plan as unknown as PlanShape, t);
-            const highlighted = index === 1;
+            const highlighted = plan.key === "plus";
             const monthly = priceFor(plan.key, "month");
             const yearly = priceFor(plan.key, "year");
             return (
