@@ -8,6 +8,13 @@
       "when": 1789911245615,
       "tag": "0000_add_radar_notify_impact_levels",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789915421026,
+      "tag": "0001_secure_role_check_function",
+      "breakpoints": true
     }
   ]
 }
