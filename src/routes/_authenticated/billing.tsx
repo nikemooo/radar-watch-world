@@ -260,7 +260,7 @@ function Billing() {
         </section>
       )}
 
-      <div className="grid gap-5 md:grid-cols-3">
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
         {plans.map((plan) => {
           const features = planFeatures(plan, t);
           const isCurrent = plan.key === data.planKey;

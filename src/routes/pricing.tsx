@@ -65,10 +65,10 @@ function Pricing() {
           />
         </div>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-3">
-          {(plans ?? []).map((plan, index) => {
+        <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-5">
+          {(plans ?? []).map((plan) => {
             const features = planFeatures(plan as unknown as PlanShape, t);
-            const highlighted = index === 1;
+            const highlighted = plan.key === "plus";
             const monthly = priceFor(plan.key, "month");
             const yearly = priceFor(plan.key, "year");
             return (
