@@ -50,6 +50,7 @@ function AuthCallback() {
   const handedOff = forwardToNativeApp();
 
   useEffect(() => {
+    if (handedOff) return;
     let done = false;
     const finish = (to: string) => {
       if (done) return;
@@ -80,7 +81,7 @@ function AuthCallback() {
       window.clearInterval(timer);
       sub.subscription.unsubscribe();
     };
-  }, [navigate]);
+  }, [navigate, handedOff]);
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
