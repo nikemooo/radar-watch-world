@@ -29,11 +29,28 @@ function nextPath(): string {
   return "/dashboard";
 }
 
+// The native shell sends the user through an in-app browser sheet. That sheet
+// is a separate browsing context, so the tokens must be handed back to the app
+// through the custom URL scheme instead of being consumed here.
+function forwardToNativeApp(): boolean {
+  if (typeof window === "undefined") return false;
+  const search = new URLSearchParams(window.location.search);
+  if (search.get("native") !== "1") return false;
+  search.delete("native");
+  const query = search.toString();
+  window.location.replace(
+    `radar://auth-callback${query ? `?${query}` : ""}${window.location.hash}`,
+  );
+  return true;
+}
+
 function AuthCallback() {
   const navigate = useNavigate();
   const [failed, setFailed] = useState(false);
+  const handedOff = forwardToNativeApp();
 
   useEffect(() => {
+    if (handedOff) return;
     let done = false;
     const finish = (to: string) => {
       if (done) return;
@@ -64,7 +81,7 @@ function AuthCallback() {
       window.clearInterval(timer);
       sub.subscription.unsubscribe();
     };
-  }, [navigate]);
+  }, [navigate, handedOff]);
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">

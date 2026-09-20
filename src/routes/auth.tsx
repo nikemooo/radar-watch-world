@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Wordmark } from "@/components/radar-mark";
 import { track } from "@/lib/analytics";
+import { isNativeApp, startNativeOAuth } from "@/lib/native-auth";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -82,6 +83,16 @@ function AuthPage() {
   };
 
   const google = async () => {
+    // iOS/Android shell: a normal redirect would jump out to Safari and leave
+    // the user there. Use the in-app browser + custom URL scheme instead.
+    if (await isNativeApp()) {
+      try {
+        await startNativeOAuth("google");
+      } catch {
+        toast.error("Google sign-in failed. Try email instead.");
+      }
+      return;
+    }
     // Land on the PUBLIC callback route: in the full-page redirect flow the
     // browser returns before supabase-js has written the session, and a
     // protected destination would bounce straight back to /auth.
