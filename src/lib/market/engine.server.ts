@@ -360,7 +360,7 @@ export async function runMarketCycle(
         );
 
         let alerted = false;
-        if (decision.alert && budgetOk && !duplicateStory && eventAlerts < MAX_EVENT_ALERTS_PER_RUN) {
+        if (decision.alert && impactOk && budgetOk && !duplicateStory && eventAlerts < MAX_EVENT_ALERTS_PER_RUN) {
           const { error: eventAlertError } = await db.from("alerts").insert({
             radar_id: radar.id,
             user_id: radar.user_id,
