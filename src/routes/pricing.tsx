@@ -67,7 +67,7 @@ function Pricing() {
           />
         </div>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {(plans ?? []).map((plan) => {
             const features = planFeatures(plan as unknown as PlanShape, t);
             const highlighted = plan.key === "plus";
