@@ -15,6 +15,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { PaymentTestModeBanner } from "@/components/PaymentTestModeBanner";
+import { NativeAuthListener } from "@/components/native-auth-listener";
 
 function NotFoundComponent() {
   return (
@@ -153,6 +154,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* The whole app speaks the visitor's system language unless they picked one. */}
       <I18nProvider>
+        <NativeAuthListener />
         <PaymentTestModeBanner />
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
         <Outlet />
