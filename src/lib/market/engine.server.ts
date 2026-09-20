@@ -33,6 +33,7 @@ import { computeMarketChanges, type MarketPoint } from "./history";
 import { describeTrigger, evaluateMarketRules, type MarketRuleStateMap } from "./rules";
 import { discoverImpactEvents, type KnownEvent } from "./events.server";
 import { describeReactions } from "./reaction.server";
+import { asNotifyLevels, impactLevel, shouldNotify } from "./impact";
 import {
   alertDecision,
   asSeverity,
@@ -314,6 +315,11 @@ export async function runMarketCycle(
       const alertedStories: { title: string; entities: string[] }[] = [];
       let eventAlerts = 0;
 
+      // Which likely-price-impact bands this radar is allowed to notify on.
+      // Everything else is still stored and still shown on the timeline — the
+      // user simply does not spend an alert on it.
+      const notifyLevels = asNotifyLevels(radar.notify_impact_levels);
+
       // Rank before alerting: the per-run alert ceiling must spend itself on
       // the most important events, not on whichever was discovered first.
       const rankedEvents = [...discovery.events].sort((a, b) => b.importance - a.importance);
@@ -347,13 +353,14 @@ export async function runMarketCycle(
           sensitivity: "balanced",
         });
         const budgetOk = alertBudget === null || alertsCreated < alertBudget;
+        const impactOk = shouldNotify(event.importance, notifyLevels);
         if (event.importance >= 70) eventsSignificant += 1;
         const duplicateStory = alertedStories.some((story) =>
           sameStory(story, { title: event.title, entities: event.entities, type: event.type }),
         );
 
         let alerted = false;
-        if (decision.alert && budgetOk && !duplicateStory && eventAlerts < MAX_EVENT_ALERTS_PER_RUN) {
+        if (decision.alert && impactOk && budgetOk && !duplicateStory && eventAlerts < MAX_EVENT_ALERTS_PER_RUN) {
           const { error: eventAlertError } = await db.from("alerts").insert({
             radar_id: radar.id,
             user_id: radar.user_id,

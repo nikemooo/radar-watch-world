@@ -79,9 +79,14 @@ export const createRadar = createServerFn({ method: "POST" })
     // without adding signal. Clamp to the closest sensible cadence.
     if (parsedConfig.kind === "market_monitoring" && frequency === "instant") frequency = "smart";
 
+    // Cheaper plans start narrow so a small monthly alert quota is spent on
+    // events that can actually move the price. The user can widen it per radar.
+    const { defaultNotifyLevels } = await import("./market/impact");
+
     const { data: radar, error } = await context.supabase
       .from("radars")
       .insert({
+        notify_impact_levels: defaultNotifyLevels(e.plan.key),
         user_id: context.userId,
         name: data.name,
         category: data.category,

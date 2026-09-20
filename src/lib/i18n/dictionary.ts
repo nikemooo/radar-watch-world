@@ -465,6 +465,18 @@ export const en = {
   "billing.toast.resumeFailed": "Could not resume.",
   "billing.toast.checkoutFailed": "Checkout failed.",
 
+  // ── impact notification filter ─────────────────────────────────────────
+  "impact.title": "Which events should notify you?",
+  "impact.body":
+    "Based on how likely the event is to move the price. Everything is still saved to this radar's timeline — you only choose what is worth an alert.",
+  "impact.level.small": "Small chance of impact",
+  "impact.level.medium": "Medium chance of impact",
+  "impact.level.large": "Large chance of impact",
+  "impact.level.extreme": "Extremely large chance of impact",
+  "impact.range": "weight {from}–{to}",
+  "impact.none": "No alerts will be sent for this radar.",
+  "impact.saved": "Notification levels saved.",
+
   // ── sweep intervals ────────────────────────────────────────────────────
   "interval.hourly": "every hour",
   "interval.daily": "once a day",
@@ -962,6 +974,17 @@ const sv: Dictionary = {
   "billing.toast.resumed": "Prenumerationen återupptogs.",
   "billing.toast.resumeFailed": "Kunde inte återuppta.",
   "billing.toast.checkoutFailed": "Betalningen kunde inte startas.",
+
+  "impact.title": "Vilka händelser ska ge dig en notis?",
+  "impact.body":
+    "Utgår från hur sannolikt det är att händelsen påverkar priset. Allt sparas fortfarande i radarns tidslinje – du väljer bara vad som är värt ett larm.",
+  "impact.level.small": "Liten chans till påverkan",
+  "impact.level.medium": "Medel chans till påverkan",
+  "impact.level.large": "Stor chans till påverkan",
+  "impact.level.extreme": "Extremt stor chans till påverkan",
+  "impact.range": "vikt {from}–{to}",
+  "impact.none": "Inga larm skickas för den här radarn.",
+  "impact.saved": "Notisnivåerna sparades.",
 
   "interval.hourly": "varje timme",
   "interval.daily": "en gång per dygn",

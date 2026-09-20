@@ -1175,6 +1175,7 @@ export type Database = {
           monitoring_window: string
           name: string
           next_run_at: string | null
+          notify_impact_levels: string[] | null
           raw_request: string
           recency_days: number
           recency_source: string
@@ -1209,6 +1210,7 @@ export type Database = {
           monitoring_window?: string
           name: string
           next_run_at?: string | null
+          notify_impact_levels?: string[] | null
           raw_request: string
           recency_days?: number
           recency_source?: string
@@ -1243,6 +1245,7 @@ export type Database = {
           monitoring_window?: string
           name?: string
           next_run_at?: string | null
+          notify_impact_levels?: string[] | null
           raw_request?: string
           recency_days?: number
           recency_source?: string
