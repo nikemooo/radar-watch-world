@@ -80,8 +80,11 @@ export async function resolveStripePrice(
   expected: PlanPrice,
 ): Promise<{ priceId: string; error: string | null }> {
   const prices = await stripe.prices.list({ lookup_keys: [expected.stripe_price_id], active: true, limit: 1 });
-  const price = prices.data[0];
+  // New catalog entries use stable lookup keys; legacy rows still contain a
+  // Stripe-native price id and remain supported until their catalog is migrated.
+  const price = prices.data[0] ?? await stripe.prices.retrieve(expected.stripe_price_id).catch(() => null);
   if (!price) return { priceId: "", error: "That price is no longer available." };
+  if (!price.active) return { priceId: "", error: "That price is no longer available." };
   if ((price.currency ?? "").toUpperCase() !== expected.currency.toUpperCase()) {
     return { priceId: "", error: `Currency mismatch for ${expected.plan_key} in ${expected.market_code}.` };
   }

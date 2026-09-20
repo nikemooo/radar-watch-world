@@ -20,6 +20,8 @@ export const Route = createFileRoute("/pricing")({
       },
       { property: "og:title", content: "Pricing — Radar Intelligence" },
       { property: "og:description", content: "Start free. Upgrade for faster checks and more radars." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Pricing,
