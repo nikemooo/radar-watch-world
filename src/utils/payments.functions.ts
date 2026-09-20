@@ -58,7 +58,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     if (!plan) return { error: "Unknown plan." };
     if (data.planKey === "free") return { error: "The Free plan does not require a subscription." };
 
-    const { resolveBillingMarket, resolvePlanPrice, assertStripePriceMatches } = await import(
+    const { resolveBillingMarket, resolvePlanPrice, resolveStripePrice } = await import(
       "@/lib/billing/market.server"
     );
     const resolved = await resolveBillingMarket(supabase, userId, {
@@ -68,8 +68,6 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     });
     const planPrice = await resolvePlanPrice(supabase, data.planKey, resolved.market.code, data.interval);
     if (!planPrice) return { error: `This plan is not available in ${resolved.market.name} yet.` };
-    const priceId = planPrice.stripe_price_id;
-
     const { data: existing } = await supabase
       .from("subscriptions")
       .select("stripe_customer_id, stripe_subscription_id, status")
@@ -85,15 +83,15 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
 
     try {
       const stripe = createStripeClient(data.environment);
-      const mismatch = await assertStripePriceMatches(stripe, planPrice);
-      if (mismatch) return { error: mismatch };
+      const resolvedPrice = await resolveStripePrice(stripe, planPrice);
+      if (resolvedPrice.error) return { error: resolvedPrice.error };
 
       // Launch offer: applied automatically while the coupon secret is configured.
       const foundingCoupon = process.env['STRIPE_FOUNDING_COUPON'];
 
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
-        line_items: [{ price: priceId, quantity: 1 }],
+        line_items: [{ price: resolvedPrice.priceId, quantity: 1 }],
         ui_mode: "embedded_page",
         return_url: data.returnUrl,
         client_reference_id: userId,
@@ -190,8 +188,6 @@ export const changePlan = createServerFn({ method: "POST" })
     if (data.planKey !== "free" && !planPrice) {
       return { error: `This plan is not available in ${resolved.market.name} yet.` };
     }
-    const newPriceId = planPrice?.stripe_price_id ?? null;
-
     try {
       const stripe = createStripeClient(ENV);
       const sub = await stripe.subscriptions.retrieve(subId);
@@ -217,6 +213,9 @@ export const changePlan = createServerFn({ method: "POST" })
         return { effect: "period_end", effectiveAt: periodEndIso, planKey: "free" };
       }
 
+      const resolvedNewPrice = planPrice ? await resolveStripePrice(stripe, planPrice) : null;
+      if (resolvedNewPrice?.error) return { error: resolvedNewPrice.error };
+      const newPriceId = resolvedNewPrice?.priceId ?? null;
       if (!newPriceId) return { error: "This plan is not purchasable." };
 
       if (isUpgrade(e.planKey, data.planKey)) {

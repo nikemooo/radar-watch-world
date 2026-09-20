@@ -6,12 +6,13 @@ import { runBillingLifecycle, type LifecycleEvent } from "@/lib/billing/lifecycl
 async function planForPrice(
   db: any,
   priceId: string | null | undefined,
+  lookupKey?: string | null,
 ): Promise<{ planKey: string | null; marketCode: string | null; currency: string | null }> {
-  if (!priceId) return { planKey: null, marketCode: null, currency: null };
+  if (!priceId && !lookupKey) return { planKey: null, marketCode: null, currency: null };
   const { data: localized } = await db
     .from("plan_prices")
     .select("plan_key, market_code, currency")
-    .eq("stripe_price_id", priceId)
+    .eq("stripe_price_id", lookupKey ?? priceId)
     .maybeSingle();
   if (localized) {
     return { planKey: localized.plan_key, marketCode: localized.market_code, currency: localized.currency };
@@ -28,7 +29,7 @@ async function planForPrice(
 async function syncSubscription(db: any, sub: Stripe.Subscription, environment: StripeEnv) {
   const item = sub.items.data[0];
   const priceId = item?.price?.id ?? null;
-  const resolvedPrice = await planForPrice(db, priceId);
+  const resolvedPrice = await planForPrice(db, priceId, item?.price?.lookup_key);
   const planKey = resolvedPrice.planKey ?? "pro";
   const marketCode = resolvedPrice.marketCode ?? (sub.metadata?.['market_code'] as string | undefined) ?? null;
   const currency = (resolvedPrice.currency ?? item?.price?.currency ?? null)?.toUpperCase() ?? null;

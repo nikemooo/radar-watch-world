@@ -74,20 +74,24 @@ export async function resolvePlanPrice(
   return (data as PlanPrice | null) ?? null;
 }
 
-/** Confirm the Stripe Price still matches the catalog (currency, amount, interval, live status). */
-export async function assertStripePriceMatches(stripe: Stripe, expected: PlanPrice): Promise<string | null> {
-  const price = await stripe.prices.retrieve(expected.stripe_price_id);
-  if (!price.active) return "That price is no longer available.";
+/** Resolve a stable catalog key to the environment-specific Stripe Price. */
+export async function resolveStripePrice(
+  stripe: Stripe,
+  expected: PlanPrice,
+): Promise<{ priceId: string; error: string | null }> {
+  const prices = await stripe.prices.list({ lookup_keys: [expected.stripe_price_id], active: true, limit: 1 });
+  const price = prices.data[0];
+  if (!price) return { priceId: "", error: "That price is no longer available." };
   if ((price.currency ?? "").toUpperCase() !== expected.currency.toUpperCase()) {
-    return `Currency mismatch for ${expected.plan_key} in ${expected.market_code}.`;
+    return { priceId: "", error: `Currency mismatch for ${expected.plan_key} in ${expected.market_code}.` };
   }
   if (price.unit_amount !== expected.amount_minor) {
-    return `Amount mismatch for ${expected.plan_key} in ${expected.market_code}.`;
+    return { priceId: "", error: `Amount mismatch for ${expected.plan_key} in ${expected.market_code}.` };
   }
   if (price.recurring?.interval !== expected.billing_interval) {
-    return `Billing interval mismatch for ${expected.plan_key}.`;
+    return { priceId: "", error: `Billing interval mismatch for ${expected.plan_key}.` };
   }
-  return null;
+  return { priceId: price.id, error: null };
 }
 
 export const DEFAULT_MARKET = FALLBACK_MARKET_CODE;
