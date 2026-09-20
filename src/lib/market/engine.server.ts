@@ -315,6 +315,11 @@ export async function runMarketCycle(
       const alertedStories: { title: string; entities: string[] }[] = [];
       let eventAlerts = 0;
 
+      // Which likely-price-impact bands this radar is allowed to notify on.
+      // Everything else is still stored and still shown on the timeline — the
+      // user simply does not spend an alert on it.
+      const notifyLevels = asNotifyLevels(radar.notify_impact_levels);
+
       // Rank before alerting: the per-run alert ceiling must spend itself on
       // the most important events, not on whichever was discovered first.
       const rankedEvents = [...discovery.events].sort((a, b) => b.importance - a.importance);
