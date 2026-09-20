@@ -975,6 +975,17 @@ const sv: Dictionary = {
   "billing.toast.resumeFailed": "Kunde inte återuppta.",
   "billing.toast.checkoutFailed": "Betalningen kunde inte startas.",
 
+  "impact.title": "Vilka händelser ska ge dig en notis?",
+  "impact.body":
+    "Utgår från hur sannolikt det är att händelsen påverkar priset. Allt sparas fortfarande i radarns tidslinje – du väljer bara vad som är värt ett larm.",
+  "impact.level.small": "Liten chans till påverkan",
+  "impact.level.medium": "Medel chans till påverkan",
+  "impact.level.large": "Stor chans till påverkan",
+  "impact.level.extreme": "Extremt stor chans till påverkan",
+  "impact.range": "vikt {from}–{to}",
+  "impact.none": "Inga larm skickas för den här radarn.",
+  "impact.saved": "Notisnivåerna sparades.",
+
   "interval.hourly": "varje timme",
   "interval.daily": "en gång per dygn",
   "interval.everyMinutes": "var {minutes}:e minut",
