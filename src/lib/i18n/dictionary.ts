@@ -465,6 +465,18 @@ export const en = {
   "billing.toast.resumeFailed": "Could not resume.",
   "billing.toast.checkoutFailed": "Checkout failed.",
 
+  // ── impact notification filter ─────────────────────────────────────────
+  "impact.title": "Which events should notify you?",
+  "impact.body":
+    "Based on how likely the event is to move the price. Everything is still saved to this radar's timeline — you only choose what is worth an alert.",
+  "impact.level.small": "Small chance of impact",
+  "impact.level.medium": "Medium chance of impact",
+  "impact.level.large": "Large chance of impact",
+  "impact.level.extreme": "Extremely large chance of impact",
+  "impact.range": "weight {from}–{to}",
+  "impact.none": "No alerts will be sent for this radar.",
+  "impact.saved": "Notification levels saved.",
+
   // ── sweep intervals ────────────────────────────────────────────────────
   "interval.hourly": "every hour",
   "interval.daily": "once a day",
