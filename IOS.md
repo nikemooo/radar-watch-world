@@ -16,8 +16,21 @@ the app content without a new App Store build.
 
 ```bash
 npm install
-npx cap sync ios
+npm run ios:sync
 npx cap open ios        # opens Xcode
+```
+
+`npm run ios:sync` is mandatory before every archive. It both synchronizes the
+native plugins and verifies that `CapacitorApp`, `CapacitorBrowser`, and the
+`radar://` callback are present. Do not archive if this check fails.
+
+For the Google sign-in fix, the successful output must include:
+
+```text
+Found 2 Capacitor plugins for ios:
+@capacitor/app
+@capacitor/browser
+iOS Google sign-in check passed
 ```
 
 In Xcode: select the `App` target → Signing & Capabilities → pick your team →
