@@ -7,6 +7,8 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "ios:sync": "cap sync ios && npm run ios:verify",
+    "ios:verify": "node scripts/verify-ios-auth.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write ."
